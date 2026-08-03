@@ -1,0 +1,8 @@
+name: Figma MCP
+version: 0.0.1
+schema: v1
+
+mcpServers:
+  - name: Figma
+    type: streamable-http
+    url: https://mcp.figma.com/mcp
