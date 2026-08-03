@@ -5,7 +5,7 @@
 - Exact frame dimensions: 375 x 812
 - Purpose: Customer discovery variant for exploring nearby barbers and services.
 - Intended actor: Customer
-- Route status: Variant of Customer Home, not a standalone route.
+- Proposed route: src/app/(customer)/home.tsx
 
 # Relationship to existing screens
 

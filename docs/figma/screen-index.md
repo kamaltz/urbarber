@@ -42,8 +42,8 @@
 | 38 | Customer | FAVORITE BARBERS | 8102:4497 | docs/figma/screens/customer/favorite-barber.md | src/app/(customer)/favorite-barber.tsx | route | completed | not started |
 | 39 | Customer | FIND BARBER - DEFAULT | 8065:2782 | docs/figma/screens/customer/find-barber.md | src/app/(customer)/find-barber.tsx | route | completed | not started |
 | 40 | Customer | HOME - CUSTOMER | 8065:2552 | docs/figma/screens/customer/home.md | src/app/(customer)/home.tsx | route | completed | not started |
-| 41 | Customer | HOME - BOOKED | 8092:12810 | docs/figma/screens/customer/home-booked.md | NEEDS_CONFIRMATION | variant | partial | not started |
-| 42 | Customer | EXPLORE BARBERS | 8086:5597 | docs/figma/screens/customer/home-explore.md | NEEDS_CONFIRMATION | variant | partial | not started |
+| 41 | Customer | HOME - BOOKED | 8092:12810 | docs/figma/screens/customer/home-booked.md | src/app/(customer)/home.tsx | variant | completed | not started |
+| 42 | Customer | EXPLORE BARBERS | 8086:5597 | docs/figma/screens/customer/home-explore.md | src/app/(customer)/home.tsx | variant | completed | not started |
 | 43 | Customer | HOME - FILTER | 8065:2691 | docs/figma/screens/customer/home-filter.md | src/app/(customer)/home-filter.tsx | variant | completed | not started |
 | 44 | Customer | CHAT - LIST | 8064:4154 | docs/figma/screens/customer/list-chat.md | src/app/(customer)/chat/index.tsx | route | completed | not started |
 | 45 | Customer | PROFILE - DEFAULT | 8062:3122 | docs/figma/screens/customer/profile.md | src/app/(customer)/profile.tsx | route | completed | not started |
@@ -52,7 +52,7 @@
 | 48 | Customer | PROFILE - HELP | 8062:2660 | docs/figma/screens/customer/profile-help.md | src/app/(customer)/profile/help.tsx | route | completed | not started |
 | 49 | Customer | PROFILE - PASSWORD | 8062:2654 | docs/figma/screens/customer/profile-new-password.md | src/app/(customer)/profile/change-password.tsx | route | completed | not started |
 | 50 | Customer | Terms and Conditions | 8209:3339 | docs/figma/screens/customer/terms-condition.md | src/app/(customer)/terms-condition.tsx | route | completed | not started |
-| 51 | User | ONBOARD | 8062:2592 | docs/figma/screens/onboard.md | NEEDS_CONFIRMATION | route | partial | not started |
-| 52 | User | ONBOARD1 | 8062:4443 | docs/figma/screens/onboard1.md | NEEDS_CONFIRMATION | variant | partial | not started |
-| 53 | User | ONBOARD2 | 8062:4505 | docs/figma/screens/onboard2.md | NEEDS_CONFIRMATION | variant | partial | not started |
-| 54 | User | ONBOARD3 | 8062:4473 | docs/figma/screens/onboard3.md | NEEDS_CONFIRMATION | variant | partial | not started |
+| 51 | User | ONBOARD | 8062:2592 | docs/figma/screens/onboard.md | src/app/(auth)/onboarding/[step].tsx | route | completed | not started |
+| 52 | User | ONBOARD1 | 8062:4443 | docs/figma/screens/onboard1.md | src/app/(auth)/onboarding/[step].tsx | variant | completed | not started |
+| 53 | User | ONBOARD2 | 8062:4505 | docs/figma/screens/onboard2.md | src/app/(auth)/onboarding/[step].tsx | variant | completed | not started |
+| 54 | User | ONBOARD3 | 8062:4473 | docs/figma/screens/onboard3.md | src/app/(auth)/onboarding/[step].tsx | variant | completed | not started |

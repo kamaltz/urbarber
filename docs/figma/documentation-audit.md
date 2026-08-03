@@ -116,16 +116,16 @@ Route inconsistencies or ambiguities:
 - Mismatch: screen identity is booking detail, but route suggests review-only intent.
 
 - docs/figma/screens/customer/home-explore.md
-- Proposed route unresolved (NEEDS_CONFIRMATION in normalized index).
+- Proposed route resolved to shared home route: src/app/(customer)/home.tsx.
 
 - docs/figma/screens/customer/home-booked.md
-- Proposed route unresolved (NEEDS_CONFIRMATION in normalized index).
+- Proposed route resolved to shared home route: src/app/(customer)/home.tsx.
 
 - docs/figma/screens/onboard.md
 - docs/figma/screens/onboard1.md
 - docs/figma/screens/onboard2.md
 - docs/figma/screens/onboard3.md
-- Proposed route unresolved for all onboarding docs.
+- Proposed route resolved to shared dynamic route: src/app/(auth)/onboarding/[step].tsx.
 
 - Cross-actor chat paths are consistent structurally, but should share one reusable implementation pattern.
 
@@ -135,13 +135,8 @@ Missing or partial documentation issues:
 
 - Index normalization was previously fragmented into multiple table formats; now unified in docs/figma/screen-index.md.
 
-- Missing route assignments (partial docs):
-- docs/figma/screens/onboard.md
-- docs/figma/screens/onboard1.md
-- docs/figma/screens/onboard2.md
-- docs/figma/screens/onboard3.md
-- docs/figma/screens/customer/home-explore.md
-- docs/figma/screens/customer/home-booked.md
+- Missing route assignments have been resolved for onboarding and home variants.
+- Current partial status now primarily comes from screen-state details that are not visible in source frames.
 
 - Metadata style inconsistency across docs:
 - Some use Screen name/Figma node ID/Proposed Expo Router route

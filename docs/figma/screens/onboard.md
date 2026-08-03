@@ -5,6 +5,7 @@
 - Exact frame dimensions: 375 x 812
 - Purpose: Onboarding/intro screen for a first-time user flow; the screen appears to introduce the app and present a single primary action.
 - Intended actor: First-time user / new app visitor (NEEDS_CONFIRMATION)
+- Proposed route: src/app/(auth)/onboarding/[step].tsx
 
 # Layout
 
@@ -57,7 +58,7 @@
 # Interaction
 
 - Button actions: The CTA button likely advances the onboarding flow or transitions to the next step; this is inferred from the onboarding context and should be treated as NEEDS_CONFIRMATION.
-- Navigation destination: NEEDS_CONFIRMATION
+- Navigation destination: src/app/(auth)/onboarding/[step].tsx with next step parameter.
 - Loading state: None visible
 - Validation state: None visible
 - Error state: None visible

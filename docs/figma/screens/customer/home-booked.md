@@ -5,7 +5,7 @@
 - Exact frame dimensions: 375 x 812
 - Purpose: Customer home state showing an active booking summary and nearby barbers.
 - Intended actor: Customer
-- Route status: Customer Home state with active booking widget.
+- Proposed route: src/app/(customer)/home.tsx
 
 # Relationship to existing screens
 

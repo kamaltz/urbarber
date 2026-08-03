@@ -5,6 +5,7 @@
 - Exact frame dimensions: 375 x 812
 - Purpose: Second onboarding/intro screen in a multi-step onboarding flow; presents a hero image, descriptive copy, a progress indicator, and a primary CTA.
 - Intended actor: First-time user / new app visitor (NEEDS_CONFIRMATION)
+- Proposed route: src/app/(auth)/onboarding/[step].tsx
 
 # Layout
 
@@ -81,7 +82,7 @@
 # Interaction
 
 - Button actions: The CTA button appears to advance the onboarding flow to the next step; this is inferred from the onboarding sequence and should be treated as NEEDS_CONFIRMATION.
-- Navigation destination: NEEDS_CONFIRMATION
+- Navigation destination: src/app/(auth)/onboarding/[step].tsx with next step parameter.
 - Loading state: None visible
 - Validation state: None visible
 - Error state: None visible

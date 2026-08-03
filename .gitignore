@@ -43,3 +43,11 @@ example
 /android
 
 .env.local
+
+docs/figma/screenshots/*.png
+docs/figma/screenshots/admin/*.png
+docs/figma/screenshots/customer/*.png
+docs/figma/screenshots/barber/*.png
+docs/figma/screenshots/auth/*.png
+docs/figma/screenshots/shared/profile/*.png
+docs/figma/screenshots/shared/*.png
