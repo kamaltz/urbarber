@@ -12,6 +12,18 @@ const firebaseConfig = {
   appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
 };
 
+const requiredConfig = Object.entries(firebaseConfig).filter(
+  ([, value]) => !value,
+);
+
+if (requiredConfig.length > 0) {
+  throw new Error(
+    `Firebase configuration is incomplete: ${requiredConfig
+      .map(([key]) => key)
+      .join(", ")}`,
+  );
+}
+
 export const firebaseApp =
   getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 

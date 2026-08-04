@@ -41,7 +41,7 @@ example
 # generated native folders
 /ios
 /android
-
+.env
 .env.local
 
 docs/figma/screenshots/*.png
