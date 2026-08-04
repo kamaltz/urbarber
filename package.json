@@ -45,7 +45,13 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "android": "expo start --android",
+    "web": "expo start --web",
+    "lint": "expo lint",
+    "typecheck": "tsc --noEmit",
+    "doctor": "expo-doctor",
+    "check": "npm run typecheck && npm run lint"
   },
   "private": true
 }
