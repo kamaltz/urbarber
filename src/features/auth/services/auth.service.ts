@@ -14,9 +14,9 @@ import {
     signInWithCredential,
     signInWithEmailAndPassword,
     signOut,
-    updateProfile
+    updateProfile,
 } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 export interface RegisterPayload {
   fullName: string;
@@ -24,6 +24,11 @@ export interface RegisterPayload {
   phoneNumber: string;
   password: string;
   acceptedTerms: boolean;
+}
+
+export interface RegisterBarberPayload extends RegisterPayload {
+  address?: string;
+  description?: string;
 }
 
 export interface AuthError {
@@ -82,75 +87,7 @@ export interface SocialAuthResponse {
 
 class FirebaseAuthService {
   /**
-   * Request OTP for login (Firebase custom auth would use third-party service)
-   * For this implementation, we'll use email/password verification instead
-   */
-  async requestOtp(identifier: string): Promise<AuthResponse> {
-    try {
-      if (!identifier || !identifier.includes('@')) {
-        return {
-          success: false,
-          error: { code: 'INVALID_EMAIL', message: 'Email tidak valid' },
-        };
-      }
-
-      // In production, integrate with OTP service (e.g., Twilio, Firebase Phone Auth)
-      // For now, we store OTP in temporary collection
-      return { success: true };
-    } catch (error) {
-      return {
-        success: false,
-        error: { code: 'REQUEST_FAILED', message: 'Gagal mengirim kode verifikasi' },
-      };
-    }
-  }
-
-  /**
-   * Verify OTP code
-   */
-  async verifyOtp(identifier: string, code: string): Promise<AuthResponse> {
-    try {
-      // Verify against OTP stored in Firestore temporary collection
-      if (!code || code.length < 4) {
-        return {
-          success: false,
-          error: { code: 'INVALID_OTP', message: 'Kode OTP tidak valid' },
-        };
-      }
-
-      // Registration already creates a Firebase session. Keep profile syncing
-      // best-effort so Firestore rules cannot turn a valid OTP into a failure.
-      const user = firebaseAuth.currentUser;
-      if (user) {
-        try {
-          await setDoc(
-            doc(firestore, 'customers', user.uid),
-            {
-              userId: user.uid,
-              name: user.displayName || identifier.split('@')[0] || 'Customer',
-              email: identifier,
-              location: '',
-              role: 'customer',
-              updatedAt: new Date().toISOString(),
-            },
-            { merge: true },
-          );
-        } catch (profileError) {
-          console.warn('OTP verified, but customer profile sync failed:', profileError);
-        }
-      }
-
-      return { success: true };
-    } catch (error) {
-      return {
-        success: false,
-        error: { code: 'VERIFICATION_FAILED', message: 'Verifikasi gagal' },
-      };
-    }
-  }
-
-  /**
-   * Register new customer with Firebase
+   * Register new customer with Firebase Auth and Firestore users/{uid}
    */
   async registerCustomer(payload: RegisterPayload): Promise<AuthResponse> {
     try {
@@ -238,7 +175,100 @@ class FirebaseAuthService {
   }
 
   /**
-   * Login with email and password
+   * Register new barber with Firebase Auth and Firestore users/{uid}
+   */
+  async registerBarber(payload: RegisterBarberPayload): Promise<AuthResponse> {
+    try {
+      if (!payload.fullName || !payload.email || !payload.password) {
+        return {
+          success: false,
+          error: { code: 'MISSING_FIELDS', message: 'Field yang diperlukan tidak lengkap' },
+        };
+      }
+
+      if (payload.password.length < 6) {
+        return {
+          success: false,
+          error: { code: 'WEAK_PASSWORD', message: 'Password minimal 6 karakter' },
+        };
+      }
+
+      if (!payload.acceptedTerms) {
+        return {
+          success: false,
+          error: { code: 'TERMS_NOT_ACCEPTED', message: 'Harus menerima syarat dan ketentuan' },
+        };
+      }
+
+      const userCredential = await createUserWithEmailAndPassword(
+        firebaseAuth,
+        payload.email,
+        payload.password,
+      );
+
+      const now = new Date().toISOString();
+      const postRegistrationTasks = [
+        updateProfile(userCredential.user, {
+          displayName: payload.fullName,
+        }),
+        sendEmailVerification(userCredential.user),
+        setDoc(doc(firestore, 'users', userCredential.user.uid), {
+          uid: userCredential.user.uid,
+          email: payload.email,
+          name: payload.fullName,
+          phoneNumber: payload.phoneNumber,
+          role: 'barber',
+          status: 'pending_verification',
+          createdAt: now,
+          updatedAt: now,
+        }),
+        setDoc(doc(firestore, 'barbers', userCredential.user.uid), {
+          id: userCredential.user.uid,
+          userId: userCredential.user.uid,
+          displayName: payload.fullName,
+          description: payload.description || '',
+          address: payload.address || '',
+          ratingAverage: 0,
+          reviewCount: 0,
+          verified: false,
+          verificationStatus: 'pending',
+          imageUrl: null,
+          serviceTypes: [],
+          status: 'pending_verification',
+          createdAt: now,
+          updatedAt: now,
+        }),
+      ];
+
+      const results = await Promise.allSettled(
+        postRegistrationTasks.map((task) =>
+          withTimeout(task, 8_000, 'Post-registration sync timed out'),
+        ),
+      );
+
+      results.forEach((result) => {
+        if (result.status === 'rejected') {
+          console.warn('Barber account created, but post-registration sync failed:', result.reason);
+        }
+      });
+
+      return { success: true };
+    } catch (error: any) {
+      const firebaseError = error as FirebaseAuthError;
+      const message =
+        firebaseError.code === 'auth/email-already-in-use'
+          ? 'Email sudah terdaftar'
+          : 'Pendaftaran barber gagal';
+
+      return {
+        success: false,
+        error: { code: firebaseError.code, message },
+      };
+    }
+  }
+
+  /**
+   * Login with email and password, checking suspended status
    */
   async loginWithEmail(email: string, password: string): Promise<AuthResponse> {
     try {
@@ -247,7 +277,28 @@ class FirebaseAuthService {
         15_000,
         'Login request timed out',
       );
-      await userCredential.user.reload();
+
+      const user = userCredential.user;
+
+      // Check if user is suspended in Firestore users/{uid}
+      try {
+        const userDocRef = doc(firestore, 'users', user.uid);
+        const userDocSnap = await getDoc(userDocRef);
+        if (userDocSnap.exists() && userDocSnap.data().status === 'suspended') {
+          await signOut(firebaseAuth);
+          return {
+            success: false,
+            error: {
+              code: 'USER_SUSPENDED',
+              message: 'Akun Anda telah ditangguhkan. Silakan hubungi admin.',
+            },
+          };
+        }
+      } catch (docError) {
+        console.warn('Unable to verify user status document:', docError);
+      }
+
+      await user.reload();
       return {
         success: true,
         emailVerified: firebaseAuth.currentUser?.emailVerified ?? false,
@@ -296,7 +347,7 @@ class FirebaseAuthService {
     }
   }
 
-    /**
+  /**
    * Resend Email Verification
    */
   async resendVerificationEmail(): Promise<AuthResponse> {
@@ -336,14 +387,7 @@ class FirebaseAuthService {
   }
 
   /**
-   * Get configured OTP length
-   */
-  getOtpLength(): number {
-    return 6;
-  }
-
-  /**
-   * Login with Google
+   * Login with Google (requires native idToken)
    */
   async loginWithGoogle(idToken?: string): Promise<SocialAuthResponse> {
     try {
@@ -356,7 +400,21 @@ class FirebaseAuthService {
       const credential = GoogleAuthProvider.credential(idToken);
       const userCredential = await signInWithCredential(firebaseAuth, credential);
 
-      // Create or update customer document
+      const now = new Date().toISOString();
+      const userRef = doc(firestore, 'users', userCredential.user.uid);
+      await setDoc(
+        userRef,
+        {
+          uid: userCredential.user.uid,
+          email: userCredential.user.email,
+          name: userCredential.user.displayName,
+          role: 'customer',
+          status: 'active',
+          updatedAt: now,
+        },
+        { merge: true },
+      );
+
       const customerRef = doc(firestore, 'customers', userCredential.user.uid);
       await setDoc(
         customerRef,
@@ -366,7 +424,7 @@ class FirebaseAuthService {
           fullName: userCredential.user.displayName,
           profileImage: userCredential.user.photoURL,
           role: 'customer',
-          updatedAt: new Date().toISOString(),
+          updatedAt: now,
         },
         { merge: true },
       );

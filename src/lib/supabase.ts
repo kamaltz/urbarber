@@ -25,5 +25,10 @@ export const supabase = createClient(
 
       return user.getIdToken(false);
     },
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
   },
 );

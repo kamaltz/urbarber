@@ -25,23 +25,33 @@ This document registers all external dashboard, cloud platform, and infrastructu
 
 ---
 
-## 3. Supabase Dashboard Actions
+## 3. Supabase Dashboard & Auth Integration Actions
 
-### MA-05: Create `public-media` Storage Bucket
-- **Location**: Supabase Dashboard -> Storage -> Buckets
-- **Action**: MANUAL ACTION REQUIRED: Create a new bucket named `public-media`. Toggle bucket settings to **Public**.
-
-### MA-06: Configure Supabase Storage RLS Policies for Firebase Auth JWT
-- **Location**: Supabase Dashboard -> Storage -> Policies (`public-media`)
+### MA-05: Configure Supabase Third-Party JWT Settings for Firebase Auth
+- **Location**: Supabase Dashboard -> Project Settings -> API / Authentication -> JWT Settings
 - **Action**: MANUAL ACTION REQUIRED:
-  1. Add `SELECT` policy allowing public read access for all objects under `public-media`.
-  2. Add `INSERT`/`UPDATE` policy validating authorization header containing valid Firebase Auth ID token.
+  1. Retrieve the Firebase Auth JWT Secret or Public Certificate Keys for issuer `https://securetoken.google.com/<firebase-project-id>`.
+  2. In Supabase Dashboard, set the JWT Secret / JWKS URI matching your Firebase project ID so Supabase Storage engine can verify Firebase Auth ID tokens automatically.
+
+### MA-06: Execute Storage Bucket Setup & RLS Policies SQL Script
+- **Location**: Supabase Dashboard -> SQL Editor
+- **Action**: MANUAL ACTION REQUIRED:
+  1. Open `supabase/storage-policies.sql`.
+  2. Copy and paste the script into Supabase SQL Editor and click **Run**.
+  3. Verify that `public-media` and `private-documents` buckets are initialized and 8 RLS policies are active on `storage.objects`.
+
+### MA-07: Assign Firebase Custom Claims (`role=authenticated` & `app_role`)
+- **Location**: Local Admin Terminal
+- **Action**: MANUAL ACTION REQUIRED:
+  1. Obtain a Firebase Admin Service Account JSON file.
+  2. Set `GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json`.
+  3. Run `npm run set-custom-claims -- --all` to assign `{ role: 'authenticated', app_role: '<role>' }` custom claims to all existing Firebase Auth users.
 
 ---
 
 ## 4. Local Environment File Configuration
 
-### MA-07: Configure Environment Variables
+### MA-08: Configure Environment Variables
 - **Location**: Local project root `.env.local`
 - **Action**: MANUAL ACTION REQUIRED: Copy `.env.example` to `.env.local` and populate environment variables:
   ```env
@@ -53,13 +63,13 @@ This document registers all external dashboard, cloud platform, and infrastructu
   EXPO_PUBLIC_FIREBASE_APP_ID=your_app_id
 
   EXPO_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-  EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your_supabase_anon_key
+  EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your_supabase_publishable_key
   ```
 
 ---
 
 ## 5. Development Tooling & Local Environment Fixes
 
-### MA-08: Local Node Dependencies & TypeScript CLI Resolution
+### MA-09: Local Node Dependencies & TypeScript CLI Resolution
 - **Location**: Local Terminal / Node environment
 - **Action**: MANUAL ACTION REQUIRED: Run `npm install` to ensure `tsc` (TypeScript compiler) and `eslint` CLI binaries are linked properly in `node_modules/.bin` so that `npm run check` and `npm run lint` execute cleanly.

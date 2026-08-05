@@ -16,11 +16,18 @@ import { useAuth } from '@/features/auth/hooks/use-auth';
 import { authService } from '@/features/auth/services/auth.service';
 
 export default function AuthenticationStatusScreen() {
-  const { user, reloadUser, logout } = useAuth();
+  const { user, role, reloadUser, logout } = useAuth();
   const [checking, setChecking] = useState(false);
   const [resending, setResending] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+
+  const targetHomeRoute =
+    role === 'barber'
+      ? '/(barber)/home'
+      : role === 'admin'
+        ? '/(admin)/dashboard'
+        : '/(customer)/home';
 
   const handleCheckStatus = async () => {
     setChecking(true);
@@ -30,7 +37,7 @@ export default function AuthenticationStatusScreen() {
       const verified = await reloadUser();
       if (verified) {
         setMessage('Email berhasil diverifikasi. Mengalihkan ke beranda...');
-        router.replace('/(customer)/home');
+        router.replace(targetHomeRoute);
       } else {
         setError('Email belum terverifikasi. Buka link terbaru di email, lalu coba lagi.');
       }
@@ -50,7 +57,7 @@ export default function AuthenticationStatusScreen() {
       if (res.success) {
         if (res.emailVerified) {
           await reloadUser();
-          router.replace('/(customer)/home');
+          router.replace(targetHomeRoute);
         } else {
           setMessage('Email verifikasi baru telah dikirim. Periksa Inbox, Spam, dan Promosi.');
         }

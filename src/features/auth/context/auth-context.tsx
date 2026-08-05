@@ -92,40 +92,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!currentUser) return false;
 
     await currentUser.reload();
-    // Force-refresh the token as well so route guards do not keep using stale
-    // authentication claims after the verification link has been opened.
     await currentUser.getIdToken(true);
     const refreshedUser = firebaseAuth.currentUser;
 
     if (refreshedUser) {
-      setAuthUser((previousUser) => ({
-          uid: refreshedUser.uid,
-          email: refreshedUser.email,
-          displayName:
-            refreshedUser.displayName ||
-            previousUser?.displayName ||
-            refreshedUser.email?.split('@')[0] ||
-            'User',
-          phoneNumber:
-            refreshedUser.phoneNumber || previousUser?.phoneNumber || undefined,
-          role: previousUser?.role ?? 'customer',
-          status: previousUser?.status ?? 'active',
-          emailVerified: refreshedUser.emailVerified,
-      }));
+      const profile = await fetchUserProfile(refreshedUser);
+      setAuthUser(profile);
       return refreshedUser.emailVerified;
     }
 
     return false;
-  }, []);
+  }, [fetchUserProfile]);
 
   const logout = useCallback(async () => {
     await signOut(firebaseAuth);
     setAuthUser(null);
   }, []);
-
-  const completeOtpLogin = useCallback(async () => {
-    await reloadUser();
-  }, [reloadUser]);
 
   const value: AuthContextType = {
     user: authUser,
@@ -135,7 +117,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     emailVerified: authUser?.emailVerified ?? false,
     logout,
     reloadUser,
-    completeOtpLogin,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

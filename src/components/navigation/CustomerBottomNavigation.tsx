@@ -13,12 +13,14 @@ const tabs = [
 
 export function CustomerBottomNavigation() {
   const pathname = usePathname();
-  const activeKey =
-    tabs.find((tab) => {
-      const tabPath = tab.path.replace('/(customer)', '').replace(/\/index$/, '');
-      return pathname === tabPath || pathname.startsWith(tabPath + '/');
-    })?.key ??
-    'home';
+
+  const activeKey = (() => {
+    if (pathname.includes('/explore')) return 'explore';
+    if (pathname.includes('/booking')) return 'booking';
+    if (pathname.includes('/chat')) return 'chat';
+    if (pathname.includes('/profile')) return 'profile';
+    return 'home';
+  })();
 
   return (
     <BottomNavigation
@@ -26,11 +28,23 @@ export function CustomerBottomNavigation() {
       items={tabs.map((tab) => ({
         key: tab.key,
         label: tab.label,
-        icon: <Text className={activeKey === tab.key ? 'text-xl text-[#D2691E]' : 'text-xl text-slate-500'}>{tab.icon}</Text>,
+        icon: (
+          <Text
+            className={
+              activeKey === tab.key
+                ? 'text-xl font-bold text-[#D2691E]'
+                : 'text-xl text-slate-500'
+            }
+          >
+            {tab.icon}
+          </Text>
+        ),
       }))}
       onChange={(key) => {
         const destination = tabs.find((tab) => tab.key === key);
-        if (destination && destination.key !== activeKey) router.replace(destination.path);
+        if (destination && destination.key !== activeKey) {
+          router.replace(destination.path);
+        }
       }}
     />
   );

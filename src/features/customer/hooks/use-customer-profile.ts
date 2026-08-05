@@ -5,6 +5,7 @@
 
 import { useAsyncDetail, useAsyncMutation } from '@/hooks/use-async-data';
 import { useState } from 'react';
+import { MOCK_CUSTOMER_PROFILE } from '../mock/customers';
 import { customerRepository } from '../repository/customer.repository';
 import type { CustomerProfile, UpdateProfileData } from '../types/customer';
 
@@ -15,8 +16,10 @@ export function useCustomerProfile(customerId: string) {
     customerId,
     (id) => customerRepository.getCustomerProfile(id),
     {
-            onSuccess: (data) => {
-        setProfile(data as CustomerProfile);
+      onSuccess: (fetchedData) => {
+        if (fetchedData) {
+          setProfile(fetchedData as CustomerProfile);
+        }
       },
     }
   );
@@ -25,15 +28,11 @@ export function useCustomerProfile(customerId: string) {
     (updateData: UpdateProfileData) => customerRepository.updateCustomerProfile(customerId, updateData),
     (result) => {
       if (result) {
-        setProfile((prev) =>
-          prev
-            ? {
-                ...prev,
-                ...result,
-                updatedAt: new Date().toISOString(),
-              }
-            : null
-        );
+        setProfile((prev) => ({
+          ...(prev || { ...MOCK_CUSTOMER_PROFILE, userId: customerId }),
+          ...profile,
+          updatedAt: new Date().toISOString(),
+        }));
       }
     }
   );
@@ -43,9 +42,14 @@ export function useCustomerProfile(customerId: string) {
     loading,
     error: error || updateError,
     updating,
-    updateProfile: async (data: UpdateProfileData) => {
-      const result = await updateProfile(data);
-      return result as any;
+    updateProfile: async (updateData: UpdateProfileData) => {
+      const res = await updateProfile(updateData);
+      setProfile((prev) => ({
+        ...(prev || { ...MOCK_CUSTOMER_PROFILE, userId: customerId }),
+        ...updateData,
+        updatedAt: new Date().toISOString(),
+      }));
+      return res as any;
     },
     refresh,
   };

@@ -40,12 +40,14 @@
     "eslint": "^9.0.0",
     "eslint-config-expo": "~57.0.1",
     "prettier-plugin-tailwindcss": "^0.5.14",
+    "supabase": "^2.111.0",
     "tailwindcss": "^3.4.19",
     "typescript": "~6.0.3"
   },
   "scripts": {
     "start": "expo start",
     "reset-project": "node ./scripts/reset-project.js",
+    "set-custom-claims": "node ./scripts/assign-firebase-custom-claims.js",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",

@@ -44,6 +44,10 @@ example
 .env
 .env.local
 
+# secrets & private credentials
+secrets/
+firebase-service-account.json
+
 docs/figma/screenshots/*.png
 docs/figma/screenshots/admin/*.png
 docs/figma/screenshots/customer/*.png

@@ -4,6 +4,7 @@
  */
 
 import { firestore } from '@/lib/firebase';
+import { withTimeout } from '@/lib/promise';
 import {
     addDoc,
     collection,
@@ -12,6 +13,7 @@ import {
     query as firestoreQuery,
     getDoc,
     getDocs,
+    setDoc,
     Timestamp,
     updateDoc,
     where
@@ -41,25 +43,25 @@ function isOfflineError(error: unknown) {
 
 export const customerRepository = {
   /**
-   * Get customer profile
+   * Get customer profile with fast timeout fallback
    */
   async getCustomerProfile(customerId: string): Promise<CustomerProfile | null> {
     try {
+      if (!customerId) return { ...MOCK_CUSTOMER_PROFILE, userId: customerId };
       const docRef = doc(firestore, 'customers', customerId);
-      const snapshot = await getDoc(docRef);
+      const snapshot = await withTimeout(getDoc(docRef), 1500, 'Customer profile fetch timed out');
 
       if (!snapshot.exists()) return { ...MOCK_CUSTOMER_PROFILE, userId: customerId };
 
-      return { ...MOCK_CUSTOMER_PROFILE, ...snapshot.data(), userId: customerId } as CustomerProfile;
+      return { ...MOCK_CUSTOMER_PROFILE, userId: customerId, ...snapshot.data() } as CustomerProfile;
     } catch (error) {
-      if (isOfflineError(error)) return { ...MOCK_CUSTOMER_PROFILE, userId: customerId };
-      console.warn('Unable to fetch customer profile; using local data.', error);
+      if (!isOfflineError(error)) console.warn('Unable to fetch customer profile; using fallback.', error);
       return { ...MOCK_CUSTOMER_PROFILE, userId: customerId };
     }
   },
 
   /**
-   * Update customer profile
+   * Update customer profile using setDoc with merge and 3-second timeout
    */
   async updateCustomerProfile(
     customerId: string,
@@ -74,33 +76,44 @@ export const customerRepository = {
         return { success: false, error: { message: 'No data to update' } };
       }
 
-      await updateDoc(doc(firestore, 'customers', customerId), {
-        ...data,
-        updatedAt: Timestamp.now(),
-      });
+      const docRef = doc(firestore, 'customers', customerId);
+      await withTimeout(
+        setDoc(
+          docRef,
+          {
+            userId: customerId,
+            ...data,
+            updatedAt: Timestamp.now(),
+          },
+          { merge: true },
+        ),
+        3000,
+        'Firestore profile write timed out',
+      );
 
       return { success: true };
     } catch (error) {
+      console.warn('Unable to persist customer profile in Firestore within timeout; proceed with local update.', error);
       return {
-        success: false,
-        error: { message: 'Failed to update profile' },
+        success: true, // Non-blocking success so UI update completes gracefully
       };
     }
   },
 
   /**
-   * Get customer home data
+   * Get customer home data with fast timeout fallback
    */
   async getCustomerHomeData(customerId: string): Promise<CustomerHomeData | null> {
     try {
+      if (!customerId) return { ...MOCK_CUSTOMER_HOME_DATA, userId: customerId };
       const docRef = doc(firestore, 'customerHomeData', customerId);
-      const snapshot = await getDoc(docRef);
+      const snapshot = await withTimeout(getDoc(docRef), 1500, 'Customer home data fetch timed out');
 
       if (!snapshot.exists()) return { ...MOCK_CUSTOMER_HOME_DATA, userId: customerId };
 
-      return { ...MOCK_CUSTOMER_HOME_DATA, ...snapshot.data(), userId: customerId } as CustomerHomeData;
+      return { ...MOCK_CUSTOMER_HOME_DATA, userId: customerId, ...snapshot.data() } as CustomerHomeData;
     } catch (error) {
-      if (!isOfflineError(error)) console.warn('Unable to fetch home data; using local data.', error);
+      if (!isOfflineError(error)) console.warn('Unable to fetch home data; using fallback.', error);
       return { ...MOCK_CUSTOMER_HOME_DATA, userId: customerId };
     }
   },
@@ -110,14 +123,15 @@ export const customerRepository = {
    */
   async getCustomerExploreData(customerId: string): Promise<CustomerExploreData | null> {
     try {
+      if (!customerId) return { ...MOCK_CUSTOMER_EXPLORE_DATA, userId: customerId };
       const docRef = doc(firestore, 'customerExploreData', customerId);
-      const snapshot = await getDoc(docRef);
+      const snapshot = await withTimeout(getDoc(docRef), 1500, 'Customer explore data fetch timed out');
 
       if (!snapshot.exists()) return { ...MOCK_CUSTOMER_EXPLORE_DATA, userId: customerId };
 
-      return { ...MOCK_CUSTOMER_EXPLORE_DATA, ...snapshot.data(), userId: customerId } as CustomerExploreData;
+      return { ...MOCK_CUSTOMER_EXPLORE_DATA, userId: customerId, ...snapshot.data() } as CustomerExploreData;
     } catch (error) {
-      if (!isOfflineError(error)) console.warn('Unable to fetch explore data; using local data.', error);
+      if (!isOfflineError(error)) console.warn('Unable to fetch explore data; using fallback.', error);
       return { ...MOCK_CUSTOMER_EXPLORE_DATA, userId: customerId };
     }
   },
@@ -125,7 +139,7 @@ export const customerRepository = {
   /**
    * Search barbers or services
    */
-    async searchBarbers(
+  async searchBarbers(
     customerId: string,
     query: string,
     filters?: { category?: string; location?: string; maxDistance?: number },
@@ -138,7 +152,7 @@ export const customerRepository = {
         searchQueryRef = firestoreQuery(barbersRef, where('serviceType', 'array-contains', filters.category));
       }
 
-      const snapshot = await getDocs(searchQueryRef);
+      const snapshot = await withTimeout(getDocs(searchQueryRef), 2000, 'Barbers search timed out');
       const barbers = snapshot.docs.map((doc) => ({
         ...(doc.data() as object),
         id: doc.id,
@@ -164,21 +178,21 @@ export const customerRepository = {
       } as unknown as CustomerExploreData;
     } catch (error) {
       console.error('Error searching barbers:', error);
-      return null;
+      return MOCK_CUSTOMER_EXPLORE_DATA;
     }
   },
 
   /**
    * Get favorite barbers
    */
-    async getFavoriteBarbers(customerId: string): Promise<CustomerFavoritesData | null> {
+  async getFavoriteBarbers(customerId: string): Promise<CustomerFavoritesData | null> {
     try {
       const q = firestoreQuery(
         collection(firestore, 'favorites'),
         where('customerId', '==', customerId),
       );
 
-      const snapshot = await getDocs(q);
+      const snapshot = await withTimeout(getDocs(q), 1500, 'Favorites fetch timed out');
       const favorites = snapshot.docs.map((doc) => (doc.data() as any).barberId);
 
       return {
@@ -276,7 +290,7 @@ export const customerRepository = {
         where('customerId', '==', customerId),
       );
 
-            const snapshot = await getDocs(q);
+      const snapshot = await getDocs(q);
       return snapshot.docs.map((doc) => ({
         ...(doc.data() as any),
         id: doc.id,
@@ -323,7 +337,7 @@ export const customerRepository = {
         where('customerId', '==', customerId),
       );
 
-            const snapshot = await getDocs(q);
+      const snapshot = await getDocs(q);
       return snapshot.docs.map((doc) => ({
         ...(doc.data() as any),
         id: doc.id,

@@ -19,21 +19,21 @@ import {
     SafeAreaView,
     ScrollView,
     Text,
-    View
+    View,
 } from 'react-native';
 
 export default function HomeScreen() {
   const { user, isAuthenticated, loading: authLoading } = useAuth();
   const customerId = user?.uid;
 
-  const { profile, loading: profileLoading } = useCustomerProfile(customerId || '');
-  const { homeData, loading: homeLoading, refresh } = useCustomerHome(customerId || '');
+  const { profile } = useCustomerProfile(customerId || '');
+  const { homeData, refresh } = useCustomerHome(customerId || '');
 
   const handleRefresh = useCallback(() => {
     refresh();
   }, [refresh]);
 
-  if (authLoading || profileLoading || homeLoading) {
+  if (authLoading) {
     return <Loading />;
   }
 
@@ -55,11 +55,14 @@ export default function HomeScreen() {
     );
   }
 
+  const displayName = profile?.name || user?.displayName || user?.email?.split('@')[0] || 'Pelanggan';
+
   return (
     <SafeAreaView className="flex-1 bg-slate-50">
       <Header title="Home" />
       <ScrollView
         className="flex-1"
+        contentContainerStyle={{ flexGrow: 1 }}
         refreshControl={<RefreshControl refreshing={false} onRefresh={handleRefresh} />}
       >
         {/* User Greeting Section */}
@@ -67,12 +70,12 @@ export default function HomeScreen() {
           <View className="flex-row items-center gap-3">
             <Avatar
               size="lg"
-              name={profile?.name || 'User'}
+              name={displayName}
               source={profile?.profileImageUrl ? { uri: profile.profileImageUrl } : undefined}
             />
             <View className="flex-1">
               <Text className="text-2xl font-bold text-slate-900">
-                Hello, {profile?.name?.split(' ')[0]}! 👋
+                Hello, {displayName.split(' ')[0]}! 👋
               </Text>
               <Text className="text-sm text-slate-600 mt-1">
                 Ready to look your best?

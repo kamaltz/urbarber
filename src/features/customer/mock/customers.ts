@@ -22,11 +22,10 @@ export const MOCK_CUSTOMER_ID = 'CUST001';
 
 export const MOCK_CUSTOMER_PROFILE: CustomerProfile = {
   userId: MOCK_CUSTOMER_ID,
-  name: 'Ahmad Pratama',
-  email: 'ahmad.pratama@email.com',
+  name: 'Customer URBarber',
+  email: 'customer@email.com',
   location: 'Jakarta Selatan',
-  profileImageUrl:
-    'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=400&fit=crop',
+  profileImageUrl: undefined,
   phone: '+62812-3456-7890',
   createdAt: '2024-01-15T08:00:00Z',
   updatedAt: '2024-08-04T10:30:00Z',
