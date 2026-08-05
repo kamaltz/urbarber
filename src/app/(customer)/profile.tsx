@@ -6,8 +6,8 @@ import { useAuth } from '@/features/auth/hooks/use-auth';
 import { useCustomerProfile } from '@/features/customer/hooks/use-customer-profile';
 import { pickImage, storageService } from '@/features/services/storage.service';
 import { firebaseAuth } from '@/lib/firebase';
-import { updateProfile as updateFirebaseProfile } from 'firebase/auth';
 import { router } from 'expo-router';
+import { updateProfile as updateFirebaseProfile } from 'firebase/auth';
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 
@@ -51,12 +51,29 @@ export default function ProfileScreen() {
       const currentUser = firebaseAuth.currentUser;
       if (!currentUser) throw new Error('Pengguna belum login.');
 
-      const tokenResult = await currentUser.getIdTokenResult(true);
-      const userRole = tokenResult.claims.role;
+      // Force Firebase to fetch latest ID token with custom claims
+      await currentUser.getIdToken(true);
 
-      if (userRole !== 'authenticated') {
+      const tokenResult = await currentUser.getIdTokenResult();
+
+      console.log('Firebase JWT validation:', {
+        uid: currentUser.uid,
+        sub: tokenResult.claims.sub,
+        role: tokenResult.claims.role,
+        appRole: tokenResult.claims.app_role,
+        issuer: tokenResult.claims.iss,
+        audience: tokenResult.claims.aud,
+      });
+
+      if (tokenResult.claims.role !== 'authenticated') {
         throw new Error(
           `Custom claim Firebase (role: authenticated) belum aktif untuk UID ${currentUser.uid}.\nJalankan perintah:\nnode scripts/assign-firebase-custom-claims.js --uid=${currentUser.uid} --app_role=customer`,
+        );
+      }
+
+      if (tokenResult.claims.app_role !== 'customer') {
+        throw new Error(
+          `Claim app_role tidak valid: ${String(tokenResult.claims.app_role)}. Harus 'customer'.`,
         );
       }
 
