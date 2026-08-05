@@ -10,6 +10,7 @@ import { routes } from '@/constants/routes';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { useCustomerHome } from '@/features/customer/hooks/use-customer-home';
 import { useCustomerProfile } from '@/features/customer/hooks/use-customer-profile';
+import { firebaseAuth } from '@/lib/firebase';
 import { router } from 'expo-router';
 import { useCallback } from 'react';
 import {
@@ -56,6 +57,11 @@ export default function HomeScreen() {
   }
 
   const displayName = profile?.name || user?.displayName || user?.email?.split('@')[0] || 'Pelanggan';
+  const avatarUrl =
+    profile?.profileImageUrl ||
+    (profile as any)?.profileImage ||
+    user?.photoURL ||
+    firebaseAuth.currentUser?.photoURL;
 
   return (
     <SafeAreaView className="flex-1 bg-slate-50">
@@ -71,7 +77,7 @@ export default function HomeScreen() {
             <Avatar
               size="lg"
               name={displayName}
-              source={profile?.profileImageUrl ? { uri: profile.profileImageUrl } : undefined}
+              source={avatarUrl ? { uri: avatarUrl } : undefined}
             />
             <View className="flex-1">
               <Text className="text-2xl font-bold text-slate-900">

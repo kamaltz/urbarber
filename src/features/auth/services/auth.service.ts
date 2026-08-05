@@ -387,6 +387,32 @@ class FirebaseAuthService {
   }
 
   /**
+   * Request OTP (OTP authentication disabled in favor of Email/Password)
+   */
+  async requestOtp(identifier: string): Promise<AuthResponse> {
+    return {
+      success: false,
+      error: {
+        code: 'OTP_DISABLED',
+        message: 'Otentikasi OTP tidak aktif. Silakan gunakan Login Email & Password.',
+      },
+    };
+  }
+
+  /**
+   * Verify OTP (OTP authentication disabled in favor of Email/Password)
+   */
+  async verifyOtp(identifier: string, code: string): Promise<AuthResponse> {
+    return {
+      success: false,
+      error: {
+        code: 'OTP_DISABLED',
+        message: 'Otentikasi OTP tidak aktif. Silakan gunakan Login Email & Password.',
+      },
+    };
+  }
+
+  /**
    * Login with Google (requires native idToken)
    */
   async loginWithGoogle(idToken?: string): Promise<SocialAuthResponse> {

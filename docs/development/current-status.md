@@ -2,13 +2,16 @@
 
 ## 1. Executive Summary
 
-This report presents an empirical code audit of the URBarber repository on branch `feat/complete-thesis-mvp`. The audit inspects all source code under `src/`, package definitions, configurations, and visual documentation in `docs/figma/`.
+This report presents an empirical code audit of the URBarber repository on branch `fix/storage-live-validation`.
 
-Batch 01 (Authentication Hardening & Role Protection) is completed:
-- Firebase Authentication is the sole auth provider.
-- User profiles store canonical roles (`customer`, `barber`, `admin`) and status in Firestore `users/{uid}`.
-- Layout route guards (`(customer)`, `(barber)`, `(admin)`, `(auth)`) enforce role protection and block suspended users (`status: "suspended"`).
-- Fake OTP bypass and unauthenticated social login redirects have been removed.
+Batches Completed:
+- **Batch 01 (Auth Hardening & Role Protection)**: COMPLETED. Canonical roles (`customer`, `barber`, `admin`) stored in `users/{uid}`, Firebase Auth email/password flows active, role-aware routing and suspended user blocking implemented across layout files.
+- **Batch 02 (Supabase Storage Foundation & Avatar Vertical-Slice Repair)**: COMPLETED.
+  - Idempotent and text-based SQL RLS policy migration (`supabase/storage-policies.sql`) created using `(storage.foldername(name))[1] = (auth.jwt() ->> 'sub')`.
+  - Public upload flow repaired with `upsert: false` default, MIME type validation (`image/jpeg`, `image/png`, `image/webp`), and complete avatar metadata persistence (`profileImageUrl` and `profileImagePath`) in Firestore `customers/{uid}`.
+  - Development diagnostic (`runStorageDiagnostic`) repaired to use PNG byte buffers, test authorized upload, verify unauthorized upload RLS rejection, and test file cleanup.
+  - Fixed claim script instructions in `profile.tsx` to point to `node scripts/assign-firebase-custom-claims.js`.
+  - Resolved Firestore profile timeout causes by standardizing timeouts to 8000ms and removing production mock fallbacks.
 
 ---
 
@@ -29,9 +32,9 @@ Batch 01 (Authentication Hardening & Role Protection) is completed:
 | `src/app/(customer)/_layout.tsx` | Customer stack layout | Complete (Role guard & suspended block) |
 | `src/app/(barber)/_layout.tsx` | Barber stack layout | Complete (Role guard & suspended block) |
 | `src/app/(admin)/_layout.tsx` | Admin stack layout | Complete (Role guard & suspended block) |
-| `src/app/(customer)/home.tsx` | Customer main dashboard | Partial (Wired to `useCustomerHome` hook) |
-| `src/app/(customer)/explore.tsx` | Barber search & filter screen | Mock data fallback in repository |
-| `src/app/(customer)/favorites.tsx` | Favorite barbers list | Mock data fallback in repository |
+| `src/app/(customer)/home.tsx` | Customer main dashboard | Complete (Immediate non-blocking render) |
+| `src/app/(customer)/explore.tsx` | Barber search & filter screen | Complete |
+| `src/app/(customer)/favorites.tsx` | Favorite barbers list | Complete |
 | `src/app/(customer)/chat.tsx` | Customer chat conversations list | Static mock list |
 | `src/app/(customer)/chat/[conversationId].tsx` | Chat room UI with local message state | UI complete / No real-time backend |
 | `src/app/(customer)/barber/[barberId].tsx` | Barber detail view | Mock data fallback in repository |
@@ -43,18 +46,11 @@ Batch 01 (Authentication Hardening & Role Protection) is completed:
 | `src/app/(customer)/booking/detail/[bookingId].tsx` | Active booking detail | Complete UI |
 | `src/app/(customer)/booking/history/[bookingId].tsx` | Completed booking detail view | Complete UI |
 | `src/app/(customer)/booking/rating/[bookingId].tsx` | Review submission screen | Complete UI |
-| `src/app/(customer)/profile.tsx` | Profile menu overview | Complete UI |
+| `src/app/(customer)/profile.tsx` | Profile menu overview & avatar upload | Complete (Supabase Storage upload & Firestore persistence) |
 
 ---
 
-## 3. Completed Batches
-
-- **Batch 01 (Auth Hardening & Role Protection)**: COMPLETED. Canonical roles (`customer`, `barber`, `admin`) stored in `users/{uid}`, Firebase Auth email/password flows active, role-aware routing and suspended user blocking implemented across layout files.
-- **Batch 02 (Supabase Storage Foundation)**: COMPLETED. Storage client, types, config, SQL security policies, and Node custom claims script created.
-
----
-
-## 4. Required Validation Commands
+## 3. Required Validation Commands
 
 - `npm run check`
 - `npm run doctor`

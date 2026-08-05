@@ -6,6 +6,7 @@ import { useAuth } from '@/features/auth/hooks/use-auth';
 import { useCustomerProfile } from '@/features/customer/hooks/use-customer-profile';
 import { pickImage, storageService } from '@/features/services/storage.service';
 import { firebaseAuth } from '@/lib/firebase';
+import { updateProfile as updateFirebaseProfile } from 'firebase/auth';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
@@ -18,7 +19,7 @@ const items = [
 ] as const;
 
 export default function ProfileScreen() {
-  const { user, logout } = useAuth();
+  const { user, logout, reloadUser } = useAuth();
   const customerId = user?.uid || '';
 
   const { profile, updateProfile, refresh } = useCustomerProfile(customerId);
@@ -28,7 +29,12 @@ export default function ProfileScreen() {
   const [isError, setIsError] = useState(false);
 
   const displayName = profile?.name || user?.displayName || 'Customer URBarber';
-  const avatarUrl = uploadedAvatarUrl || profile?.profileImageUrl;
+  const avatarUrl =
+    uploadedAvatarUrl ||
+    profile?.profileImageUrl ||
+    (profile as any)?.profileImage ||
+    user?.photoURL ||
+    firebaseAuth.currentUser?.photoURL;
 
   const handleAvatarPress = async () => {
     if (uploading) return;
@@ -50,37 +56,55 @@ export default function ProfileScreen() {
 
       if (userRole !== 'authenticated') {
         throw new Error(
-          `Custom claim Firebase (role: authenticated) belum aktif untuk UID ${currentUser.uid}.\nJalankan perintah:\nnode secrets/set-user-claims.mjs ${currentUser.uid} customer`,
+          `Custom claim Firebase (role: authenticated) belum aktif untuk UID ${currentUser.uid}.\nJalankan perintah:\nnode scripts/assign-firebase-custom-claims.js --uid=${currentUser.uid} --app_role=customer`,
         );
       }
 
       setStatusMessage('Mengunggah foto ke Supabase Storage...');
 
-      // Upload image to public-media bucket under user's UID folder
+      // Upload image to fixed single profile path in public-media with upsert=true (overwrites existing file)
       const uploadResult = await storageService.uploadPublicFile(
         picked.uri,
         'avatars',
         {
-          filename: `avatar-${Date.now()}`,
+          filename: 'avatar',
           contentType: picked.mimeType ?? 'image/jpeg',
           upsert: true,
         },
       );
 
+      // Append timestamp query parameter to bypass browser/client image cache
+      const cacheBustedUrl = `${uploadResult.publicUrl}?t=${Date.now()}`;
+
       // Immediately point avatar URL on screen to the new Supabase URL
-      setUploadedAvatarUrl(uploadResult.publicUrl);
+      setUploadedAvatarUrl(cacheBustedUrl);
       setStatusMessage('Memperbarui profil...');
 
-      // Persist to Firestore
-      await updateProfile({
-        profileImageUrl: uploadResult.publicUrl,
+      // 1. Persist photoURL natively to Firebase Auth User Account
+      try {
+        await updateFirebaseProfile(currentUser, {
+          photoURL: cacheBustedUrl,
+        });
+      } catch (authErr) {
+        console.warn('Unable to update Firebase Auth user photoURL:', authErr);
+      }
+
+      // 2. Persist profileImageUrl and profileImagePath to Firestore
+      const updateRes = await updateProfile({
+        profileImageUrl: cacheBustedUrl,
+        profileImagePath: uploadResult.path,
       });
+
+      if (updateRes && !updateRes.success) {
+        throw new Error(updateRes.error?.message || 'Gagal memperbarui data profil di Firestore.');
+      }
 
       setStatusMessage('Avatar berhasil diperbarui!');
       setIsError(false);
 
       // Background refresh
       void refresh();
+      void reloadUser();
     } catch (err: any) {
       console.error('Upload avatar error:', err);
       setStatusMessage(err?.message || 'Gagal mengunggah avatar.');
@@ -135,12 +159,12 @@ export default function ProfileScreen() {
         {statusMessage ? (
           <View
             className={`mt-4 rounded-xl p-3 w-full border ${
-              isError ? 'bg-rose-50 border-rose-200' : 'bg-emerald-50 border-emerald-200'
+              isError ? 'bg-[#FFF5F5] border-[#FEB2B2]' : 'bg-[#F0FFF4] border-[#9AE6B4]'
             }`}
           >
             <Text
               className={`text-center text-xs font-medium ${
-                isError ? 'text-rose-800' : 'text-emerald-800'
+                isError ? 'text-[#9B2C2C]' : 'text-[#22543D]'
               }`}
             >
               {statusMessage}

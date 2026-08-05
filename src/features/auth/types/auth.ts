@@ -43,6 +43,7 @@ export interface AuthUser {
   email: string | null;
   displayName: string | null;
   phoneNumber?: string | null;
+  photoURL?: string | null;
   role: UserRole;
   status: UserStatus;
   emailVerified: boolean;

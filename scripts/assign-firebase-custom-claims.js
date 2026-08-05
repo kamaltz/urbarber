@@ -9,46 +9,84 @@
  * Usage:
  *   node ./scripts/assign-firebase-custom-claims.js --uid=<USER_UID> [--app_role=customer|barber|admin]
  *   node ./scripts/assign-firebase-custom-claims.js --all
- *
- * Environment variables required:
- *   GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
- *   (or EXPO_PUBLIC_FIREBASE_PROJECT_ID if using default credentials)
  */
 
-const admin = require("firebase-admin");
+const fs = require("fs");
+const path = require("path");
+
+let initializeApp, cert, getApps, applicationDefault, getAuth, getFirestore;
+
+try {
+  const adminApp = require("firebase-admin/app");
+  const adminAuth = require("firebase-admin/auth");
+  const adminFirestore = require("firebase-admin/firestore");
+  initializeApp = adminApp.initializeApp;
+  cert = adminApp.cert;
+  getApps = adminApp.getApps;
+  applicationDefault = adminApp.applicationDefault;
+  getAuth = adminAuth.getAuth;
+  getFirestore = adminFirestore.getFirestore;
+} catch (e) {
+  const admin = require("firebase-admin");
+  const base = admin.default || admin;
+  initializeApp = base.initializeApp ? base.initializeApp.bind(base) : admin.initializeApp;
+  cert = base.credential?.cert ? base.credential.cert.bind(base.credential) : admin.cert;
+  getApps = () => base.apps || admin.getApps?.() || [];
+  applicationDefault = base.credential?.applicationDefault
+    ? base.credential.applicationDefault.bind(base.credential)
+    : admin.applicationDefault;
+  getAuth = (app) => (base.auth ? base.auth(app) : admin.getAuth(app));
+  getFirestore = (app) => (base.firestore ? base.firestore(app) : admin.getFirestore(app));
+}
+
+let appInstance = null;
 
 function initializeFirebaseAdmin() {
-  if (admin.apps.length > 0) {
-    return admin.app();
+  const apps = getApps();
+  if (apps && apps.length > 0) {
+    appInstance = apps[0];
+    return appInstance;
   }
 
-  const serviceAccountPath =
+  const explicitPath =
     process.env.GOOGLE_APPLICATION_CREDENTIALS || process.env.FIREBASE_ADMIN_SERVICE_ACCOUNT;
 
+  const defaultSecretPath = path.resolve("secrets/firebase-service-account.json");
+
+  let serviceAccountPath = null;
+  if (explicitPath) {
+    serviceAccountPath = path.resolve(explicitPath);
+  } else if (fs.existsSync(defaultSecretPath)) {
+    serviceAccountPath = defaultSecretPath;
+  }
+
   if (serviceAccountPath) {
-    const serviceAccount = require(require("path").resolve(serviceAccountPath));
-    return admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
+    const serviceAccount = require(serviceAccountPath);
+    appInstance = initializeApp({
+      credential: cert(serviceAccount),
     });
+    return appInstance;
   }
 
   const projectId = process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID || process.env.FIREBASE_PROJECT_ID;
 
   if (!projectId) {
     console.error("ERROR: No Firebase Admin service account or project ID configured.");
-    console.error("Set GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json or EXPO_PUBLIC_FIREBASE_PROJECT_ID.");
+    console.error("Place service account at secrets/firebase-service-account.json or set GOOGLE_APPLICATION_CREDENTIALS.");
     process.exit(1);
   }
 
-  return admin.initializeApp({
-    credential: admin.credential.applicationDefault(),
+  appInstance = initializeApp({
+    credential: applicationDefault(),
     projectId,
   });
+  return appInstance;
 }
 
 async function getUserAppRoleFromFirestore(uid) {
   try {
-    const userDoc = await admin.firestore().collection("users").doc(uid).get();
+    const firestore = getFirestore(appInstance);
+    const userDoc = await firestore.collection("users").doc(uid).get();
     if (userDoc.exists && userDoc.data().role) {
       return userDoc.data().role;
     }
@@ -60,7 +98,8 @@ async function getUserAppRoleFromFirestore(uid) {
 
 async function setClaimsForUser(uid, specifiedAppRole = null) {
   try {
-    const user = await admin.auth().getUser(uid);
+    const auth = getAuth(appInstance);
+    const user = await auth.getUser(uid);
     const appRole = specifiedAppRole || (await getUserAppRoleFromFirestore(uid));
     const existingClaims = user.customClaims || {};
 
@@ -70,7 +109,7 @@ async function setClaimsForUser(uid, specifiedAppRole = null) {
       app_role: appRole,
     };
 
-    await admin.auth().setCustomUserClaims(uid, updatedClaims);
+    await auth.setCustomUserClaims(uid, updatedClaims);
     console.log(
       `[SUCCESS] Assigned claims { role: 'authenticated', app_role: '${appRole}' } to user ${uid} (${user.email || "no-email"})`,
     );
@@ -81,11 +120,12 @@ async function setClaimsForUser(uid, specifiedAppRole = null) {
 
 async function setClaimsForAllUsers() {
   try {
+    const auth = getAuth(appInstance);
     let nextPageToken;
     let count = 0;
 
     do {
-      const listUsersResult = await admin.auth().listUsers(1000, nextPageToken);
+      const listUsersResult = await auth.listUsers(1000, nextPageToken);
 
       for (const userRecord of listUsersResult.users) {
         await setClaimsForUser(userRecord.uid);
@@ -118,9 +158,6 @@ async function main() {
  Usage:
    node ./scripts/assign-firebase-custom-claims.js --uid=<USER_UID> [--app_role=customer|barber|admin]
    node ./scripts/assign-firebase-custom-claims.js --all
-
- Environment Variable:
-   GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
 ========================================================================
 `);
     process.exit(0);

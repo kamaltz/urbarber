@@ -7,11 +7,12 @@ export interface CustomerProfile {
   userId: string;
   name: string;
   email: string;
-  location: string;
+  location?: string;
   profileImageUrl?: string;
+  profileImagePath?: string;
   phone?: string;
-  createdAt: string;
-  updatedAt: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface FeaturedService {
@@ -72,6 +73,7 @@ export interface CustomerHomeData {
   userId: string;
   userName: string;
   profileImageUrl?: string;
+  profileImagePath?: string;
   featuredServices: FeaturedService[];
   barberSuggestions: BarberSuggestion[];
   notificationCount: number;
@@ -115,6 +117,7 @@ export interface UpdateProfileData {
   email?: string;
   location?: string;
   profileImageUrl?: string;
+  profileImagePath?: string;
   phone?: string;
 }
 

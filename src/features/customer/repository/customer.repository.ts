@@ -3,7 +3,7 @@
  * Data access layer for customer profile, discovery, and preferences
  */
 
-import { firestore } from '@/lib/firebase';
+import { firebaseAuth, firestore } from '@/lib/firebase';
 import { withTimeout } from '@/lib/promise';
 import {
     addDoc,
@@ -21,7 +21,6 @@ import {
 import {
     MOCK_CUSTOMER_EXPLORE_DATA,
     MOCK_CUSTOMER_HOME_DATA,
-    MOCK_CUSTOMER_PROFILE,
 } from '../mock/customers';
 import type {
     CategoryChip,
@@ -35,33 +34,57 @@ import type {
     UpdateProfileData,
 } from '../types/customer';
 
-function isOfflineError(error: unknown) {
-  if (!error || typeof error !== 'object') return false;
-  const candidate = error as { code?: string; message?: string };
-  return candidate.code === 'unavailable' || candidate.message?.toLowerCase().includes('client is offline') === true;
-}
-
 export const customerRepository = {
   /**
-   * Get customer profile with fast timeout fallback
+   * Get customer profile from Firestore (reads customers/{customerId} and users/{customerId} in parallel)
+   * Ensures profile image URL persists across relogging under any schema field name
    */
   async getCustomerProfile(customerId: string): Promise<CustomerProfile | null> {
+    if (!customerId) {
+      return null;
+    }
+
+    const currentUser = firebaseAuth.currentUser;
+    const defaultProfile: CustomerProfile = {
+      userId: customerId,
+      name: currentUser?.displayName || 'Pelanggan URBarber',
+      email: currentUser?.email || '',
+      location: '',
+    };
+
     try {
-      if (!customerId) return { ...MOCK_CUSTOMER_PROFILE, userId: customerId };
-      const docRef = doc(firestore, 'customers', customerId);
-      const snapshot = await withTimeout(getDoc(docRef), 1500, 'Customer profile fetch timed out');
+      const customerDocRef = doc(firestore, 'customers', customerId);
+      const userDocRef = doc(firestore, 'users', customerId);
 
-      if (!snapshot.exists()) return { ...MOCK_CUSTOMER_PROFILE, userId: customerId };
+      const [customerSnap, userSnap] = await Promise.allSettled([
+        withTimeout(getDoc(customerDocRef), 4000, 'Customer profile fetch timed out'),
+        withTimeout(getDoc(userDocRef), 4000, 'User profile fetch timed out'),
+      ]);
 
-      return { ...MOCK_CUSTOMER_PROFILE, userId: customerId, ...snapshot.data() } as CustomerProfile;
+      const customerData = customerSnap.status === 'fulfilled' && customerSnap.value.exists() ? customerSnap.value.data() : {};
+      const userData = userSnap.status === 'fulfilled' && userSnap.value.exists() ? userSnap.value.data() : {};
+
+      const combined = { ...userData, ...customerData };
+
+      const imageUrl = combined.profileImageUrl || combined.profileImage || combined.avatarUrl || undefined;
+      const imagePath = combined.profileImagePath || undefined;
+      const name = combined.name || combined.fullName || combined.displayName || currentUser?.displayName || 'Pelanggan URBarber';
+
+      return {
+        ...defaultProfile,
+        ...combined,
+        name,
+        profileImageUrl: imageUrl,
+        profileImagePath: imagePath,
+      } as CustomerProfile;
     } catch (error) {
-      if (!isOfflineError(error)) console.warn('Unable to fetch customer profile; using fallback.', error);
-      return { ...MOCK_CUSTOMER_PROFILE, userId: customerId };
+      console.warn('Firestore customer profile fetch timed out or offline; using auth fallback:', error);
+      return defaultProfile;
     }
   },
 
   /**
-   * Update customer profile using setDoc with merge and 3-second timeout
+   * Update customer profile using setDoc with merge across customers/{uid} and users/{uid}
    */
   async updateCustomerProfile(
     customerId: string,
@@ -76,44 +99,50 @@ export const customerRepository = {
         return { success: false, error: { message: 'No data to update' } };
       }
 
-      const docRef = doc(firestore, 'customers', customerId);
-      await withTimeout(
-        setDoc(
-          docRef,
-          {
-            userId: customerId,
-            ...data,
-            updatedAt: Timestamp.now(),
-          },
-          { merge: true },
-        ),
-        3000,
-        'Firestore profile write timed out',
-      );
+      const customerDocRef = doc(firestore, 'customers', customerId);
+      const userDocRef = doc(firestore, 'users', customerId);
+
+      const imageUrl = data.profileImageUrl;
+      const imagePath = data.profileImagePath;
+
+      const payload = {
+        userId: customerId,
+        ...data,
+        ...(imageUrl ? { profileImageUrl: imageUrl, profileImage: imageUrl, avatarUrl: imageUrl } : {}),
+        ...(imagePath ? { profileImagePath: imagePath } : {}),
+        updatedAt: Timestamp.now(),
+      };
+
+      await Promise.allSettled([
+        withTimeout(setDoc(customerDocRef, payload, { merge: true }), 5000, 'Firestore customer profile write timed out'),
+        withTimeout(setDoc(userDocRef, payload, { merge: true }), 5000, 'Firestore user write timed out'),
+      ]);
 
       return { success: true };
     } catch (error) {
-      console.warn('Unable to persist customer profile in Firestore within timeout; proceed with local update.', error);
+      console.warn('Failed to update customer profile in Firestore:', error);
+      const message = error instanceof Error ? error.message : 'Failed to update profile';
       return {
-        success: true, // Non-blocking success so UI update completes gracefully
+        success: false,
+        error: { message },
       };
     }
   },
 
   /**
-   * Get customer home data with fast timeout fallback
+   * Get customer home data
    */
   async getCustomerHomeData(customerId: string): Promise<CustomerHomeData | null> {
     try {
       if (!customerId) return { ...MOCK_CUSTOMER_HOME_DATA, userId: customerId };
       const docRef = doc(firestore, 'customerHomeData', customerId);
-      const snapshot = await withTimeout(getDoc(docRef), 1500, 'Customer home data fetch timed out');
+      const snapshot = await withTimeout(getDoc(docRef), 4000, 'Customer home data fetch timed out');
 
       if (!snapshot.exists()) return { ...MOCK_CUSTOMER_HOME_DATA, userId: customerId };
 
       return { ...MOCK_CUSTOMER_HOME_DATA, userId: customerId, ...snapshot.data() } as CustomerHomeData;
     } catch (error) {
-      if (!isOfflineError(error)) console.warn('Unable to fetch home data; using fallback.', error);
+      console.warn('Unable to fetch home data from Firestore:', error);
       return { ...MOCK_CUSTOMER_HOME_DATA, userId: customerId };
     }
   },
@@ -125,13 +154,13 @@ export const customerRepository = {
     try {
       if (!customerId) return { ...MOCK_CUSTOMER_EXPLORE_DATA, userId: customerId };
       const docRef = doc(firestore, 'customerExploreData', customerId);
-      const snapshot = await withTimeout(getDoc(docRef), 1500, 'Customer explore data fetch timed out');
+      const snapshot = await withTimeout(getDoc(docRef), 4000, 'Customer explore data fetch timed out');
 
       if (!snapshot.exists()) return { ...MOCK_CUSTOMER_EXPLORE_DATA, userId: customerId };
 
       return { ...MOCK_CUSTOMER_EXPLORE_DATA, userId: customerId, ...snapshot.data() } as CustomerExploreData;
     } catch (error) {
-      if (!isOfflineError(error)) console.warn('Unable to fetch explore data; using fallback.', error);
+      console.warn('Unable to fetch explore data from Firestore:', error);
       return { ...MOCK_CUSTOMER_EXPLORE_DATA, userId: customerId };
     }
   },
@@ -152,7 +181,7 @@ export const customerRepository = {
         searchQueryRef = firestoreQuery(barbersRef, where('serviceType', 'array-contains', filters.category));
       }
 
-      const snapshot = await withTimeout(getDocs(searchQueryRef), 2000, 'Barbers search timed out');
+      const snapshot = await withTimeout(getDocs(searchQueryRef), 4000, 'Barbers search timed out');
       const barbers = snapshot.docs.map((doc) => ({
         ...(doc.data() as object),
         id: doc.id,
@@ -177,7 +206,7 @@ export const customerRepository = {
         featuredBarber: (filtered[0] as any) || MOCK_CUSTOMER_EXPLORE_DATA.featuredBarber,
       } as unknown as CustomerExploreData;
     } catch (error) {
-      console.error('Error searching barbers:', error);
+      console.warn('Error searching barbers:', error);
       return MOCK_CUSTOMER_EXPLORE_DATA;
     }
   },
@@ -192,7 +221,7 @@ export const customerRepository = {
         where('customerId', '==', customerId),
       );
 
-      const snapshot = await withTimeout(getDocs(q), 1500, 'Favorites fetch timed out');
+      const snapshot = await withTimeout(getDocs(q), 4000, 'Favorites fetch timed out');
       const favorites = snapshot.docs.map((doc) => (doc.data() as any).barberId);
 
       return {
@@ -205,7 +234,7 @@ export const customerRepository = {
         })) as any,
       } as unknown as CustomerFavoritesData;
     } catch (error) {
-      console.error('Error fetching favorite barbers:', error);
+      console.warn('Error fetching favorite barbers:', error);
       return null;
     }
   },
@@ -272,7 +301,7 @@ export const customerRepository = {
         suggestedLocations: filtered as any,
       };
     } catch (error) {
-      console.error('Error searching locations:', error);
+      console.warn('Error searching locations:', error);
       return {
         recentSearches: [],
         suggestedLocations: [],
@@ -296,7 +325,7 @@ export const customerRepository = {
         id: doc.id,
       })) as CustomerNotification[];
     } catch (error) {
-      console.error('Error fetching notifications:', error);
+      console.warn('Error fetching notifications:', error);
       return [];
     }
   },
@@ -343,7 +372,7 @@ export const customerRepository = {
         id: doc.id,
       })) as RecentSearch[];
     } catch (error) {
-      console.error('Error fetching recent searches:', error);
+      console.warn('Error fetching recent searches:', error);
       return [];
     }
   },
@@ -445,7 +474,7 @@ export const customerRepository = {
       const snapshot = await getDocs(q);
       return snapshot.size;
     } catch (error) {
-      console.error('Error fetching unread notification count:', error);
+      console.warn('Error fetching unread notification count:', error);
       return 0;
     }
   },

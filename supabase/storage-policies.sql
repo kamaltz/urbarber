@@ -2,77 +2,23 @@
 -- URBarber - Supabase Storage Buckets & RLS Security Policies
 -- ============================================================================
 -- Purpose:
---   1. Alter storage.objects.owner and owner_id columns to TEXT (Firebase 28-char text UID compatibility).
---   2. Create safe auth helper functions for Firebase Auth text UIDs (non-UUID).
---   3. Create public (public-media) and private (private-documents) storage buckets.
---   4. Configure Row Level Security (RLS) on storage.objects for Firebase Auth JWTs.
---   5. Restrict file writes strictly to the user's own Firebase UID folder.
---   6. Allow platform administrators (app_role = 'admin') to read private verification documents.
+--   1. Initialize public-media and private-documents buckets idempotently.
+--   2. Configure Row Level Security (RLS) on storage.objects for Firebase Auth JWTs.
+--   3. Restrict file operations strictly to the user's own Firebase UID folder using (storage.foldername(name))[1] = (auth.jwt() ->> 'sub').
+--   4. Allow platform administrators (app_role = 'admin') to read private verification documents.
+--
+-- Note:
+--   - Does NOT alter storage.objects.owner or owner_id columns.
+--   - Does NOT replace or override auth.uid().
+--   - Does NOT drop all policies on storage.objects dynamically.
+--   - Uses (auth.jwt() ->> 'sub') text matching without ::uuid casting.
 --
 -- How to apply:
---   Run this file in the Supabase Dashboard -> SQL Editor (or local Supabase).
+--   Run this file in the Supabase Dashboard -> SQL Editor.
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------
--- 1. ALTER STORAGE.OBJECTS OWNER & OWNER_ID COLUMNS TO TEXT (FIREBASE TEXT UID SUPPORT)
--- ----------------------------------------------------------------------------
-
--- Remove default constraints calling auth.uid()::uuid and alter owner/owner_id columns to text
-ALTER TABLE storage.objects ALTER COLUMN owner DROP DEFAULT;
-ALTER TABLE storage.objects ALTER COLUMN owner DROP NOT NULL;
-ALTER TABLE storage.objects ALTER COLUMN owner TYPE text USING owner::text;
-
-DO $$
-BEGIN
-  IF EXISTS (
-    SELECT 1 FROM information_schema.columns 
-    WHERE table_schema = 'storage' AND table_name = 'objects' AND column_name = 'owner_id'
-  ) THEN
-    ALTER TABLE storage.objects ALTER COLUMN owner_id DROP DEFAULT;
-    ALTER TABLE storage.objects ALTER COLUMN owner_id DROP NOT NULL;
-    ALTER TABLE storage.objects ALTER COLUMN owner_id TYPE text USING owner_id::text;
-  END IF;
-END $$;
-
--- ----------------------------------------------------------------------------
--- 2. SAFE AUTH HELPERS FOR FIREBASE UIDs
--- ----------------------------------------------------------------------------
-
--- Override auth.uid() to safely return NULL when JWT 'sub' is a 28-char Firebase text UID
--- instead of crashing with "invalid input syntax for type uuid"
-CREATE OR REPLACE FUNCTION auth.uid()
-RETURNS uuid
-LANGUAGE sql STABLE
-AS $$
-  SELECT CASE
-    WHEN (COALESCE(
-      nullif(current_setting('request.jwt.claim.sub', true), ''),
-      nullif((current_setting('request.jwt.claims', true)::jsonb ->> 'sub'), ''),
-      nullif((current_setting('request.jwt.claims', true)::jsonb ->> 'user_id'), '')
-    )) ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-    THEN (COALESCE(
-      nullif(current_setting('request.jwt.claim.sub', true), ''),
-      nullif((current_setting('request.jwt.claims', true)::jsonb ->> 'sub'), ''),
-      nullif((current_setting('request.jwt.claims', true)::jsonb ->> 'user_id'), '')
-    ))::uuid
-    ELSE NULL
-  END
-$$;
-
--- Helper function returning raw Firebase text UID
-CREATE OR REPLACE FUNCTION auth.firebase_uid()
-RETURNS text
-LANGUAGE sql STABLE
-AS $$
-  SELECT COALESCE(
-    nullif(current_setting('request.jwt.claim.sub', true), ''),
-    nullif((current_setting('request.jwt.claims', true)::jsonb ->> 'sub'), ''),
-    nullif((current_setting('request.jwt.claims', true)::jsonb ->> 'user_id'), '')
-  )
-$$;
-
--- ----------------------------------------------------------------------------
--- 3. BUCKET INITIALIZATION
+-- 1. BUCKET INITIALIZATION (Idempotent)
 -- ----------------------------------------------------------------------------
 
 -- Insert or update public-media bucket (Public access for avatars, barbers, services)
@@ -104,27 +50,23 @@ ON CONFLICT (id) DO UPDATE SET
   allowed_mime_types = ARRAY['image/jpeg', 'image/png', 'application/pdf'];
 
 -- ----------------------------------------------------------------------------
--- 4. ENABLE ROW LEVEL SECURITY & CLEAN OLD POLICIES
+-- 2. ENABLE ROW LEVEL SECURITY
 -- ----------------------------------------------------------------------------
 
-ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
+-- Explicitly drop only known URBarber legacy policies for idempotent re-execution
+DROP POLICY IF EXISTS "Public Read Access for public-media" ON storage.objects;
+DROP POLICY IF EXISTS "Authenticated Upload to public-media" ON storage.objects;
+DROP POLICY IF EXISTS "Authenticated Update in public-media" ON storage.objects;
+DROP POLICY IF EXISTS "Authenticated Delete in public-media" ON storage.objects;
 
--- Drop all existing policies on storage.objects to remove old default policies using auth.uid()::uuid
-DO $$
-DECLARE
-  pol record;
-BEGIN
-  FOR pol IN
-    SELECT policyname
-    FROM pg_policies
-    WHERE tablename = 'objects' AND schemaname = 'storage'
-  LOOP
-    EXECUTE format('DROP POLICY IF EXISTS %I ON storage.objects', pol.policyname);
-  END LOOP;
-END $$;
+DROP POLICY IF EXISTS "Owner or Admin Read Access for private-documents" ON storage.objects;
+DROP POLICY IF EXISTS "Owner Read Access for private-documents" ON storage.objects;
+DROP POLICY IF EXISTS "Owner Upload to private-documents" ON storage.objects;
+DROP POLICY IF EXISTS "Owner Update in private-documents" ON storage.objects;
+DROP POLICY IF EXISTS "Owner Delete in private-documents" ON storage.objects;
 
 -- ----------------------------------------------------------------------------
--- 5. RLS POLICIES FOR PUBLIC-MEDIA BUCKET
+-- 3. RLS POLICIES FOR PUBLIC-MEDIA BUCKET
 -- ----------------------------------------------------------------------------
 
 -- Policy 1: Anyone (public or authenticated) can view/download public media
@@ -136,38 +78,46 @@ USING (bucket_id = 'public-media');
 -- e.g. path: public-media/{user_uid}/avatars/avatar.jpg
 CREATE POLICY "Authenticated Upload to public-media"
 ON storage.objects FOR INSERT
+TO authenticated
 WITH CHECK (
   bucket_id = 'public-media'
-  AND split_part(name, '/', 1) = auth.firebase_uid()
+  AND (storage.foldername(name))[1] = (auth.jwt() ->> 'sub')
 );
 
 -- Policy 3: Authenticated users can update files ONLY inside their own Firebase UID folder
 CREATE POLICY "Authenticated Update in public-media"
 ON storage.objects FOR UPDATE
+TO authenticated
 USING (
   bucket_id = 'public-media'
-  AND split_part(name, '/', 1) = auth.firebase_uid()
+  AND (storage.foldername(name))[1] = (auth.jwt() ->> 'sub')
+)
+WITH CHECK (
+  bucket_id = 'public-media'
+  AND (storage.foldername(name))[1] = (auth.jwt() ->> 'sub')
 );
 
 -- Policy 4: Authenticated users can delete files ONLY inside their own Firebase UID folder
 CREATE POLICY "Authenticated Delete in public-media"
 ON storage.objects FOR DELETE
+TO authenticated
 USING (
   bucket_id = 'public-media'
-  AND split_part(name, '/', 1) = auth.firebase_uid()
+  AND (storage.foldername(name))[1] = (auth.jwt() ->> 'sub')
 );
 
 -- ----------------------------------------------------------------------------
--- 6. RLS POLICIES FOR PRIVATE-DOCUMENTS BUCKET
+-- 4. RLS POLICIES FOR PRIVATE-DOCUMENTS BUCKET
 -- ----------------------------------------------------------------------------
 
 -- Policy 5: File owner (matching UID folder) OR Admin (app_role = 'admin') can read private documents
 CREATE POLICY "Owner or Admin Read Access for private-documents"
 ON storage.objects FOR SELECT
+TO authenticated
 USING (
   bucket_id = 'private-documents'
   AND (
-    split_part(name, '/', 1) = auth.firebase_uid()
+    (storage.foldername(name))[1] = (auth.jwt() ->> 'sub')
     OR (auth.jwt() ->> 'app_role' = 'admin')
   )
 );
@@ -175,23 +125,30 @@ USING (
 -- Policy 6: Only the file owner can upload files to private-documents inside their own Firebase UID folder
 CREATE POLICY "Owner Upload to private-documents"
 ON storage.objects FOR INSERT
+TO authenticated
 WITH CHECK (
   bucket_id = 'private-documents'
-  AND split_part(name, '/', 1) = auth.firebase_uid()
+  AND (storage.foldername(name))[1] = (auth.jwt() ->> 'sub')
 );
 
 -- Policy 7: Only the file owner can update files in private-documents inside their own Firebase UID folder
 CREATE POLICY "Owner Update in private-documents"
 ON storage.objects FOR UPDATE
+TO authenticated
 USING (
   bucket_id = 'private-documents'
-  AND split_part(name, '/', 1) = auth.firebase_uid()
+  AND (storage.foldername(name))[1] = (auth.jwt() ->> 'sub')
+)
+WITH CHECK (
+  bucket_id = 'private-documents'
+  AND (storage.foldername(name))[1] = (auth.jwt() ->> 'sub')
 );
 
 -- Policy 8: Only the file owner can delete files in private-documents inside their own Firebase UID folder
 CREATE POLICY "Owner Delete in private-documents"
 ON storage.objects FOR DELETE
+TO authenticated
 USING (
   bucket_id = 'private-documents'
-  AND split_part(name, '/', 1) = auth.firebase_uid()
+  AND (storage.foldername(name))[1] = (auth.jwt() ->> 'sub')
 );
