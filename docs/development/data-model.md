@@ -1,252 +1,186 @@
-# URBarber Data Model & Firestore Schema Specification
+# URBarber Data Model & Storage Specification
 
-## 1. Domain Types vs Feature Types Overview
-
-The codebase currently contains domain entity definitions in `src/types/domain.ts` alongside feature-specific models in `src/features/*/types/`. To ensure data integrity across customer, barber, and admin modules, all Firestore documents must map to unified domain schemas.
-
----
-
-## 2. Status Enum Harmonization Matrix
-
-Existing type definitions contain conflicting status strings across feature folders. The table below defines the **Harmonized Canonical Enums** required for full platform alignment:
-
-### 2.1 User Enums
-```typescript
-export type UserRole = 'customer' | 'barber' | 'admin';
-
-export type UserStatus = 'active' | 'pending_verification' | 'suspended' | 'inactive';
-
-export type VerificationStatus = 'pending' | 'approved' | 'rejected' | 'flagged';
-```
-
-### 2.2 Booking Status Enum Mapping
-```typescript
-// Canonical Booking Status Enum across Domain, Customer, Barber, and Admin
-export type BookingStatus =
-  | 'pending'     // Customer requested, awaiting barber confirmation
-  | 'waiting'     // Confirmed/Accepted by barber, awaiting appointment date/time
-  | 'booked'      // Payment completed / slot secured
-  | 'on_process'  // Service currently being rendered (in progress)
-  | 'finished'    // Service completed by barber
-  | 'cancelled';   // Cancelled by customer, barber, or system
-```
-
-#### Legacy Status Conversion Table
-| Legacy / Feature Status | Canonical Firestore Value | UI Display Label (Indonesian) |
-| --- | --- | --- |
-| `in_progress` | `on_process` | Dalam Proses |
-| `accepted` | `waiting` | Menunggu |
-| `completed` | `finished` | Selesai |
-| `rejected` | `cancelled` | Dibatalkan |
-
-### 2.3 Moderation Status Enum
-```typescript
-export type ModerationStatus = 'pending' | 'approved' | 'rejected' | 'flagged';
-```
+## 1. Overview
+This document specifies the authoritative Cloud Firestore collection schemas, Supabase Storage bucket layout, and database security rules for URBarber.
 
 ---
 
-## 3. Firestore Collection Schemas
+## 2. Cloud Firestore Schema Specification
 
-### 3.1 `customers` Collection
-Doc ID: `userId` (Firebase Auth UID)
+### 2.1 Collection: `users`
+Primary user document indexed by Firebase Auth `uid`.
+```typescript
+interface UserDocument {
+  uid: string;                 // Firebase Auth UID
+  email: string;
+  name: string;
+  phoneNumber?: string;
+  role: "customer" | "barber" | "admin";  // Canonical UserRole
+  status: "active" | "pending_verification" | "suspended";
+  avatarUrl?: string;          // Public URL from Supabase Storage
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+```
+
+### 2.2 Collection: `customers`
+Customer specific profile document indexed by `userId` (matches `uid`).
 ```typescript
 interface CustomerDocument {
   userId: string;
   email: string;
   fullName: string;
-  phoneNumber: string;
-  profileImage: string | null;
-  role: 'customer';
-  status: UserStatus;
-  verificationStatus: VerificationStatus;
-  membershipTier?: 'bronze' | 'silver' | 'gold' | 'platinum';
-  selectedCategories?: string[];
+  phoneNumber?: string;
+  address?: string;
+  profileImage?: string;       // Supabase Storage URL
+  role: "customer";
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
 ```
 
-### 3.2 `barbers` Collection
-Doc ID: `barberId` (Firebase Auth UID)
+### 2.3 Collection: `barbers`
+Barber profile document indexed by `barberId` (matches `uid`).
 ```typescript
 interface BarberDocument {
-  barberId: string;
+  id: string;                  // Barber ID (matches user UID)
   userId: string;
-  name: string;
-  email: string;
-  phoneNumber: string;
+  displayName: string;
   description: string;
   address: string;
-  serviceType: string[];          // e.g., ['Haircut', 'Shave', 'Coloring']
-  ratingAverage: number;          // e.g., 4.8
-  reviewCount: number;
-  verified: boolean;
-  verificationStatus: VerificationStatus;
-  imageUrl: string | null;
-  status: UserStatus;
-  location?: {
-    latitude: number;
-    longitude: number;
-  };
+  ratingAverage: number;       // e.g. 4.8
+  reviewCount: number;         // e.g. 124
+  verified: boolean;           // Approved by admin (F-25)
+  verificationStatus: "pending" | "approved" | "rejected";
+  imageUrl?: string;           // Supabase Storage URL
+  serviceTypes: string[];      // Array of category IDs offered
+  status: "active" | "suspended";
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
 ```
 
-### 3.3 `barberServices` Collection
-Doc ID: `serviceId` (Auto-generated)
+### 2.4 Collection: `barberServices`
+Services offered by barbers.
 ```typescript
 interface BarberServiceDocument {
-  serviceId: string;
-  barberId: string;
-  name: string;
-  description: string;
-  price: number;                  // Currency value in IDR
-  durationMinutes: number;
-  active: boolean;
+  id: string;                  // Auto-generated Firestore ID
+  barberId: string;            // Foreign key to barbers document
+  categoryId: string;          // Foreign key to categories document
+  name: string;                // e.g. "Gentleman Haircut"
+  description?: string;
+  price: number;               // Price in IDR
+  durationMinutes: number;     // Estimated duration in minutes
+  active: boolean;             // Service availability toggle
+  imageUrl?: string;           // Supabase Storage URL
   createdAt: Timestamp;
-  updatedAt?: Timestamp;
+  updatedAt: Timestamp;
 }
 ```
 
-### 3.4 `barberSchedules` Collection
-Doc ID: `barberId`
+### 2.5 Collection: `categories`
+Global service categories managed by Admin (F-28).
+```typescript
+interface CategoryDocument {
+  id: string;                  // e.g. "haircut", "shaving", "styling"
+  name: string;                // Display name
+  description?: string;
+  icon?: string;
+  active: boolean;
+  order: number;               // Display sorting index
+  createdAt: Timestamp;
+}
+```
+
+### 2.6 Collection: `barberSchedules`
+Operating schedule and time slots for barbers (F-19).
 ```typescript
 interface BarberScheduleDocument {
-  barberId: string;
-  schedule: Record<string, {
-    isOpen: boolean;
-    openTime: string;             // e.g., '09:00'
-    closeTime: string;            // e.g., '21:00'
-  }>;
-  availableSlots?: string[];      // e.g., ['09:00', '10:00', '11:00']
+  barberId: string;            // Primary Key (matches barber ID)
+  weeklySchedule: {
+    [dayOfWeek: string]: {     // "monday", "tuesday", etc.
+      isOpen: boolean;
+      openTime: string;        // "09:00"
+      closeTime: string;       // "18:00"
+    };
+  };
+  unavailableDates: string[];  // ["2026-08-17", "2026-12-25"]
   updatedAt: Timestamp;
 }
 ```
 
-### 3.5 `bookings` Collection
-Doc ID: `bookingId` (Auto-generated)
+### 2.7 Collection: `bookings`
+Home-service booking transactions. Uses canonical booking status.
 ```typescript
 interface BookingDocument {
-  bookingId: string;
-  customerId: string;
-  barberId: string;
-  bookingType: 'home' | 'onsite';
-  scheduledAt: string;            // ISO Date string 'YYYY-MM-DD'
-  scheduledTime: string;          // e.g., '10:00'
-  status: BookingStatus;
-  verificationStatus?: VerificationStatus;
-  flaggedReason?: string;
-  address?: string;
-  locationNotes?: string;
-  services: Array<{
-    id: string;
-    name: string;
-    price: number;
-    durationMinutes?: number;
-  }>;
-  subtotal: number;
-  travelFee: number;
-  handlingFee: number;
-  discount: number;
-  couponCode?: string;
-  totalPrice: number;
-  paymentMethod?: 'bank_transfer' | 'e_wallet' | 'cash';
-  paymentStatus?: 'pending' | 'completed' | 'failed';
+  id: string;                  // Auto-generated Firestore ID
+  customerId: string;          // Foreign key to customers
+  barberId: string;            // Foreign key to barbers
+  serviceId: string;           // Foreign key to barberServices
+  serviceName: string;
+  date: string;                // YYYY-MM-DD
+  startTime: string;           // HH:mm (e.g. "14:00")
+  address: string;             // Home service location
+  notes?: string;              // Special instructions
+  totalPrice: number;          // Total price in IDR
+  status: "pending" | "accepted" | "rejected" | "in_progress" | "completed" | "cancelled";
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
 ```
 
-### 3.6 `reviews` Collection
-Doc ID: `reviewId` (Auto-generated)
+### 2.8 Collection: `reviews`
+Ratings and reviews submitted by customers after booking completion (F-13).
 ```typescript
 interface ReviewDocument {
-  reviewId: string;
-  bookingId: string;
+  id: string;                  // Auto-generated Firestore ID
+  bookingId: string;           // Foreign key to bookings (Unique)
   customerId: string;
   barberId: string;
-  rating: number;                 // Integer 1..5
-  reviewText: string;
-  tags?: string[];                // e.g., ['Ramah', 'Rapi', 'Tepat Waktu']
-  barberReply?: string;
-  barberReplyAt?: Timestamp;
-  moderationStatus: ModerationStatus;
-  moderatedBy?: string;
-  moderationReason?: string;
+  rating: number;              // 1 to 5
+  comment?: string;
+  barberReply?: string;        // Barber response (F-16)
   createdAt: Timestamp;
-  updatedAt?: Timestamp;
 }
 ```
 
-### 3.7 `conversations` Collection & `messages` Sub-collection
-Doc ID: `conversationId` (Auto-generated)
+### 2.9 Collection: `favorites`
+Customer favorite barbers list.
 ```typescript
-interface ConversationDocument {
-  conversationId: string;
-  participants: string[];         // Array of UIDs [customerId, barberId/adminId]
-  participantDetails: Record<string, {
-    name: string;
-    avatarUrl?: string;
-    role: UserRole;
-  }>;
-  lastMessage: string;
-  lastMessageTimestamp: Timestamp;
-  unreadCount: Record<string, number>; // UID -> unread count
+interface FavoriteDocument {
+  id: string;
+  customerId: string;
+  barberId: string;
   createdAt: Timestamp;
-}
-
-// Sub-collection: conversations/{conversationId}/messages/{messageId}
-interface MessageDocument {
-  messageId: string;
-  senderId: string;
-  content: string;
-  timestamp: Timestamp;
-  read: boolean;
-}
-```
-
-### 3.8 `supportTickets` Collection
-Doc ID: `ticketId` (Auto-generated)
-```typescript
-interface SupportTicketDocument {
-  ticketId: string;
-  userId: string;
-  userRole: UserRole;
-  subject: string;
-  category: string;
-  status: 'open' | 'in_progress' | 'resolved' | 'closed';
-  priority: 'low' | 'medium' | 'high';
-  assignedTo?: string;
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
 }
 ```
 
 ---
 
-## 4. Entity Relationships & Normalization Rules
+## 3. Supabase Storage Bucket Schema
 
-```
-  ┌──────────────┐         1:N         ┌──────────────┐
-  │  customers   ├────────────────────►│   bookings   │
-  └──────────────┘                     └──────┬───────┘
-                                              │
-  ┌──────────────┐         1:N                │ 1:1
-  │   barbers    ├────────────────────────────┼──────────────┐
-  └──────┬───────┘                            │              │
-         │                                    ▼              ▼
-     1:N │                             ┌──────────────┐┌──────────────┐
-         ├────────────────────────────►│   reviews    ││ conversations│
-         │                             └──────────────┘└──────────────┘
-         │ 1:N
-         ├────────────────────────────► barberServices
-         │
-         │ 1:1
-         └────────────────────────────► barberSchedules
-```
+### 3.1 Bucket: `public-media`
+- **Visibility**: Public (Read access granted to anonymous/authenticated users).
+- **Structure**:
+  ```
+  public-media/
+  ├── avatars/{userId}/avatar.jpg
+  ├── barbers/{barberId}/storefront.jpg
+  ├── services/{serviceId}/service.jpg
+  └── verifications/{barberId}/identity.jpg
+  ```
 
-1. **Booking Denormalization**: `bookings` documents store snapshot copies of `services` (service name and price at the time of booking) to prevent historical invoice mutation when a barber changes service prices.
-2. **Aggregated Ratings**: `barbers` documents store `ratingAverage` and `reviewCount` denormalized for fast listing queries. Every new review write trigger updates these fields atomically.
-3. **Participant Indexes**: `conversations` store an array of participant UIDs in `participants` to enable Firestore `array-contains` index queries across all roles.
+---
+
+## 4. Firestore & Supabase Security Rules Guidelines
+
+### 4.1 Firestore Security Rules Architecture
+- `users`: User can read their own record; admin can read/write all.
+- `customers`: Customer can write own profile (`request.auth.uid == userId`).
+- `barbers`: Barber can write own profile (`request.auth.uid == userId`); admin can update `verificationStatus`.
+- `bookings`: Customer can create booking with status `pending`. Barber can update status to `accepted`, `rejected`, `in_progress`, `completed`. Both can update status to `cancelled`.
+- `reviews`: Customer can create review only if matching booking status is `completed`.
+
+### 4.2 Supabase Storage RLS Policies
+- Policy 1 (Public Read): Allow `SELECT` on `public-media` bucket for all users.
+- Policy 2 (Authenticated Write): Allow `INSERT`/`UPDATE` on `public-media` where path prefix matches Firebase JWT `request.auth.uid`.

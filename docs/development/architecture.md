@@ -1,161 +1,141 @@
 # URBarber Software Architecture Specification
 
-## 1. System Overview
+## 1. System Overview & Technology Stack
 
-URBarber is a mobile-first, multi-role platform built with **React Native**, **Expo Router v57**, **NativeWind (Tailwind CSS)**, and **Firebase** (Authentication & Firestore). The application architecture follows a **Feature-Driven Architecture** combined with a clean repository pattern to segregate concerns between visual presentation, business domain logic, and data storage layers.
-
----
-
-## 2. Directory & Architectural Layers
-
-```
-src/
-├── app/                   # Expo Router Root (File-based navigation & route groups)
-│   ├── (auth)/            # Authentication & Onboarding route group
-│   ├── (customer)/        # Customer user experience stack & tabs
-│   ├── (barber)/          # Barber operations stack & tabs (Target)
-│   └── (admin)/           # Admin management stack & tabs (Target)
-├── components/            # Cross-cutting UI Primitives & Navigation components
-│   ├── navigation/        # Bottom tab bars & screen wrapper shells
-│   └── ui/                # Atomic UI elements (AppButton, AppCard, AppInput, Avatar, Rating)
-├── constants/             # Global constants, typography, theme tokens & route builders
-├── features/              # Feature Modules (Domain-Driven Design)
-│   ├── admin/             # Admin domain types, hooks, mocks, & components
-│   ├── auth/              # Auth context, validation schemas, & services
-│   ├── barbers/           # Barber operations components, hooks, & types
-│   ├── bookings/          # Booking state, timeline components, & hooks
-│   ├── chat/              # Chat messaging hooks & components
-│   ├── customer/          # Customer dashboard, search, & profile hooks
-│   ├── profile/           # Profile management utilities
-│   ├── reviews/           # Review moderation & submission
-│   ├── services/          # Barber service management
-│   └── verification/      # Identity verification workflow
-├── hooks/                 # Global utility hooks (useTheme, useColorScheme, useAsyncData)
-├── lib/                   # Infrastructure integrations (Firebase init, Navigation helpers)
-├── repositories/          # Modular repository definitions
-├── shared/                # Shared constants, types, & UI widgets across actors
-└── types/                 # Canonical domain type definitions
-```
+URBarber is built on a modern, decoupled client architecture:
+- **Client Framework**: Expo Router (v57.0.0+), React Native 0.86+, React 19.
+- **Language & Styling**: TypeScript strict mode, NativeWind (Tailwind CSS v3).
+- **Authentication Provider**: **Firebase Authentication** is the ONLY authentication provider.
+- **Application Database**: **Cloud Firestore** stores all application state, domain models, and relational data.
+- **Media Storage**: **Supabase Storage** is used strictly for media file storage (avatars, barber photos, service images).
 
 ---
 
-## 3. Tiered Layering Pattern
+## 2. Strict Architectural Rules & Directives
 
-The codebase enforces a strict unidirectional data flow across four layers:
+### 2.1 No Direct SDK Calls in Screens
+- **Screens (`src/app/`) MUST NOT invoke Firebase SDKs or Supabase SDKs directly.**
+- All data access and mutations MUST pass through feature hooks (`src/features/*/hooks/`) and repositories/services (`src/features/*/repository/` or `src/features/services/`).
+
+### 2.2 Supabase Usage Scope
+- Supabase is used **ONLY** for file storage via `supabase.storage`.
+- **DO NOT create Supabase Auth sessions** or invoke `supabase.auth`.
+- Authenticated uploads derive identity via Firebase Auth ID token verification (`accessToken` callback in `src/lib/supabase.ts` passing `firebaseAuth.currentUser.getIdToken()`).
+
+### 2.3 Production Path Integrity
+- Do NOT implement fake OTP validation, fake social login token bypasses, random payment simulation (`Math.random() > 0.1`), or hidden mock fallbacks in production repositories.
+- Out of scope features must not be added: Payment Gateway, AI Recommendations, Advanced Maps, File Chat, Push Notifications.
+
+---
+
+## 3. Four-Tier Unidirectional Layering Architecture
+
+Data flows strictly top-down across four encapsulated layers:
 
 ```
- ┌────────────────────────────────────────────────────────────────────────┐
- │                         1. App & Screen Layer                          │
- │   (src/app/* - Expo Router pages, parameter parsing, layout shells)    │
- └───────────────────────────────────┬────────────────────────────────────┘
-                                     │
-                                     ▼
- ┌────────────────────────────────────────────────────────────────────────┐
- │                        2. Feature Hook Layer                           │
- │  (src/features/*/hooks - Custom hooks: useCustomerHome, useBookingList)│
- └───────────────────────────────────┬────────────────────────────────────┘
-                                     │
-                                     ▼
- ┌────────────────────────────────────────────────────────────────────────┐
- │                         3. Repository Layer                            │
- │(src/features/*/repository - Abstracted data fetchers & mutators)       │
- └───────────────────────────────────┬────────────────────────────────────┘
-                                     │
-                                     ▼
- ┌────────────────────────────────────────────────────────────────────────┐
- │                       4. Data Source / SDK Layer                       │
- │ (src/lib/firebase.ts & static mock data fallbacks)                     │
- └────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────┐
+│                        1. App & Screen Layer                           │
+│   (src/app/* - Expo Router pages, parameter parsing, layout shells)    │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                        2. Feature Hook Layer                           │
+│  (src/features/*/hooks - Custom hooks: useCustomerHome, useBookingList)│
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                    3. Service & Repository Layer                       │
+│(src/features/*/repository - Firestore queries & Supabase storage service)│
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                       4. Infrastructure / SDK Layer                    │
+│ (src/lib/firebase.ts & src/lib/supabase.ts)                            │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### 3.1 Layer Responsibilities
-1. **Screen Layer (`src/app`)**: Reads route params (`useLocalSearchParams`), renders page layouts, delegates user interaction to custom feature hooks, and handles navigation transitions via `@/constants/routes`.
-2. **Feature Hook Layer (`src/features/*/hooks`)**: Manages loading state, error states, data transformation, and UI event handlers. Exposes clean hooks (e.g., `useBookingList`, `useCustomerHome`) to screens.
-3. **Repository Layer (`src/features/*/repository`)**: Provides clean async methods (`getCustomerProfile`, `createBooking`, `updateBookingStatus`). Encapsulates Firestore query construction, document parsing, timestamp conversions, and fallback error handling.
-4. **Data Source Layer (`src/lib/firebase.ts`)**: Initializes Firebase App, Auth, and Firestore instances using environment variables (`EXPO_PUBLIC_FIREBASE_*`).
+1. **Screen Layer (`src/app/`)**: Consumes route params (`useLocalSearchParams`), renders NativeWind components, invokes custom hooks, and handles navigation. Contains NO direct backend calls.
+2. **Feature Hook Layer (`src/features/*/hooks/`)**: Encapsulates UI state (loading, errors, form inputs), transforms domain models for components, and invokes repository methods.
+3. **Service & Repository Layer (`src/features/*/repository/`, `src/features/services/`)**: Executes Firestore collection queries, converts Timestamps, handles image buffer uploads to Supabase Storage, and enforces canonical data formats.
+4. **Infrastructure Layer (`src/lib/`)**: Initializes singleton instances of `firebaseApp`, `firebaseAuth`, `firestore`, and `supabase` storage client.
 
 ---
 
-## 4. State Management Strategy
-
-The application uses a hybrid state management model tailored to scope and lifespan:
+## 4. State Management & Auth Architecture
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
 │                     State Management Hierarchy                         │
 ├─────────────────────┬──────────────────────────────────────────────────┤
-│ Global Session      │ AuthContext (Firebase Auth user, OTP session,    │
-│                     │ loading status)                                  │
+│ Global Session      │ AuthContext (Firebase Auth state listener,       │
+│                     │ current user role, profile cache)                 │
 ├─────────────────────┼──────────────────────────────────────────────────┤
-│ Feature Hook State  │ Custom React hooks (useState, useEffect,          │
-│                     │ useCallback) backed by Firestore repositories    │
+│ Feature Hook State  │ Domain hooks (useState, useEffect) fetching       │
+│                     │ async repository data                            │
 ├─────────────────────┼──────────────────────────────────────────────────┤
-│ Local Screen State  │ React local state for form inputs, draft messages│
-│                     │ step steps, and UI modal toggles                 │
+│ Screen Component    │ Local component state for form inputs, draft text,│
+│ State               │ and UI modal open/close states                   │
 └─────────────────────┴──────────────────────────────────────────────────┘
 ```
 
-1. **Global Auth State (`AuthContext`)**: Located in `src/features/auth/context/auth-context.tsx`. Manages user authentication lifecycle via `onAuthStateChanged(firebaseAuth)` and `AsyncStorage` session caching.
-2. **Feature State (Hook-driven)**: Custom domain hooks (`useBookingDetail`, `useScheduleSelector`, `useCustomerSearch`) fetch async repository data and manage reactive state locally.
-3. **Screen Form State**: Form state (login input fields, review ratings, draft chat messages) lives within local screen component state to prevent unnecessary re-renders across the tree.
+### 4.1 Role-Based Access Control (RBAC)
+- User role (`customer`, `barber`, `admin`) is persisted in the Firestore `users` collection upon registration (`doc(firestore, 'users', uid)`).
+- `AuthContext` fetches the user's role document upon Firebase `onAuthStateChanged` triggers.
+- Route layout guards in `(customer)/_layout.tsx`, `(barber)/_layout.tsx`, and `(admin)/_layout.tsx` enforce role authorization before rendering stack/tab children.
 
 ---
 
-## 5. Navigation & Routing Design
+## 5. Canonical Enums & Domain Contracts
 
-Navigation is managed by **Expo Router v57**, leveraging file-based routing and route groups to enforce actor separation without polluting public URL paths:
+### 5.1 Canonical Roles
+- `customer`: End-user customer searching barbers and making home-service bookings.
+- `barber`: Barber service provider managing services, schedules, and incoming bookings.
+- `admin`: Platform admin managing verifications, users, categories, and system reports.
 
-- **`(auth)` Group**: Non-authenticated screens (`login`, `register-customer`, `forgot-password`, `otp-verification`, dynamic `onboarding/[step]`).
-- **`(customer)` Group**: Customer experience stack (`home`, `explore`, `favorites`, `chat`, `profile`, `barber/[barberId]`, `booking/*`).
-- **`(barber)` Group (Target)**: Barber operations tab navigator (`bookings`, `schedule`, `services`) and stack screens.
-- **`(admin)` Group (Target)**: Platform administration dashboard, user queue, and moderation screens.
+### 5.2 Canonical Booking Status Lifecycle
+All booking documents in Firestore `bookings` collection MUST use one of the following canonical statuses:
 
-### Navigation Helper Contract
-All internal links must use the type-safe static route helpers defined in `src/constants/routes.ts` rather than hardcoded string paths:
-
-```typescript
-// Example static and dynamic route invocation
-router.push(routes.customer.home);
-router.push(routes.customer.barber(barberId));
-router.push(routes.customer.chat(conversationId));
+```
+[ pending ] ──► (Barber Accepts)  ──► [ accepted ] ──► (Barber Starts) ──► [ in_progress ] ──► (Barber Completes) ──► [ completed ]
+     │                                     │
+     ├────────► (Barber Rejects) ──► [ rejected ]
+     │
+     └────────► (Customer/Barber Cancels) ──► [ cancelled ]
 ```
 
----
-
-## 6. Reusable Component Architecture
-
-To promote visual consistency across Customer, Barber, and Admin roles, components are organized into hierarchical categories:
-
-### 6.1 Atomic UI Primitives (`src/components/ui/`)
-- **`AppButton`**: Standard button with primary, secondary, and loading spinner variants.
-- **`AppInput`**: Input field with label, error text, and keyboard avoidance support.
-- **`AppCard`**: Surface container with elevation and pressable capability.
-- **`Avatar`**: User avatar with online/offline status indicators.
-- **`Badge` / `Rating`**: Badges for statuses and star rating displays.
-- **`Loading` / `EmptyState`**: Generic loading placeholders and empty list indicators.
-
-### 6.2 Layout & Navigation Containers (`src/components/navigation/`)
-- **`CustomerScreen`**: Standard container shell providing header, title, description, scroll container, and optional tab bar.
-- **`CustomerBottomNavigation`**: Bottom tab navigation bar shared across main customer tabs.
-
-### 6.3 Cross-Actor Target Component Primitives
-- **`ChatRoomScreenShell`**: Reusable chat room layout shared across Customer, Barber, and Admin.
-- **`ChatListScreenShell`**: Reusable conversation list shell.
-- **`BookingStatusBadge`**: Unified status badge mapping backend status enums to colors.
+1. `pending`: Initial status when booking created by customer (F-10).
+2. `accepted`: Barber accepts booking request (F-21).
+3. `rejected`: Barber declines booking request (F-21).
+4. `in_progress`: Barber starts home service (F-22).
+5. `completed`: Barber finishes home service (F-22).
+6. `cancelled`: Booking cancelled prior to completion (F-21).
 
 ---
 
-## 7. Offline Resilience & Fallback Architecture
+## 6. Supabase Storage Architecture
 
-To ensure graceful degradation during weak network conditions or missing backend Firestore documents, the repository layer incorporates an offline fallback mechanism:
-
-```typescript
-// Pattern implemented in customerRepository
-function isOfflineError(error: unknown) {
-  if (!error || typeof error !== 'object') return false;
-  const candidate = error as { code?: string; message?: string };
-  return candidate.code === 'unavailable' || candidate.message?.toLowerCase().includes('client is offline') === true;
-}
+```
+                               ┌──────────────────────────┐
+                               │  Supabase Storage Client │
+                               │   (src/lib/supabase.ts)  │
+                               └────────────┬─────────────┘
+                                            │
+                                  Bearer Firebase JWT ID Token
+                                            │
+                                            ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                   Bucket: public-media (Supabase)                      │
+├────────────────────────────────────────────────────────────────────────┤
+│  /avatars/{userId}/avatar.jpg          (Customer/Barber profile photo) │
+│  /barbers/{barberId}/shop.jpg          (Barber storefront/work photo)  │
+│  /services/{serviceId}/haircut.jpg     (Service visual image)          │
+│  /verifications/{barberId}/id.jpg      (Barber verification document)  │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
-When a Firestore query fails due to connectivity issues or non-existent documents, repositories return local fallback constants (`MOCK_CUSTOMER_PROFILE`, `MOCK_CUSTOMER_HOME_DATA`) rather than crashing the component layer.
+- Public read access enabled for `avatars`, `barbers`, and `services`.
+- Authenticated write access granted via Supabase Storage RLS checking Firebase JWT claims.
