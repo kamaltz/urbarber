@@ -9,6 +9,7 @@ export interface CustomerProfile {
   email: string;
   location: string;
   profileImageUrl?: string;
+  profileImagePath?: string;
   phone?: string;
   createdAt: string;
   updatedAt: string;
@@ -115,6 +116,7 @@ export interface UpdateProfileData {
   email?: string;
   location?: string;
   profileImageUrl?: string;
+  profileImagePath?: string;
   phone?: string;
 }
 

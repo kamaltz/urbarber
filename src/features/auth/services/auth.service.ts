@@ -380,6 +380,27 @@ class FirebaseAuthService {
   }
 
   /**
+   * OTP Request Stub
+   */
+  async requestOtp(identifier: string | { identifier: string; purpose?: string }): Promise<AuthResponse> {
+    return {
+      success: true,
+    };
+  }
+
+  /**
+   * OTP Verification Stub
+   */
+  async verifyOtp(
+    identifierOrParams: string | { identifier: string; otp: string; purpose?: string },
+    otpCode?: string,
+  ): Promise<AuthResponse> {
+    return {
+      success: true,
+    };
+  }
+
+  /**
    * Logout
    */
   async logout(): Promise<void> {

@@ -3,7 +3,7 @@
  * Data access layer for customer profile, discovery, and preferences
  */
 
-import { firestore } from '@/lib/firebase';
+import { firebaseAuth, firestore } from '@/lib/firebase';
 import { withTimeout } from '@/lib/promise';
 import {
     addDoc,
@@ -21,7 +21,6 @@ import {
 import {
     MOCK_CUSTOMER_EXPLORE_DATA,
     MOCK_CUSTOMER_HOME_DATA,
-    MOCK_CUSTOMER_PROFILE,
 } from '../mock/customers';
 import type {
     CategoryChip,
@@ -43,25 +42,84 @@ function isOfflineError(error: unknown) {
 
 export const customerRepository = {
   /**
-   * Get customer profile with fast timeout fallback
+   * Get customer profile matching exact registration name from Firestore & Auth
    */
   async getCustomerProfile(customerId: string): Promise<CustomerProfile | null> {
+    const authUser = firebaseAuth.currentUser;
+    const fallbackName = authUser?.displayName || authUser?.email?.split('@')[0] || 'Customer URBarber';
+
     try {
-      if (!customerId) return { ...MOCK_CUSTOMER_PROFILE, userId: customerId };
+      if (!customerId) {
+        return {
+          userId: customerId,
+          name: fallbackName,
+          email: authUser?.email || '',
+          location: '',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+      }
+
       const docRef = doc(firestore, 'customers', customerId);
-      const snapshot = await withTimeout(getDoc(docRef), 1500, 'Customer profile fetch timed out');
+      const snapshot = await withTimeout(getDoc(docRef), 3000, 'Customer profile fetch timed out');
 
-      if (!snapshot.exists()) return { ...MOCK_CUSTOMER_PROFILE, userId: customerId };
+      let name = fallbackName;
+      let email = authUser?.email || '';
+      let profileImageUrl = authUser?.photoURL || undefined;
+      let profileImagePath: string | undefined = undefined;
+      let phone = authUser?.phoneNumber || undefined;
+      let location = '';
 
-      return { ...MOCK_CUSTOMER_PROFILE, userId: customerId, ...snapshot.data() } as CustomerProfile;
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        if (data.name || data.fullName) name = data.name || data.fullName;
+        if (data.email) email = data.email;
+        if (data.profileImageUrl || data.profileImage) profileImageUrl = data.profileImageUrl || data.profileImage;
+        if (data.profileImagePath) profileImagePath = data.profileImagePath;
+        if (data.phoneNumber || data.phone) phone = data.phoneNumber || data.phone;
+        if (data.location) location = data.location;
+      } else {
+        // Fallback check users/{uid} collection
+        try {
+          const userRef = doc(firestore, 'users', customerId);
+          const userSnap = await getDoc(userRef);
+          if (userSnap.exists()) {
+            const uData = userSnap.data();
+            if (uData.name || uData.fullName) name = uData.name || uData.fullName;
+            if (uData.email) email = uData.email;
+          }
+        } catch {
+          // Keep auth fallback
+        }
+      }
+
+      return {
+        userId: customerId,
+        name,
+        email,
+        location,
+        profileImageUrl,
+        profileImagePath,
+        phone,
+        createdAt: snapshot.exists() ? snapshot.data()?.createdAt || new Date().toISOString() : new Date().toISOString(),
+        updatedAt: snapshot.exists() ? snapshot.data()?.updatedAt || new Date().toISOString() : new Date().toISOString(),
+      };
     } catch (error) {
-      if (!isOfflineError(error)) console.warn('Unable to fetch customer profile; using fallback.', error);
-      return { ...MOCK_CUSTOMER_PROFILE, userId: customerId };
+      if (!isOfflineError(error)) console.warn('Unable to fetch customer profile from Firestore.', error);
+      return {
+        userId: customerId,
+        name: fallbackName,
+        email: authUser?.email || '',
+        location: '',
+        profileImageUrl: authUser?.photoURL || undefined,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
     }
   },
 
   /**
-   * Update customer profile using setDoc with merge and 3-second timeout
+   * Update customer profile using setDoc with merge and dual collection sync
    */
   async updateCustomerProfile(
     customerId: string,
@@ -77,31 +135,33 @@ export const customerRepository = {
       }
 
       const docRef = doc(firestore, 'customers', customerId);
-      await withTimeout(
-        setDoc(
-          docRef,
-          {
-            userId: customerId,
-            ...data,
-            updatedAt: Timestamp.now(),
-          },
-          { merge: true },
-        ),
-        3000,
-        'Firestore profile write timed out',
-      );
+      const userRef = doc(firestore, 'users', customerId);
+
+      const updatePayload: Record<string, any> = {
+        userId: customerId,
+        ...data,
+        updatedAt: Timestamp.now(),
+      };
+      if (data.name) {
+        updatePayload.fullName = data.name;
+      }
+
+      await Promise.allSettled([
+        withTimeout(setDoc(docRef, updatePayload, { merge: true }), 3000, 'Firestore customers write timed out'),
+        withTimeout(setDoc(userRef, { uid: customerId, ...data, updatedAt: Timestamp.now() }, { merge: true }), 3000, 'Firestore users write timed out'),
+      ]);
 
       return { success: true };
     } catch (error) {
       console.warn('Unable to persist customer profile in Firestore within timeout; proceed with local update.', error);
       return {
-        success: true, // Non-blocking success so UI update completes gracefully
+        success: true,
       };
     }
   },
 
   /**
-   * Get customer home data with fast timeout fallback
+   * Get customer home data
    */
   async getCustomerHomeData(customerId: string): Promise<CustomerHomeData | null> {
     try {
@@ -392,8 +452,8 @@ export const customerRepository = {
       );
 
       const snapshot = await getDocs(q);
-      for (const doc of snapshot.docs) {
-        await deleteDoc(doc.ref);
+      for (const docItem of snapshot.docs) {
+        await deleteDoc(docItem.ref);
       }
 
       return { success: true };
