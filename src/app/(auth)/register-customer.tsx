@@ -25,8 +25,7 @@ export default function RegisterCustomerScreen() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [acceptedTerms, setAcceptedTerms] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [socialLoading, setSocialLoading] = useState<'google' | 'apple' | null>(null);
+    const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
   const handleRegister = async () => {
@@ -56,11 +55,8 @@ export default function RegisterCustomerScreen() {
         acceptedTerms,
       });
 
-      if (response.success) {
-        router.push({
-          pathname: '/(auth)/otp-verification',
-          params: { identifier: email, purpose: 'register' },
-        });
+            if (response.success) {
+        router.push('/(auth)/authentication' as any);
       } else {
         setError(response.error?.message || 'Gagal mendaftar');
       }
@@ -72,20 +68,7 @@ export default function RegisterCustomerScreen() {
   };
 
   const handleGoogleSignUp = async () => {
-    setSocialLoading('google');
-    try {
-      const response = await authService.loginWithGoogle();
-
-      if (response.success && response.user) {
-        router.replace('/(customer)/home');
-      } else {
-        setError(response.error?.message || 'Gagal signup dengan Google');
-      }
-    } catch (err) {
-      setError('Terjadi kesalahan. Coba lagi.');
-    } finally {
-      setSocialLoading(null);
-    }
+    setError('Google Sign-Up memerlukan konfigurasi native.');
   };
 
   const handleLoginLink = () => {
@@ -96,15 +79,13 @@ export default function RegisterCustomerScreen() {
     router.push('/(customer)/terms-condition');
   };
 
-  const isFormValid =
+    const isFormValid =
     fullName.trim().length > 0 &&
     email.includes('@') &&
     phoneNumber.trim().length > 0 &&
     password.length >= 6 &&
     password === confirmPassword &&
     acceptedTerms;
-
-  const isSocialLoading = socialLoading !== null;
 
   return (
     <SafeAreaView className="flex-1 bg-white">
@@ -126,7 +107,7 @@ export default function RegisterCustomerScreen() {
                   placeholder="Nama Anda"
                   value={fullName}
                   onChangeText={setFullName}
-                  editable={!isLoading && !isSocialLoading}
+                  editable={!isLoading}
                 />
 
                 <AppInput
@@ -137,7 +118,7 @@ export default function RegisterCustomerScreen() {
                   keyboardType="email-address"
                   autoCapitalize="none"
                   autoCorrect={false}
-                  editable={!isLoading && !isSocialLoading}
+                  editable={!isLoading}
                 />
 
                 <AppInput
@@ -146,7 +127,7 @@ export default function RegisterCustomerScreen() {
                   value={phoneNumber}
                   onChangeText={setPhoneNumber}
                   keyboardType="phone-pad"
-                  editable={!isLoading && !isSocialLoading}
+                  editable={!isLoading}
                 />
 
                 <AppInput
@@ -155,7 +136,7 @@ export default function RegisterCustomerScreen() {
                   value={password}
                   onChangeText={setPassword}
                   secureTextEntry
-                  editable={!isLoading && !isSocialLoading}
+                  editable={!isLoading}
                 />
 
                 <AppInput
@@ -164,7 +145,7 @@ export default function RegisterCustomerScreen() {
                   value={confirmPassword}
                   onChangeText={setConfirmPassword}
                   secureTextEntry
-                  editable={!isLoading && !isSocialLoading}
+                  editable={!isLoading}
                 />
 
                 <View className="mt-2">
@@ -172,7 +153,7 @@ export default function RegisterCustomerScreen() {
                     checked={acceptedTerms}
                     onToggle={setAcceptedTerms}
                     onTermsPress={handleTermsPress}
-                    disabled={isLoading || isSocialLoading}
+                    disabled={isLoading}
                   />
                 </View>
 
@@ -183,7 +164,7 @@ export default function RegisterCustomerScreen() {
                 <AppButton
                   label="Daftar"
                   loading={isLoading}
-                  disabled={!isFormValid || isSocialLoading}
+                  disabled={!isFormValid}
                   onPress={handleRegister}
                   className="h-[54px] rounded-lg"
                 />
@@ -195,20 +176,19 @@ export default function RegisterCustomerScreen() {
                   <View className="flex-1 h-px bg-slate-300" />
                 </View>
 
-                {/* Social SignUp */}
+                {/* Social SignUp (Disabled until native configuration) */}
                 <View className="gap-3">
                   <SocialLoginButton
                     provider="google"
                     onPress={handleGoogleSignUp}
-                    loading={socialLoading === 'google'}
-                    disabled={isLoading || (socialLoading !== null && socialLoading !== 'google')}
+                    disabled={true}
                   />
                 </View>
               </View>
 
               <View className="mt-6 items-center">
                 <Text className="text-sm text-slate-600">Sudah punya akun?</Text>
-                <Pressable onPress={handleLoginLink} disabled={isLoading || isSocialLoading}>
+                <Pressable onPress={handleLoginLink} disabled={isLoading}>
                   <Text className="mt-1 text-sm font-semibold text-[#D2691E] underline">
                     Masuk di sini
                   </Text>

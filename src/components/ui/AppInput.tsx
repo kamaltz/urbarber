@@ -1,5 +1,5 @@
 import React from 'react';
-import { Text, TextInput, View, type TextInputProps, type ViewStyle } from 'react-native';
+import { Text, TextInput, View, type TextInputProps } from 'react-native';
 
 export type AppInputProps = TextInputProps & {
   label?: string;
@@ -49,7 +49,7 @@ export function AppInput({
             'flex-1 py-3 text-base text-slate-900',
             inputClassName ?? '',
           ].join(' ')}
-          style={style as ViewStyle}
+          style={style as any}
           {...rest}
         />
         {rightAdornment}

@@ -83,17 +83,19 @@ export function AppButton({
         ].join(' ')}>
         {leftIcon}
         {loading ? <ActivityIndicator color={variant === 'secondary' ? '#0f172a' : '#ffffff'} /> : null}
-        {children ?? (
-          <Text
-            className={[
-              'font-semibold',
-              textVariantClass[variant],
-              textSizeClass[size],
-              textClassName ?? '',
-            ].join(' ')}>
-            {label}
-          </Text>
-        )}
+                {typeof children === 'function'
+                  ? children({ pressed: false } as any)
+                  : children ?? (
+              <Text
+                className={[
+                  'font-semibold',
+                  textVariantClass[variant],
+                  textSizeClass[size],
+                  textClassName ?? '',
+                ].join(' ')}>
+                {label}
+              </Text>
+            )}
         {rightIcon}
       </View>
     </Pressable>

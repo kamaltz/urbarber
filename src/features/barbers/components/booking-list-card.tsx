@@ -3,10 +3,8 @@
  * Displays a single booking in list format with status
  */
 
-import React from 'react';
-import { Pressable, Text, View, Image } from 'react-native';
-import { classNameToString } from 'nativewind';
-import { AppButton } from '../../ui/app-button';
+import { AppButton } from '@/components/ui/AppButton';
+import { Pressable, Text, View } from 'react-native';
 import type { BarberBooking } from '../types/barber';
 
 interface BookingListCardProps {
@@ -61,9 +59,9 @@ export function BookingListCard({
         </Text>
       </View>
 
-      {onStatusChange && booking.status === 'waiting' && (
+            {onStatusChange && booking.status === 'waiting' && (
         <AppButton
-          title="Terima Pesanan"
+          label="Terima Pesanan"
           size="sm"
           onPress={() => onStatusChange('processing')}
           className="bg-orange-600"
@@ -72,7 +70,7 @@ export function BookingListCard({
 
       {actionLabel && onPress && (
         <AppButton
-          title={actionLabel}
+          label={actionLabel}
           size="sm"
           variant="secondary"
           onPress={onPress}

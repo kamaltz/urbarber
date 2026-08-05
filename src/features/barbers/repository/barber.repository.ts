@@ -3,6 +3,7 @@
  * Data access layer for barber operations, services, bookings, and analytics
  */
 
+import { firestore } from '@/lib/firebase';
 import {
     addDoc,
     collection,
@@ -14,7 +15,6 @@ import {
     updateDoc,
     where,
 } from 'firebase/firestore';
-import { firestore } from '@/lib/firebase';
 import type {
     BarberAddServiceRequest,
     BarberAnalytics,
@@ -86,10 +86,10 @@ export const barberRepository = {
       );
 
       const snapshot = await getDocs(q);
-      return snapshot.docs.map((doc) => ({
+            return snapshot.docs.map((doc) => ({
         ...doc.data(),
         id: doc.id,
-      })) as BarberService[];
+      })) as unknown as BarberService[];
     } catch (error) {
       console.error('Error fetching barber services:', error);
       return [];
@@ -108,11 +108,11 @@ export const barberRepository = {
         return { success: false, error: { message: 'Missing required fields' } };
       }
 
-      const service = {
+            const service = {
         barberId,
         name: data.name,
         price: data.price,
-        duration: data.duration,
+        durationMinutes: data.durationMinutes || 30,
         description: data.description || '',
         active: true,
         createdAt: Timestamp.now(),
@@ -336,10 +336,10 @@ export const barberRepository = {
       );
 
       const snapshot = await getDocs(q);
-      return snapshot.docs.map((doc) => ({
+            return snapshot.docs.map((doc) => ({
         ...doc.data(),
         id: doc.id,
-      })) as BarberReview[];
+      })) as unknown as BarberReview[];
     } catch (error) {
       console.error('Error fetching barber reviews:', error);
       return [];
@@ -430,12 +430,12 @@ export const barberRepository = {
         return null;
       }
 
-      return {
-        profile,
-        bookingSummary: summary,
-        analytics,
-        recentBookings: recentBookings.slice(0, 5),
-      };
+            return {
+              profile,
+              bookingsSummary: summary,
+              analytics,
+              recentBookings: recentBookings.slice(0, 5),
+            } as unknown as BarberDashboardData;
     } catch (error) {
       console.error('Error fetching barber dashboard:', error);
       return null;

@@ -3,8 +3,8 @@
  * Manages admin dashboard state
  */
 
-import { useState } from 'react';
 import { useAsyncDetail } from '@/hooks/use-async-data';
+import { useState } from 'react';
 import { adminRepository } from '../repository/admin.repository';
 import type { AdminDashboardData } from '../types/admin';
 
@@ -15,7 +15,7 @@ export function useAdminDashboard(adminId: string) {
     adminId,
     (id) => adminRepository.getAdminDashboard(id),
     {
-      onSuccess: (data) => setDashboardData(data),
+      onSuccess: (data) => setDashboardData(data as AdminDashboardData),
     }
   );
 

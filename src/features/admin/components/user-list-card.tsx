@@ -3,8 +3,8 @@
  * Displays a system user with verification and status controls
  */
 
+import { AppButton } from '@/components/ui/AppButton';
 import { Image, Pressable, Text, View } from 'react-native';
-import { AppButton } from '../../ui/app-button';
 import type { SystemUser } from '../types/admin';
 
 interface UserListCardProps {
@@ -81,16 +81,16 @@ export function UserListCard({
         </View>
       </View>
 
-      {showActions && user.verificationStatus === 'pending' && (
+            {showActions && user.verificationStatus === 'pending' && (
         <View className="flex-row gap-2 mt-3">
           <AppButton
-            title="Setujui"
+            label="Setujui"
             size="sm"
             onPress={() => onVerify?.(user.userId, true)}
             className="flex-1"
           />
           <AppButton
-            title="Tolak"
+            label="Tolak"
             size="sm"
             variant="secondary"
             onPress={() => onVerify?.(user.userId, false)}
@@ -101,7 +101,7 @@ export function UserListCard({
 
       {showActions && user.status === 'active' && (
         <AppButton
-          title="Bekukan Akun"
+          label="Bekukan Akun"
           size="sm"
           variant="secondary"
           onPress={() => onStatusChange?.(user.userId, 'suspended')}

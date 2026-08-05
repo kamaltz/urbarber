@@ -2,6 +2,8 @@
  * Authentication Types
  */
 
+import { UserRole, UserStatus } from '@/types/domain';
+
 export type AuthPurpose = 'login' | 'register' | 'reset';
 
 export type SocialProvider = 'google' | 'apple';
@@ -13,6 +15,7 @@ export interface OtpVerificationParams {
 
 export interface LoginFormData {
   email: string;
+  password: string;
 }
 
 export interface SocialUser {
@@ -35,8 +38,23 @@ export interface ForgotPasswordFormData {
   email: string;
 }
 
+export interface AuthUser {
+  uid: string;
+  email: string | null;
+  displayName: string | null;
+  phoneNumber?: string | null;
+  role: UserRole;
+  status: UserStatus;
+  emailVerified: boolean;
+}
+
 export interface AuthContextType {
-  isAuthenticated: boolean;
-  user: null;
+  user: AuthUser | null;
+  role: UserRole | null;
   loading: boolean;
+  isAuthenticated: boolean;
+  emailVerified: boolean;
+  logout: () => Promise<void>;
+  reloadUser: () => Promise<boolean>;
+  completeOtpLogin?: (identifier: string) => Promise<void>;
 }

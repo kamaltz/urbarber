@@ -3,8 +3,8 @@
  * Displays a review for moderation with approve/reject actions
  */
 
+import { AppButton } from '@/components/ui/AppButton';
 import { Pressable, Text, View } from 'react-native';
-import { AppButton } from '../../ui/app-button';
 import type { ReviewForModeration } from '../types/admin';
 
 interface ReviewModerationCardProps {
@@ -66,14 +66,14 @@ export function ReviewModerationCard({
 
       {review.status === 'pending' && (
         <View className="flex-row gap-2 mt-3">
-          <AppButton
-            title="Setujui"
+                    <AppButton
+            label="Setujui"
             size="sm"
             onPress={() => onApprove?.(review.reviewId)}
             className="flex-1"
           />
           <AppButton
-            title="Tolak"
+            label="Tolak"
             size="sm"
             variant="secondary"
             onPress={() => onReject?.(review.reviewId)}

@@ -15,8 +15,8 @@ export function useCustomerProfile(customerId: string) {
     customerId,
     (id) => customerRepository.getCustomerProfile(id),
     {
-      onSuccess: (data) => {
-        setProfile(data);
+            onSuccess: (data) => {
+        setProfile(data as CustomerProfile);
       },
     }
   );

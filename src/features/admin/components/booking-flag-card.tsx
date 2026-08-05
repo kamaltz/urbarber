@@ -3,8 +3,8 @@
  * Displays a booking for verification with flag action
  */
 
+import { AppButton } from '@/components/ui/AppButton';
 import { Pressable, Text, View } from 'react-native';
-import { AppButton } from '../../ui/app-button';
 import type { BookingForVerification } from '../types/admin';
 
 interface BookingFlagCardProps {
@@ -76,9 +76,9 @@ export function BookingFlagCard({
         </View>
       )}
 
-      {booking.verificationStatus === 'flagged' && (
+            {booking.verificationStatus === 'flagged' && (
         <AppButton
-          title="Buka Bendera"
+          label="Buka Bendera"
           size="sm"
           onPress={() => onFlag?.(booking.bookingId, false)}
         />
@@ -86,7 +86,7 @@ export function BookingFlagCard({
 
       {booking.verificationStatus === 'pending' && (
         <AppButton
-          title="Tandai Berbendera"
+          label="Tandai Berbendera"
           size="sm"
           variant="secondary"
           onPress={() => onFlag?.(booking.bookingId, true)}

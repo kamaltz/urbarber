@@ -3,9 +3,8 @@
  * Displays barber profile with shop image, name, edit action
  */
 
-import React from 'react';
-import { Pressable, Text, View, Image } from 'react-native';
-import { AppButton } from '../../ui/app-button';
+import { AppButton } from '@/components/ui/AppButton';
+import { Image, Text, View } from 'react-native';
 import type { BarberProfile } from '../types/barber';
 
 interface BarberServiceHeroProps {
@@ -43,8 +42,8 @@ export function BarberServiceHero({
           </View>
 
           {showEditButton && (
-            <AppButton
-              title="Edit"
+                        <AppButton
+              label="Edit"
               size="sm"
               variant="secondary"
               onPress={onEdit}

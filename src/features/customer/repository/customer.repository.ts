@@ -3,19 +3,19 @@
  * Data access layer for customer profile, discovery, and preferences
  */
 
+import { firestore } from '@/lib/firebase';
 import {
     addDoc,
     collection,
     deleteDoc,
     doc,
+    query as firestoreQuery,
     getDoc,
     getDocs,
-    query,
     Timestamp,
     updateDoc,
-    where,
+    where
 } from 'firebase/firestore';
-import { firestore } from '@/lib/firebase';
 import {
     MOCK_CUSTOMER_EXPLORE_DATA,
     MOCK_CUSTOMER_HOME_DATA,
@@ -125,22 +125,22 @@ export const customerRepository = {
   /**
    * Search barbers or services
    */
-  async searchBarbers(
+    async searchBarbers(
     customerId: string,
     query: string,
     filters?: { category?: string; location?: string; maxDistance?: number },
   ): Promise<CustomerExploreData | null> {
     try {
       const barbersRef = collection(firestore, 'barbers');
-      let q = barbersRef;
+      let searchQueryRef: any = barbersRef;
 
       if (filters?.category) {
-        q = query(barbersRef, where('serviceType', 'array-contains', filters.category));
+        searchQueryRef = firestoreQuery(barbersRef, where('serviceType', 'array-contains', filters.category));
       }
 
-      const snapshot = await getDocs(q);
+      const snapshot = await getDocs(searchQueryRef);
       const barbers = snapshot.docs.map((doc) => ({
-        ...doc.data(),
+        ...(doc.data() as object),
         id: doc.id,
       }));
 
@@ -148,8 +148,8 @@ export const customerRepository = {
       const filtered = query
         ? barbers.filter(
             (barber: any) =>
-              barber.name.toLowerCase().includes(query.toLowerCase()) ||
-              barber.serviceType.some((s: string) =>
+              barber.name?.toLowerCase().includes(query.toLowerCase()) ||
+              barber.serviceType?.some((s: string) =>
                 s.toLowerCase().includes(query.toLowerCase()),
               ),
           )
@@ -160,8 +160,8 @@ export const customerRepository = {
         selectedCategory: filters?.category,
         nearbyBarbers: filtered as any,
         categoryChips: [],
-        featuredBarbers: filtered.slice(0, 3) as any,
-      };
+        featuredBarber: (filtered[0] as any) || MOCK_CUSTOMER_EXPLORE_DATA.featuredBarber,
+      } as unknown as CustomerExploreData;
     } catch (error) {
       console.error('Error searching barbers:', error);
       return null;
@@ -171,24 +171,25 @@ export const customerRepository = {
   /**
    * Get favorite barbers
    */
-  async getFavoriteBarbers(customerId: string): Promise<CustomerFavoritesData | null> {
+    async getFavoriteBarbers(customerId: string): Promise<CustomerFavoritesData | null> {
     try {
-      const q = query(
+      const q = firestoreQuery(
         collection(firestore, 'favorites'),
         where('customerId', '==', customerId),
       );
 
       const snapshot = await getDocs(q);
-      const favorites = snapshot.docs.map((doc) => doc.data().barberId);
+      const favorites = snapshot.docs.map((doc) => (doc.data() as any).barberId);
 
       return {
-        favorites: favorites.map((id) => ({
+        favoriteBarbers: favorites.map((id) => ({
           id,
           name: 'Barber',
           rating: 4.5,
           reviewCount: 50,
+          distance: '1.2 km',
         })) as any,
-      };
+      } as unknown as CustomerFavoritesData;
     } catch (error) {
       console.error('Error fetching favorite barbers:', error);
       return null;
@@ -207,7 +208,7 @@ export const customerRepository = {
         return { success: false, isFavorite: false, error: { message: 'Missing parameters' } };
       }
 
-      const q = query(
+      const q = firestoreQuery(
         collection(firestore, 'favorites'),
         where('customerId', '==', customerId),
         where('barberId', '==', barberId),
@@ -270,14 +271,14 @@ export const customerRepository = {
    */
   async getNotifications(customerId: string): Promise<CustomerNotification[]> {
     try {
-      const q = query(
+      const q = firestoreQuery(
         collection(firestore, 'notifications'),
         where('customerId', '==', customerId),
       );
 
-      const snapshot = await getDocs(q);
+            const snapshot = await getDocs(q);
       return snapshot.docs.map((doc) => ({
-        ...doc.data(),
+        ...(doc.data() as any),
         id: doc.id,
       })) as CustomerNotification[];
     } catch (error) {
@@ -317,14 +318,14 @@ export const customerRepository = {
    */
   async getRecentSearches(customerId: string): Promise<RecentSearch[]> {
     try {
-      const q = query(
+      const q = firestoreQuery(
         collection(firestore, 'recentSearches'),
         where('customerId', '==', customerId),
       );
 
-      const snapshot = await getDocs(q);
+            const snapshot = await getDocs(q);
       return snapshot.docs.map((doc) => ({
-        ...doc.data(),
+        ...(doc.data() as any),
         id: doc.id,
       })) as RecentSearch[];
     } catch (error) {
@@ -371,7 +372,7 @@ export const customerRepository = {
         return { success: false, error: { message: 'Missing customer ID' } };
       }
 
-      const q = query(
+      const q = firestoreQuery(
         collection(firestore, 'recentSearches'),
         where('customerId', '==', customerId),
       );
@@ -421,7 +422,7 @@ export const customerRepository = {
    */
   async getUnreadNotificationCount(customerId: string): Promise<number> {
     try {
-      const q = query(
+      const q = firestoreQuery(
         collection(firestore, 'notifications'),
         where('customerId', '==', customerId),
         where('read', '==', false),

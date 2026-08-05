@@ -15,7 +15,7 @@ export function useBarberProfile(barberId: string) {
     barberId,
     (id) => barberRepository.getBarberProfile(id),
     {
-      onSuccess: (data) => setProfile(data),
+      onSuccess: (data) => setProfile(data as BarberProfile),
     }
   );
 

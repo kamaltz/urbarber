@@ -3,8 +3,8 @@
  * Displays a support ticket in list format with priority and status
  */
 
+import { AppButton } from '@/components/ui/AppButton';
 import { Pressable, Text, View } from 'react-native';
-import { AppButton } from '../../ui/app-button';
 import type { SupportTicket } from '../types/admin';
 
 interface TicketListItemProps {
@@ -68,8 +68,8 @@ export function TicketListItem({
         </View>
 
         {onStatusChange && ticket.status === 'open' && (
-          <AppButton
-            title="Mulai"
+                    <AppButton
+            label="Mulai"
             size="sm"
             onPress={() => onStatusChange(ticket.ticketId, 'in_progress')}
           />

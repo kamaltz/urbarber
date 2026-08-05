@@ -5,7 +5,14 @@ export const routes = {
     login: '/(auth)/login',
     register: '/(auth)/register-customer',
     forgotPassword: '/(auth)/forgot-password',
+    authentication: '/(auth)/authentication',
     otp: '/(auth)/otp-verification',
+  },
+  barber: {
+    home: '/(barber)/home',
+  },
+  admin: {
+    dashboard: '/(admin)/dashboard',
   },
   customer: {
     home: '/(customer)/home',

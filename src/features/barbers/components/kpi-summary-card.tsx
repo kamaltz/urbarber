@@ -3,7 +3,6 @@
  * Displays KPI metrics (orders, revenue, etc.)
  */
 
-import React from 'react';
 import { Text, View } from 'react-native';
 
 interface KpiItem {
@@ -34,9 +33,9 @@ export function KpiSummaryCard({ items, variant = 'double' }: KpiSummaryCardProp
       {items.map((item, index) => {
         const colorStyle = colorMap[item.color || 'orange'];
         return (
-          <View
+                    <View
             key={index}
-            style={{ width: `calc(${flexBasis} - ${4}px)` }}
+            style={{ flexBasis: flexBasis as any, maxWidth: flexBasis as any }}
             className={`${colorStyle.bg} rounded-lg p-4 items-center`}
           >
             {item.icon && (

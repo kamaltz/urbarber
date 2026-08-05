@@ -35,7 +35,7 @@ function OtpInputGroup({
   hasError = false,
   onChange,
 }: OtpInputGroupProps) {
-  const refs = useRef<Array<TextInput | null>>([]);
+  const refs = useRef<(TextInput | null)[]>([]);
   const chars = useMemo(() => Array.from({ length }, (_, i) => value[i] ?? ''), [length, value]);
 
   const setCharAt = (index: number, char: string) => {
@@ -157,7 +157,7 @@ export default function OtpVerificationScreen() {
         if (purpose === 'reset') {
           router.replace('/(auth)/login');
         } else {
-          await completeOtpLogin(identifier);
+          await completeOtpLogin?.(identifier);
           router.replace('/(customer)/home');
         }
       } else {

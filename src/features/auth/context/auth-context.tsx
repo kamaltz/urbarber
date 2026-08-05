@@ -1,65 +1,140 @@
-import { firebaseAuth } from '@/lib/firebase';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { onAuthStateChanged, User } from 'firebase/auth';
-import React, { createContext, useEffect, useState } from 'react';
-
-const OTP_SESSION_KEY = '@urbarber/otp-session';
-
-export type AuthUser = Pick<User, 'uid' | 'email' | 'displayName'>;
-
-export interface AuthContextType {
-  user: AuthUser | null;
-  loading: boolean;
-  isAuthenticated: boolean;
-  completeOtpLogin: (identifier: string) => Promise<void>;
-}
+import { firebaseAuth, firestore } from '@/lib/firebase';
+import { withTimeout } from '@/lib/promise';
+import { UserRole, UserStatus } from '@/types/domain';
+import { onAuthStateChanged, signOut, User } from 'firebase/auth';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import React, { createContext, useCallback, useEffect, useState } from 'react';
+import { AuthContextType, AuthUser } from '../types/auth';
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
-  const [otpUser, setOtpUser] = useState<AuthUser | null>(null);
-  const [firebaseLoading, setFirebaseLoading] = useState(true);
-  const [sessionLoading, setSessionLoading] = useState(true);
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchUserProfile = useCallback(async (currentUser: User): Promise<AuthUser> => {
+    let role: UserRole = 'customer';
+    let status: UserStatus = 'active';
+    let phoneNumber: string | undefined = currentUser.phoneNumber || undefined;
+
+    try {
+      const userDocRef = doc(firestore, 'users', currentUser.uid);
+      const userDocSnap = await withTimeout(
+        getDoc(userDocRef),
+        8_000,
+        'Loading the user profile timed out',
+      );
+
+      if (userDocSnap.exists()) {
+        const data = userDocSnap.data();
+        if (data.role) role = data.role as UserRole;
+        if (data.status) status = data.status as UserStatus;
+        if (data.phoneNumber) phoneNumber = data.phoneNumber;
+      } else {
+        await withTimeout(
+          setDoc(
+            userDocRef,
+            {
+              uid: currentUser.uid,
+              email: currentUser.email,
+              name: currentUser.displayName || currentUser.email?.split('@')[0] || 'Customer',
+              role: 'customer',
+              status: 'active',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            },
+            { merge: true },
+          ),
+          8_000,
+          'Creating the user profile timed out',
+        );
+      }
+    } catch (error) {
+      console.warn('Error fetching or creating user profile in Firestore:', error);
+    }
+
+    return {
+      uid: currentUser.uid,
+      email: currentUser.email,
+      displayName: currentUser.displayName || currentUser.email?.split('@')[0] || 'User',
+      phoneNumber,
+      role,
+      status,
+      emailVerified: currentUser.emailVerified,
+    };
+  }, []);
+
+  const syncUser = useCallback(
+    async (currentUser: User | null) => {
+      if (!currentUser) {
+        setAuthUser(null);
+        setLoading(false);
+        return;
+      }
+
+      const profile = await fetchUserProfile(currentUser);
+      setAuthUser(profile);
+      setLoading(false);
+    },
+    [fetchUserProfile],
+  );
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(firebaseAuth, (currentUser) => {
-      setFirebaseUser(currentUser);
-      setFirebaseLoading(false);
+    const unsubscribe = onAuthStateChanged(firebaseAuth, async (currentUser) => {
+      await syncUser(currentUser);
     });
 
     return () => unsubscribe();
+  }, [syncUser]);
+
+  const reloadUser = useCallback(async (): Promise<boolean> => {
+    const currentUser = firebaseAuth.currentUser;
+    if (!currentUser) return false;
+
+    await currentUser.reload();
+    // Force-refresh the token as well so route guards do not keep using stale
+    // authentication claims after the verification link has been opened.
+    await currentUser.getIdToken(true);
+    const refreshedUser = firebaseAuth.currentUser;
+
+    if (refreshedUser) {
+      setAuthUser((previousUser) => ({
+          uid: refreshedUser.uid,
+          email: refreshedUser.email,
+          displayName:
+            refreshedUser.displayName ||
+            previousUser?.displayName ||
+            refreshedUser.email?.split('@')[0] ||
+            'User',
+          phoneNumber:
+            refreshedUser.phoneNumber || previousUser?.phoneNumber || undefined,
+          role: previousUser?.role ?? 'customer',
+          status: previousUser?.status ?? 'active',
+          emailVerified: refreshedUser.emailVerified,
+      }));
+      return refreshedUser.emailVerified;
+    }
+
+    return false;
   }, []);
 
-  useEffect(() => {
-    AsyncStorage.getItem(OTP_SESSION_KEY)
-      .then((storedSession) => {
-        if (storedSession) setOtpUser(JSON.parse(storedSession) as AuthUser);
-      })
-      .catch(() => AsyncStorage.removeItem(OTP_SESSION_KEY))
-      .finally(() => setSessionLoading(false));
+  const logout = useCallback(async () => {
+    await signOut(firebaseAuth);
+    setAuthUser(null);
   }, []);
 
-  const completeOtpLogin = async (identifier: string) => {
-    if (firebaseUser) return;
-
-    const normalizedIdentifier = identifier.trim().toLowerCase();
-    const sessionUser: AuthUser = {
-      uid: `otp:${normalizedIdentifier}`,
-      email: normalizedIdentifier,
-      displayName: normalizedIdentifier.split('@')[0] || 'Customer',
-    };
-
-    await AsyncStorage.setItem(OTP_SESSION_KEY, JSON.stringify(sessionUser));
-    setOtpUser(sessionUser);
-  };
-
-  const user = firebaseUser ?? otpUser;
+  const completeOtpLogin = useCallback(async () => {
+    await reloadUser();
+  }, [reloadUser]);
 
   const value: AuthContextType = {
-    user,
-    loading: firebaseLoading || sessionLoading,
-    isAuthenticated: !!user,
+    user: authUser,
+    role: authUser?.role ?? null,
+    loading,
+    isAuthenticated: !!authUser,
+    emailVerified: authUser?.emailVerified ?? false,
+    logout,
+    reloadUser,
     completeOtpLogin,
   };
 

@@ -4,15 +4,17 @@
  */
 
 import { firebaseAuth, firestore } from '@/lib/firebase';
+import { withTimeout } from '@/lib/promise';
 import {
     createUserWithEmailAndPassword,
     AuthError as FirebaseAuthError,
     GoogleAuthProvider,
+    sendEmailVerification,
     sendPasswordResetEmail,
     signInWithCredential,
     signInWithEmailAndPassword,
     signOut,
-    updateProfile,
+    updateProfile
 } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 
@@ -31,7 +33,38 @@ export interface AuthError {
 
 export interface AuthResponse {
   success: boolean;
+  emailVerified?: boolean;
   error?: AuthError;
+}
+
+function verificationEmailError(error: unknown): AuthError {
+  const firebaseError = error as FirebaseAuthError;
+
+  if (firebaseError.code === 'auth/too-many-requests') {
+    return {
+      code: firebaseError.code,
+      message: 'Terlalu banyak permintaan. Tunggu beberapa menit lalu coba lagi.',
+    };
+  }
+
+  if (firebaseError.code === 'auth/unauthorized-continue-uri') {
+    return {
+      code: firebaseError.code,
+      message: 'Domain aplikasi belum diizinkan di Firebase Authentication.',
+    };
+  }
+
+  if (firebaseError.code === 'auth/network-request-failed') {
+    return {
+      code: firebaseError.code,
+      message: 'Koneksi ke Firebase bermasalah. Periksa internet atau pemblokir browser.',
+    };
+  }
+
+  return {
+    code: firebaseError.code || 'SEND_FAILED',
+    message: 'Firebase gagal mengirim email verifikasi. Coba lagi beberapa saat.',
+  };
 }
 
 export interface GoogleUser {
@@ -149,21 +182,44 @@ class FirebaseAuthService {
         payload.password,
       );
 
-      // Update profile with full name
-      await updateProfile(userCredential.user, {
-        displayName: payload.fullName,
-      });
+      const now = new Date().toISOString();
+      const postRegistrationTasks = [
+        updateProfile(userCredential.user, {
+          displayName: payload.fullName,
+        }),
+        sendEmailVerification(userCredential.user),
+        setDoc(doc(firestore, 'users', userCredential.user.uid), {
+          uid: userCredential.user.uid,
+          email: payload.email,
+          name: payload.fullName,
+          phoneNumber: payload.phoneNumber,
+          role: 'customer',
+          status: 'active',
+          createdAt: now,
+          updatedAt: now,
+        }),
+        setDoc(doc(firestore, 'customers', userCredential.user.uid), {
+          userId: userCredential.user.uid,
+          email: payload.email,
+          fullName: payload.fullName,
+          phoneNumber: payload.phoneNumber,
+          profileImage: null,
+          role: 'customer',
+          createdAt: now,
+          updatedAt: now,
+        }),
+      ];
 
-      // Create customer document in Firestore
-      await setDoc(doc(firestore, 'customers', userCredential.user.uid), {
-        userId: userCredential.user.uid,
-        email: payload.email,
-        fullName: payload.fullName,
-        phoneNumber: payload.phoneNumber,
-        profileImage: null,
-        role: 'customer',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+      const results = await Promise.allSettled(
+        postRegistrationTasks.map((task) =>
+          withTimeout(task, 8_000, 'Post-registration sync timed out'),
+        ),
+      );
+
+      results.forEach((result) => {
+        if (result.status === 'rejected') {
+          console.warn('Account created, but post-registration sync failed:', result.reason);
+        }
       });
 
       return { success: true };
@@ -186,18 +242,34 @@ class FirebaseAuthService {
    */
   async loginWithEmail(email: string, password: string): Promise<AuthResponse> {
     try {
-      await signInWithEmailAndPassword(firebaseAuth, email, password);
-      return { success: true };
+      const userCredential = await withTimeout(
+        signInWithEmailAndPassword(firebaseAuth, email.trim(), password),
+        15_000,
+        'Login request timed out',
+      );
+      await userCredential.user.reload();
+      return {
+        success: true,
+        emailVerified: firebaseAuth.currentUser?.emailVerified ?? false,
+      };
     } catch (error: any) {
       const firebaseError = error as FirebaseAuthError;
-      const message =
-        firebaseError.code === 'auth/user-not-found' || firebaseError.code === 'auth/wrong-password'
-          ? 'Email atau password salah'
-          : 'Login gagal';
+      const invalidCredentials = [
+        'auth/invalid-credential',
+        'auth/invalid-email',
+        'auth/user-not-found',
+        'auth/wrong-password',
+      ].includes(firebaseError.code);
+      const isTimeout = error instanceof Error && error.message === 'Login request timed out';
+      const message = invalidCredentials
+        ? 'Email atau password salah'
+        : isTimeout || firebaseError.code === 'auth/network-request-failed'
+          ? 'Koneksi ke Firebase bermasalah. Periksa internet atau pemblokir browser.'
+          : 'Login gagal. Coba lagi.';
 
       return {
         success: false,
-        error: { code: firebaseError.code, message },
+        error: { code: firebaseError.code || 'LOGIN_FAILED', message },
       };
     }
   }
@@ -220,6 +292,38 @@ class FirebaseAuthService {
       return {
         success: false,
         error: { code: 'RESET_FAILED', message: 'Gagal mengirim link reset password' },
+      };
+    }
+  }
+
+    /**
+   * Resend Email Verification
+   */
+  async resendVerificationEmail(): Promise<AuthResponse> {
+    try {
+      const user = firebaseAuth.currentUser;
+      if (!user) {
+        return {
+          success: false,
+          error: { code: 'NO_USER', message: 'User tidak ditemukan' },
+        };
+      }
+      await user.reload();
+      if (user.emailVerified) {
+        return { success: true, emailVerified: true };
+      }
+
+      await withTimeout(
+        sendEmailVerification(user),
+        15_000,
+        'Sending verification email timed out',
+      );
+      return { success: true };
+    } catch (error: any) {
+      console.error('Failed to send verification email:', error);
+      return {
+        success: false,
+        error: verificationEmailError(error),
       };
     }
   }

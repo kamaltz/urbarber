@@ -19,13 +19,13 @@ import { validateLoginForm } from '@/features/auth/validation/auth.validation';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [socialLoading, setSocialLoading] = useState<'google' | 'apple' | null>(null);
   const [error, setError] = useState('');
 
   const handleLogin = async () => {
     setError('');
-    const validationErrors = validateLoginForm(email);
+    const validationErrors = validateLoginForm(email, password);
 
     if (validationErrors.length > 0) {
       setError(validationErrors[0].message);
@@ -35,15 +35,14 @@ export default function LoginScreen() {
     setIsLoading(true);
 
     try {
-      const response = await authService.requestOtp(email);
+      const response = await authService.loginWithEmail(email, password);
 
       if (response.success) {
-        router.push({
-          pathname: '/(auth)/otp-verification',
-          params: { identifier: email, purpose: 'login' },
-        });
+        router.replace(
+          response.emailVerified ? '/(customer)/home' : '/(auth)/authentication',
+        );
       } else {
-        setError(response.error?.message || 'Gagal mengirim kode OTP');
+        setError(response.error?.message || 'Email atau password salah');
       }
     } catch (err) {
       setError('Terjadi kesalahan. Coba lagi.');
@@ -53,22 +52,7 @@ export default function LoginScreen() {
   };
 
   const handleGoogleLogin = async () => {
-    setSocialLoading('google');
-    try {
-      const response = await authService.loginWithGoogle();
-
-      if (response.success && response.user) {
-        // In real implementation with Firebase, this would create/link account
-        // For now, navigate directly to home
-        router.replace('/(customer)/home');
-      } else {
-        setError(response.error?.message || 'Gagal login dengan Google');
-      }
-    } catch (err) {
-      setError('Terjadi kesalahan. Coba lagi.');
-    } finally {
-      setSocialLoading(null);
-    }
+    setError('Google Login memerlukan konfigurasi native.');
   };
 
   const handleForgotPassword = () => {
@@ -79,8 +63,7 @@ export default function LoginScreen() {
     router.push('/(auth)/register-customer');
   };
 
-  const isEmailValid = email.includes('@');
-  const isSocialLoading = socialLoading !== null;
+  const isFormValid = email.includes('@') && password.length >= 6;
 
   return (
     <SafeAreaView className="flex-1 bg-white">
@@ -96,7 +79,7 @@ export default function LoginScreen() {
                 description="Masukkan email Anda untuk memulai"
               />
 
-              <View className="mt-12 gap-6">
+                            <View className="mt-12 gap-6">
                 <AppInput
                   label="Email"
                   placeholder="nama@example.com"
@@ -105,7 +88,16 @@ export default function LoginScreen() {
                   keyboardType="email-address"
                   autoCapitalize="none"
                   autoCorrect={false}
-                  editable={!isLoading && !isSocialLoading}
+                  editable={!isLoading}
+                />
+
+                <AppInput
+                  label="Password"
+                  placeholder="Masukkan password Anda"
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry
+                  editable={!isLoading}
                 />
 
                 {error ? (
@@ -115,7 +107,7 @@ export default function LoginScreen() {
                 <AppButton
                   label="Masuk"
                   loading={isLoading}
-                  disabled={!isEmailValid || isSocialLoading}
+                  disabled={!isFormValid}
                   onPress={handleLogin}
                   className="h-[54px] rounded-lg"
                 />
@@ -127,20 +119,19 @@ export default function LoginScreen() {
                   <View className="flex-1 h-px bg-slate-300" />
                 </View>
 
-                {/* Social Login */}
+                {/* Social Login (Disabled until native configuration) */}
                 <View className="gap-3">
                   <SocialLoginButton
                     provider="google"
                     onPress={handleGoogleLogin}
-                    loading={socialLoading === 'google'}
-                    disabled={isLoading || (socialLoading !== null && socialLoading !== 'google')}
+                    disabled={true}
                   />
                 </View>
               </View>
 
               <View className="mt-8 gap-4">
                 <View className="items-center">
-                  <Pressable onPress={handleForgotPassword} disabled={isLoading || isSocialLoading}>
+                  <Pressable onPress={handleForgotPassword} disabled={isLoading}>
                     <Text className="text-sm font-semibold text-[#D2691E] underline">
                       Lupa password?
                     </Text>
@@ -149,7 +140,7 @@ export default function LoginScreen() {
 
                 <View className="flex-row items-center justify-center gap-2">
                   <Text className="text-sm text-slate-600">Belum punya akun?</Text>
-                  <Pressable onPress={handleRegister} disabled={isLoading || isSocialLoading}>
+                  <Pressable onPress={handleRegister} disabled={isLoading}>
                     <Text className="text-sm font-semibold text-[#D2691E] underline">
                       Daftar
                     </Text>

@@ -89,9 +89,9 @@ export function BarberCard({
           <View className="flex-row items-center gap-1">
             <Text className="font-semibold text-slate-900">⭐ {displayRating}</Text>
 
-            {barber.reviewCount && (
-              <Text className="text-xs text-slate-500">({barber.reviewCount})</Text>
-            )}
+                        {'reviewCount' in barber && barber.reviewCount ? (
+              <Text className="text-xs text-slate-500">({(barber as any).reviewCount})</Text>
+            ) : null}
           </View>
 
           <Text className="text-sm font-medium text-slate-600">{barber.distance}</Text>

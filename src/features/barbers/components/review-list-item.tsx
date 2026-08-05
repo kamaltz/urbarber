@@ -3,9 +3,8 @@
  * Displays a customer review with star rating and reply action
  */
 
-import React from 'react';
-import { Pressable, Text, View, Image } from 'react-native';
-import { AppButton } from '../../ui/app-button';
+import { AppButton } from '@/components/ui/AppButton';
+import { Image, Pressable, Text, View } from 'react-native';
 import type { BarberReview } from '../types/barber';
 
 interface ReviewListItemProps {
@@ -74,8 +73,8 @@ export function ReviewListItem({
       )}
 
       {showReplyButton && review.status !== 'replied' && (
-        <AppButton
-          title="Balas Ulasan"
+                <AppButton
+          label="Balas Ulasan"
           size="sm"
           variant="secondary"
           onPress={() => onReply?.(review.reviewId)}

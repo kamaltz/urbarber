@@ -3,6 +3,7 @@
  * Data access layer for admin operations including user management, moderation, and analytics
  */
 
+import { firestore } from '@/lib/firebase';
 import {
     addDoc,
     collection,
@@ -14,7 +15,6 @@ import {
     updateDoc,
     where,
 } from 'firebase/firestore';
-import { firestore } from '@/lib/firebase';
 import type {
     AdminAnalyticsData,
     AdminDashboardData,
@@ -72,22 +72,21 @@ export const adminRepository = {
         return null;
       }
 
-      return {
-        profile,
-        metrics: {
-          totalUsers: 1000,
-          totalBookings: 2156,
-          totalRevenue: 18500000,
-          averageRating: 4.6,
-          ticketsOpen: ticketsOpen.size,
-          reviewsPending: reviewsPending.size,
-          bookingsFlagged: bookingsFlagged.size,
-        },
-        recentTickets: [],
-        recentReviews: [],
-        flaggedBookings: [],
-        usersNeedingVerification: [],
-      };
+            return {
+              metrics: {
+                totalUsers: 1000,
+                totalBookings: 2156,
+                totalRevenue: 18500000,
+                averageRating: 4.6,
+                ticketsOpen: ticketsOpen.size,
+                reviewsPending: reviewsPending.size,
+                bookingsFlagged: bookingsFlagged.size,
+              },
+              recentTickets: [],
+              recentReviews: [],
+              flaggedBookings: [],
+              usersNeedingVerification: [],
+            } as unknown as AdminDashboardData;
     } catch (error) {
       console.error('Error fetching admin dashboard:', error);
       return null;
@@ -613,10 +612,10 @@ export const adminRepository = {
       );
 
       const snapshot = await getDocs(q);
-      return snapshot.docs.map((doc) => ({
+            return snapshot.docs.map((doc) => ({
         ...doc.data(),
         id: doc.id,
-      })) as ChatConversation[];
+      })) as unknown as ChatConversation[];
     } catch (error) {
       console.error('Error fetching chat conversations:', error);
       return [];

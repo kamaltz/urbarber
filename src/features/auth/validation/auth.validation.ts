@@ -48,8 +48,11 @@ export function validatePasswordMatch(password: string, confirmPassword: string)
   return errors;
 }
 
-export function validateLoginForm(email: string): ValidationError[] {
-  return validateEmail(email);
+export function validateLoginForm(email: string, password: string): ValidationError[] {
+  const errors: ValidationError[] = [];
+  errors.push(...validateEmail(email));
+  errors.push(...validatePassword(password));
+  return errors;
 }
 
 export function validateRegisterForm(

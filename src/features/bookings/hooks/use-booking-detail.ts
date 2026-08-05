@@ -2,8 +2,8 @@
  * Hook for managing booking detail state
  */
 
-import { useCallback, useState } from 'react';
 import { useAsyncDetail } from '@/hooks/use-async-data';
+import { useCallback, useState } from 'react';
 import { bookingRepository } from '../repository/booking.repository';
 import type { Booking } from '../types/booking';
 
@@ -14,7 +14,7 @@ export function useBookingDetail(bookingId: string) {
     bookingId,
     (id) => bookingRepository.getBookingDetail(id),
     {
-      onSuccess: (data) => setBooking(data),
+      onSuccess: (data) => setBooking(data as Booking),
     }
   );
 
