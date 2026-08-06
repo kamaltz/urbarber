@@ -1,0 +1,44 @@
+# URBarber Feature Traceability Matrix
+
+## Overview
+This traceability matrix maps every application feature (F-01 through F-31, E-01, A-01) across its actor, scope classification, screen route, service module, Firestore collection, security rules, test coverage, and current status.
+
+---
+
+## Traceability Matrix
+
+| Feature ID | Feature Name | Actor | Scope Classification | Screen or Route | Repository / Service | Firestore Collection | Security Rules | Automated Test | Live Test | Current Status | Blocker / Notes |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| **F-01** | Customer Registration | Customer | Core | `src/app/(auth)/register-customer.tsx` | `auth.service.ts` | `users`, `customers` | `request.auth.uid == userId` | N/A | Live test pending | `Implemented, untested` | Pending live test |
+| **F-02** | Customer Login | Customer | Core | `src/app/(auth)/login.tsx` | `auth.service.ts` | `users` | Read own `users` doc | N/A | Live test pending | `Implemented, untested` | Pending live test |
+| **F-03** | Manage Customer Profile | Customer | Core | `src/app/(customer)/profile.tsx` | `customer.repository.ts`, `storage.service.ts` | `users`, `customers` | `request.auth.uid == customerId` | N/A | Live test pending | `Implemented, untested` | Storage policies deploy pending |
+| **F-04** | View Barber List | Customer | Core | `src/app/(customer)/explore.tsx` | `customer.repository.ts` | `barbers`, `categories` | Public read active barbers | N/A | Live test pending | `Implemented, untested` | Pending live test |
+| **F-05** | View Barber Details | Customer | Core | `src/app/(customer)/barber/[barberId].tsx` | `customer.repository.ts` | `barbers`, `reviews` | Public read active barbers | N/A | Live test pending | `Implemented, untested` | Pending live test |
+| **F-06** | View Barber Services | Customer | Core | `src/app/(customer)/barber/[barberId].tsx` | `customer.repository.ts` | `barberServices` | Public read active services | N/A | Live test pending | `Implemented, untested` | Pending live test |
+| **F-07** | Select Service | Customer | Core | `src/app/(customer)/booking/options.tsx` | `customer.repository.ts` | `barberServices` | Public read active services | N/A | Live test pending | `Implemented, untested` | Pending live test |
+| **F-08** | Select Date & Schedule | Customer | Core | `src/app/(customer)/booking/schedule.tsx` | `customer.repository.ts` | `barberSchedules`, `bookings` | Public read schedule | N/A | Live test pending | `Implemented, untested` | Pending live test |
+| **F-09** | Enter Location Address | Customer | Core | `src/app/(customer)/booking/location.tsx` | `customer.repository.ts` | `bookings` | Text address saved on booking | N/A | Live test pending | `Implemented, untested` | Manual text address active |
+| **F-10** | Create Booking | Customer | Core | `src/app/(customer)/booking/invoice.tsx` | `customer.repository.ts` | `bookings` | Status initialized to `pending` | `test-firestore-rules.js` | Live test pending | `Automated tested` | Firestore rules deploy pending |
+| **F-11** | View Booking Status | Customer | Core | `src/app/(customer)/booking/detail/[bookingId].tsx` | `customer.repository.ts` | `bookings` | Read own customer bookings | `test-firestore-rules.js` | Live test pending | `Automated tested` | Firestore rules deploy pending |
+| **F-12** | View Booking History | Customer | Core | `src/app/(customer)/booking/history.tsx` | `customer.repository.ts` | `bookings` | Read own customer bookings | N/A | Live test pending | `Implemented, untested` | Pending live test |
+| **F-13** | Submit Rating & Review | Customer | Core | `src/app/(customer)/booking/rating/[bookingId].tsx` | `customer.repository.ts` | `reviews`, `barbers` | `completed` booking check | `test-firestore-rules.js` | Live test pending | `Automated tested` | Firestore rules deploy pending |
+| **F-14** | Barber Registration | Barber | Core | `src/app/(customer)/profile/register-barber.tsx` | `auth.service.ts` | `users`, `barbers` | Status `pending_verification` | N/A | Live test pending | `Implemented, untested` | Verification wizard in Batch 03 |
+| **F-15** | Barber Login | Barber | Core | `src/app/(auth)/login.tsx` | `auth.service.ts` | `users` | Read own `users` doc | N/A | Live test pending | `Implemented, untested` | Pending live test |
+| **F-16** | Manage Barber Profile | Barber | Core | `src/app/(barber)/(tabs)/profile.tsx` | `barber.repository.ts`, `storage.service.ts` | `barbers` | `request.auth.uid == barberId` | N/A | Live test pending | `Implemented, untested` | Storage policies deploy pending |
+| **F-17** | Manage Services | Barber | Core | `src/app/(barber)/(tabs)/services.tsx` | `barber.repository.ts` | `barberServices` | `request.auth.uid == barberId` | N/A | Live test pending | `Implemented, untested` | Pending live test |
+| **F-18** | Manage Service Prices | Barber | Core | `src/features/services/components/ServiceFormModal.tsx` | `barber.repository.ts` | `barberServices` | `request.auth.uid == barberId` | N/A | Live test pending | `Implemented, untested` | Pending live test |
+| **F-19** | Manage Operating Schedule | Barber | Core | `src/app/(barber)/(tabs)/schedule.tsx` | `barber.repository.ts` | `barberSchedules` | `request.auth.uid == barberId` | N/A | Live test pending | `Implemented, untested` | Pending live test |
+| **F-20** | View Booking Requests | Barber | Core | `src/app/(barber)/(tabs)/bookings.tsx` | `barber.repository.ts` | `bookings` | Read assigned barber bookings | N/A | Live test pending | `Implemented, untested` | Pending live test |
+| **F-21** | Accept / Reject Bookings | Barber | Core | `src/app/(barber)/booking/[bookingId].tsx` | `barber-api.service.ts` (Vercel) | `bookings` | Status transition `pending`->`accepted` | `vitest` (backend) | Live test pending | `Automated tested` | Vercel backend deploy pending |
+| **F-22** | Update Service Status | Barber | Core | `src/app/(barber)/booking/[bookingId].tsx` | `barber-api.service.ts` (Vercel) | `bookings` | Transition `accepted`->`in_progress`->`completed` | `vitest` (backend) | Live test pending | `Automated tested` | Vercel backend deploy pending |
+| **F-23** | View Transaction History | Barber | Core | `src/app/(barber)/analysis.tsx` | `barber.repository.ts` | `bookings` | Read assigned completed bookings | N/A | Live test pending | `Implemented, untested` | Pending live test |
+| **F-24** | Admin Login | Admin | Core | `src/app/(auth)/login.tsx` | `auth.service.ts` | `users` | Role `admin` check | N/A | Live test pending | `Implemented, untested` | Scheduled Batch 04 |
+| **F-25** | Verify Barber Account | Admin | Core | `src/app/(admin)/dashboard.tsx` | `admin.repository.ts` | `barbers` | `app_role == 'admin'` | N/A | Live test pending | `Not implemented` | Scheduled Batch 04 |
+| **F-26** | Manage Customer Data | Admin | Core | `src/app/(admin)/dashboard.tsx` | `admin.repository.ts` | `users`, `customers` | `app_role == 'admin'` | N/A | Live test pending | `Not implemented` | Scheduled Batch 04 |
+| **F-27** | Manage Barber Data | Admin | Core | `src/app/(admin)/dashboard.tsx` | `admin.repository.ts` | `users`, `barbers` | `app_role == 'admin'` | N/A | Live test pending | `Not implemented` | Scheduled Batch 04 |
+| **F-28** | Manage Service Categories | Admin | Core | `src/app/(admin)/dashboard.tsx` | `admin.repository.ts` | `categories` | `app_role == 'admin'` | N/A | Live test pending | `Not implemented` | Scheduled Batch 04 |
+| **F-29** | Monitor All Bookings | Admin | Core | `src/app/(admin)/dashboard.tsx` | `admin.repository.ts` | `bookings` | `app_role == 'admin'` | N/A | Live test pending | `Not implemented` | Scheduled Batch 04 |
+| **F-30** | View Operational Reports | Admin | Core | `src/app/(admin)/dashboard.tsx` | `admin.repository.ts` | `users`, `bookings` | `app_role == 'admin'` | N/A | Live test pending | `Not implemented` | Scheduled Batch 04 |
+| **F-31** | Real-Time Text Chat | Customer / Barber | Core | `src/app/(customer)/chat.tsx` & `[conversationId].tsx` | `chat.repository.ts` (planned) | `conversations`, `messages` | Participant UID check | N/A | Live test pending | `Implemented, untested` (UI only) | Firestore listeners missing (Batch 05) |
+| **E-01** | Interactive Location Picker | Customer | Preferred Enhancement | `src/app/(customer)/booking/location.tsx` | `location.service.ts` (planned) | `bookings` | Pin drop coordinate selection | N/A | Live test pending | `Not implemented` (Text fallback active) | Requires Expo dev build (Batch 06) |
+| **A-01** | Midtrans Sandbox Payment | Customer | Additional Feature | `src/app/(customer)/booking/invoice.tsx` | `payment-api.service.ts` (Vercel) | `payments`, `paymentRequests` | Server signature validation | `vitest`, `test-midtrans-payment.js` | Live test pending | `Automated tested` | Vercel deploy & webhook config pending |

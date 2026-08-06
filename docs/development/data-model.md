@@ -1,7 +1,7 @@
 # URBarber Data Model & Storage Specification
 
 ## 1. Overview
-This document specifies the authoritative Cloud Firestore collection schemas, Supabase Storage bucket layout, and database security rules for URBarber.
+This document specifies the authoritative Cloud Firestore collection schemas, Supabase Storage bucket layout, and security rules guidelines for URBarber.
 
 ---
 
@@ -123,11 +123,15 @@ interface BookingDocument {
   serviceName: string;
   date: string;                // YYYY-MM-DD
   startTime: string;           // HH:mm (e.g. "14:00")
-  address: string;             // Home service location
+  address: string;             // Required manual address text
+  latitude?: number;           // Optional map latitude (E-01)
+  longitude?: number;          // Optional map longitude (E-01)
+  locationSource?: "manual" | "current_location" | "map_pin"; // Optional location source
   notes?: string;              // Special instructions
   totalPrice: number;          // Total price in IDR
   status: "pending" | "accepted" | "rejected" | "in_progress" | "completed" | "cancelled";
-  paymentStatus?: "initiated" | "pending" | "paid" | "failed" | "expired" | "cancelled" | "refunded" | "partially_refunded";
+  paymentMethod?: "cash_on_service" | "midtrans_sandbox";
+  paymentStatus?: "not_required" | "initiated" | "pending" | "paid" | "failed" | "expired" | "cancelled" | "refunded" | "partially_refunded";
   paymentProvider?: "midtrans";
   paymentOrderId?: string;     // URB-{bookingId}
   paymentId?: string;          // bookingId
@@ -137,7 +141,41 @@ interface BookingDocument {
 }
 ```
 
-### 2.8 Collection: `payments`
+### 2.8 Collection: `conversations`
+Real-time customer-barber text chat conversation document (F-31). Primary Key matches `bookingId`.
+```typescript
+interface ConversationDocument {
+  id: string;                  // Primary Key (matches bookingId)
+  bookingId: string;           // Foreign key to bookings
+  customerId: string;          // Foreign key to customers
+  barberId: string;            // Foreign key to barbers
+  participantIds: string[];    // [customerId, barberId]
+  lastMessageText: string;     // Preview text of last message sent
+  lastMessageSenderId: string; // Sender UID of last message
+  lastMessageAt: Timestamp;    // Timestamp of last message
+  customerUnreadCount: number; // Count of unread messages for customer
+  barberUnreadCount: number;   // Count of unread messages for barber
+  status: "active" | "archived"; // Active during booking, archived on terminal status
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+```
+
+#### Subcollection: `conversations/{conversationId}/messages`
+Text messages stored inside a conversation.
+```typescript
+interface MessageDocument {
+  id: string;                  // Auto-generated Firestore message ID
+  conversationId: string;      // Foreign key to parent conversation (bookingId)
+  senderId: string;            // Firebase Auth UID of sender (must match request.auth.uid)
+  senderRole: "customer" | "barber"; // Role of sender
+  text: string;                // Non-empty trimmed message text (max 1000 characters)
+  createdAt: Timestamp;        // Firestore Timestamp
+  readBy: string[];            // Array of UIDs that have read the message
+}
+```
+
+### 2.9 Collection: `payments`
 Midtrans Snap payment transaction records. Indexed by `bookingId`.
 ```typescript
 interface PaymentDocument {
@@ -164,7 +202,7 @@ interface PaymentDocument {
 }
 ```
 
-### 2.9 Collection: `paymentRequests`
+### 2.10 Collection: `paymentRequests`
 Idempotency tracking records for client booking payment requests. Indexed by `{customerId}_{requestId}`.
 ```typescript
 interface PaymentRequestDocument {
@@ -178,7 +216,7 @@ interface PaymentRequestDocument {
 }
 ```
 
-### 2.10 Collection: `reviews`
+### 2.11 Collection: `reviews`
 Ratings and reviews submitted by customers after booking completion (F-13).
 ```typescript
 interface ReviewDocument {
@@ -193,7 +231,7 @@ interface ReviewDocument {
 }
 ```
 
-### 2.9 Collection: `favorites`
+### 2.12 Collection: `favorites`
 Customer favorite barbers list.
 ```typescript
 interface FavoriteDocument {
@@ -230,7 +268,7 @@ interface FavoriteDocument {
 
 ---
 
-## 4. Firestore & Supabase Security Rules Guidelines
+## 4. Security Rules Architecture & Chat Rules Guidelines
 
 ### 4.1 Firestore Security Rules Architecture
 - `users`: User can read their own record; admin can read/write all.
@@ -239,6 +277,24 @@ interface FavoriteDocument {
 - `bookings`: Customer can create booking with status `pending`. Barber can update status `pending` -> `accepted`/`rejected`, `accepted` -> `in_progress`, `in_progress` -> `completed`. Customer can update `pending`/`accepted` -> `cancelled`.
 - `reviews`: Customer can create review only if matching booking status is `completed` and `rating` is between 1 and 5.
 
-### 4.2 Supabase Storage RLS Policies
+### 4.2 Chat Security Rules Architecture (F-31)
+- **`conversations/{conversationId}`**:
+  - Read: `request.auth.uid in resource.data.participantIds`
+  - Create: `request.auth.uid in request.resource.data.participantIds` AND `request.resource.data.bookingId == conversationId`
+  - Update: `request.auth.uid in resource.data.participantIds` (Only `lastMessageText`, `lastMessageSenderId`, `lastMessageAt`, `customerUnreadCount`, `barberUnreadCount`, `status` can be updated; `bookingId`, `customerId`, `barberId`, `participantIds` are immutable).
+  - Delete: `false` (Message history preserved).
+- **`conversations/{conversationId}/messages/{messageId}`**:
+  - Read: `request.auth.uid in get(/databases/(default)/documents/conversations/$(conversationId)).data.participantIds`
+  - Create: `request.auth.uid in get(/databases/(default)/documents/conversations/$(conversationId)).data.participantIds` AND `request.resource.data.senderId == request.auth.uid` AND `request.resource.data.text.trim().size() > 0` AND `request.resource.data.text.size() <= 1000` AND `get(/databases/(default)/documents/conversations/$(conversationId)).data.status == 'active'`
+  - Update: `request.auth.uid in get(/databases/(default)/documents/conversations/$(conversationId)).data.participantIds` (Only `readBy` array can be updated for unread tracking).
+  - Delete: `false`.
+
+### 4.3 Required Firestore Indexes for Chat
+1. Collection `conversations`: `participantIds` (Array-contains) + `updatedAt` DESC
+2. Subcollection `messages`: `conversationId` (ASC) + `createdAt` ASC
+
+---
+
+## 5. Supabase Storage RLS Policies
 - Policy 1 (Public Read): Allow `SELECT` on `public-media` bucket for all users.
 - Policy 2 (Authenticated Write): Allow `INSERT`/`UPDATE`/`DELETE` on `public-media` where path prefix matches `(auth.jwt() ->> 'sub')`.

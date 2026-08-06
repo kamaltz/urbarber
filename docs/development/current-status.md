@@ -1,61 +1,69 @@
-# URBarber Repository Audit: Current Status Report
+# URBarber Repository Status & Implementation Reconciliation Report
 
 ## 1. Executive Summary
 
-This report presents an empirical code audit of the URBarber repository on branch `chore/batch-00-branch-consolidation`.
+This report presents an empirical reconciliation of the URBarber repository status on branch `docs/batch-01-scope-roadmap`.
 
-**Batch 00 (Branch Audit & Consolidation)**, **Batch 01 (Foundation Stabilization)**, **Batch 02 (Data Model Harmonization & Security Rules)**, **Batch 03 (Customer Discovery & Profile Sub-System)**, **Batch 04 (Midtrans Sandbox Integration via Standalone Vercel Node.js Backend)**, and **Batch 05 (Barber Operations and Management Flow)** are fully audited, consolidated, stabilized, and verified:
-- **Baseline Branch**: `origin/feat/batch-05-barber-operations` (HEAD: `fa4bbf1`).
-- **All Remote Branches Audited**: 5 remote branches (`master`, `develop`, `feat/complete-thesis-mvp`, `fix/batch-01-foundation`, `fix/storage-live-validation`) dynamically audited with zero overwrite of newer architecture.
-- **Firebase Authentication** is the sole authentication provider with `app_role` custom claims and web IndexedDB fallback persistence.
-- **Standalone Vercel Node.js Backend (`backend/vercel/`)**:
-  - `POST /api/payments/create`: Authenticated payment creation, idempotency via `paymentRequests/{customerId_requestId}`, atomic Firestore transactions.
-  - `POST /api/payments/webhook`: Public webhook endpoint with SHA-512 signature validation and Midtrans status queries.
-  - `POST /api/payments/sync`: Authenticated payment status synchronization.
-  - `GET /api/payments/return`: Safe HTML redirect landing page with app deep link.
-  - `POST /api/bookings/cancel`: Customer booking cancellation endpoint.
-  - `POST /api/barber/bookings/respond`: Authenticated barber endpoint to accept/reject pending bookings (Accept allowed only when `paymentStatus == 'paid'`; Reject on paid returns `PAYMENT_REFUND_REQUIRED`).
-  - `POST /api/barber/bookings/status`: Authenticated barber status transition endpoint (`accepted` ➔ `in_progress` ➔ `completed`).
-  - `GET /api/health`: Healthcheck endpoint.
-- **No Firebase Blaze Plan Required**: Serverless Node 22.x execution on Vercel.
-- **Security Rules**: `payments` and `paymentRequests` collections are read-only for customer/barber/admin with zero client write access. Barber can process/accept a booking ONLY when `paymentStatus == 'paid'`.
-- **Automated Test Suites**:
-  - 10 Vitest unit tests in `backend/vercel/tests/` (5 payment backend tests + 5 barber operations transition tests).
-  - 6 payment unit tests in `scripts/test-midtrans-payment.js` (`npm run test`).
-  - 32 automated security rules integration tests in `scripts/test-firestore-rules.js` (`npm run test:rules`).
-  - Root project typecheck (`npm run typecheck`) and backend typecheck (`npm --prefix backend/vercel run typecheck`).
+All features across the application are categorized according to their explicit verification state:
+- **`code implemented`**: Code exists in codebase.
+- **`automated test passed`**: Verified via local Vitest / Node test runner.
+- **`emulator test passed`**: Verified via local Firebase / Firestore emulator.
+- **`deployment pending`**: Code ready, awaiting production deployment (e.g. Vercel, Firebase rules).
+- **`live test pending`**: Requires live multi-role environment testing.
+- **`documentation only`**: Architecture or specification defined in docs.
+- **`planned`**: Scheduled for future implementation batch.
 
 ---
 
-## 2. Technical Specifications & Configuration Baseline
+## 2. Feature & Architecture Status Matrix
 
-### 2.1 Required Vercel Environment Variables
-- `MIDTRANS_SERVER_KEY`: Midtrans Sandbox Server Key.
-- `MIDTRANS_IS_PRODUCTION`: `false` for sandbox.
-- `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`: Firebase Admin SDK service account credentials.
-- `ALLOWED_ORIGINS`: Allowed browser origins.
-- `APP_DEEP_LINK_SCHEME`: Deep link scheme (`urbarber`).
-
-### 2.2 Canonical Firestore Collections & Models
-1. `users/{userId}`: Core identity and role mapping.
-2. `customers/{customerId}`: Customer profile details.
-3. `barbers/{barberId}`: Barber public profile and rating aggregates.
-4. `barberServices/{serviceId}`: Offered grooming services.
-5. `barberSchedules/{barberId}`: Operating schedule and unavailable dates.
-6. `categories/{categoryId}`: Service categories.
-7. `bookings/{bookingId}`: Booking transactions tracking `status` and `paymentStatus`.
-8. `payments/{bookingId}`: Midtrans Snap payment records.
-9. `paymentRequests/{customerId_requestId}`: Idempotency request tracking.
-10. `reviews/{reviewId}`: Customer reviews for completed bookings.
-11. `favorites/{favoriteId}`: Customer favorite barbers.
+### 2.1 Core Subsystems Status
+| Subsystem | Scope Classification | Implementation Status | Automated Test | Deployment Status | Live Test Status | Blockers / Notes |
+|---|---|---|---|---|---|---|
+| **Batch 00 Consolidation** | Infrastructure | `code implemented` | `automated test passed` | N/A | `live test pending` | Consolidated in history (Commit `ea3e50a`) |
+| **Auth & Claims** | Core (F-01, F-02) | `code implemented` | N/A | N/A | `live test pending` | Web persistence fallbacks added (`cdfd3bc`) |
+| **Storage RLS & Avatars** | Core (F-03) | `code implemented` | N/A | `deployment pending` | `live test pending` | `storage-policies.sql` pending Supabase deployment |
+| **Customer Discovery** | Core (F-04..F-09) | `code implemented` | N/A | N/A | `live test pending` | Text address input active |
+| **Booking & Slot-Lock** | Core (F-10..F-12) | `code implemented` | `automated test passed` | `deployment pending` | `live test pending` | `firestore.rules` pending Firebase deployment |
+| **Real-Time Text Chat** | Core (F-31) | `code implemented` (UI shell only) | N/A | N/A | `planned` | Firestore `onSnapshot` listeners & rules missing |
+| **Barber Operations** | Core (F-14..F-23) | `code implemented` | `automated test passed` | `deployment pending` | `live test pending` | Status transitions (`accepted`->`in_progress`->`completed`) verified via tests |
+| **Barber Verification** | Core (F-14, F-25) | `planned` | N/A | N/A | `planned` | ID document upload wizard scheduled for Batch 03 |
+| **Admin Operations** | Core (F-24..F-30) | `planned` | N/A | N/A | `planned` | Admin queue & management scheduled for Batch 04 |
+| **Location Map Picker** | Preferred Enhancement (E-01) | `code implemented` (Text fallback only) | N/A | N/A | `blocked` | MapLibre picker requires Expo dev build |
+| **Midtrans Sandbox Payment** | Additional Feature (A-01) | `code implemented` (Vercel backend) | `automated test passed` | `deployment pending` | `live test pending` | Vercel deployment & Midtrans webhook setup required |
 
 ---
 
-## 3. Manual Actions Required
+## 3. Detailed Component Breakdown
 
-> [!IMPORTANT]
-> **MANUAL ACTION REQUIRED**:
-> 1. Set environment variables in Vercel Project Settings.
-> 2. Deploy `backend/vercel` to Vercel (`cd backend/vercel && vercel --prod`).
-> 3. Set Payment Notification URL in Midtrans Dashboard: `https://<your-vercel-app>.vercel.app/api/payments/webhook`.
-> 4. Deploy `firestore.rules` (`firebase deploy --only firestore:rules`).
+### 3.1 Midtrans Sandbox Backend (`backend/vercel/`)
+- **Code Status**: `code implemented`
+- **Testing Status**: `automated test passed` (10 Vitest tests passed, 6 payment unit tests passed)
+- **Deployment Status**: `deployment pending` (Awaiting Vercel production deployment)
+- **Scope Note**: Classified as **Additional Demonstration Feature (A-01)**. Payment processing is NOT a mandatory gate for Core MVP acceptance.
+
+### 3.2 Real-Time Customer-Barber Text Chat (F-31)
+- **Code Status**: `code implemented` (Partial UI routes `src/app/(customer)/chat.tsx` & `[conversationId].tsx` exist using in-memory mock state)
+- **Backend Status**: `planned` (Scheduled for Batch 05)
+- **Scope Note**: Classified as **Core Thesis MVP (F-31)**. Text chat between customer and assigned barber for a specific booking is required for thesis completion.
+
+### 3.3 Interactive Booking Location Picker (E-01)
+- **Code Status**: `code implemented` (Manual text address fallback in `src/app/(customer)/booking/location.tsx` active)
+- **Map Component**: `planned` (Scheduled for Batch 06)
+- **Scope Note**: Classified as **Preferred Core Enhancement (E-01)**. MapLibre React Native + OpenFreeMap stack requires an Expo development build (`npx expo run:android` / `eas build`).
+
+---
+
+## 4. Summary of Current Blockers
+
+The following items are current project blockers that must be addressed in their respective upcoming batches:
+
+1. **Chat Real-Time Implementation**: Firestore `conversations/{bookingId}` and `messages` subcollection listeners (`onSnapshot`) absent (Scheduled: Batch 05).
+2. **Chat Security Rules & Indexes**: Firestore rules and index definitions for `conversations` and `messages` absent (Scheduled: Batch 05).
+3. **Map Development Build**: MapLibre React Native requires an Expo development build (`npx expo run:android`) and cannot run in Expo Go (Scheduled: Batch 06).
+4. **Map Fallback Validation**: Verification that text address entry remains 100% functional when location permission or map tiles fail (Scheduled: Batch 06).
+5. **Optional Payment-Mode Decoupling**: Backend currently requires `paymentStatus == 'paid'` before barber acceptance. Decoupling `paymentMethod == 'cash_on_service'` with `paymentStatus == 'not_required'` is required before Midtrans Sandbox can truthfully be optional (Scheduled: Batch 07).
+6. **Vercel Backend Deployment**: `backend/vercel` needs deployment to Vercel with environment variables (`MIDTRANS_SERVER_KEY`, Firebase service account) configured (Scheduled: Batch 02).
+7. **Midtrans Webhook Configuration**: Midtrans Sandbox Dashboard notification URL must be set to `https://<vercel-app>.vercel.app/api/payments/webhook` (Scheduled: Batch 02).
+8. **Firestore Rules & Indexes Deployment**: Production deployment of `firestore.rules` and `firestore.indexes.json` via Firebase CLI (Scheduled: Batch 02).
+9. **Live Three-Role Testing**: End-to-end live testing across Customer, Barber, and Admin roles in staged environment (Scheduled: Batch 09).

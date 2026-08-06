@@ -44,12 +44,12 @@ Every batch and feature implementation must execute and pass the following three
 
 ---
 
-## 4. Thesis Feature Requirement Verification (F-01 to F-30)
+## 4. Thesis Feature Requirement Verification (F-01 to F-31)
 
 | Actor | Range | Requirements Covered | Verification Status |
 | --- | --- | --- | --- |
-| Customer | F-01 to F-13 | Registration, Login, Profile, Barber List/Detail/Services, Service/Date Selection, Location, Booking Creation, Status, History, Rating & Review | Must be verified against live Firestore listeners |
-| Barber | F-14 to F-23 | Registration, Login, Profile, Services, Prices, Schedule, Requests, Accept/Reject, Status Update, Transaction History | Must be verified in `src/app/(barber)` screen routes |
+| Customer | F-01 to F-13, F-31 | Registration, Login, Profile, Barber List/Detail/Services, Service/Date Selection, Location, Booking Creation, Status, History, Rating & Review, Real-Time Text Chat | Must be verified against live Firestore listeners |
+| Barber | F-14 to F-23, F-31 | Registration, Login, Profile, Services, Prices, Schedule, Requests, Accept/Reject, Status Update, Transaction History, Real-Time Text Chat | Must be verified in `src/app/(barber)` screen routes |
 | Admin | F-24 to F-30 | Login, Barber Verification, Customer/Barber Management, Categories, Booking Monitor, Reports | Must be verified in `src/app/(admin)` screen routes |
 
 ---
