@@ -4,6 +4,7 @@
  */
 
 import { firestore } from '@/lib/firebase';
+import { mapLegacyBookingStatus, BookingStatus } from '@/types/domain';
 import {
     addDoc,
     collection,
@@ -35,6 +36,8 @@ export const barberRepository = {
    */
   async getBarberProfile(barberId: string): Promise<BarberProfile | null> {
     try {
+      if (!barberId) return null;
+
       const docRef = doc(firestore, 'barbers', barberId);
       const snapshot = await getDoc(docRef);
 
@@ -43,8 +46,10 @@ export const barberRepository = {
       }
 
       return snapshot.data() as BarberProfile;
-    } catch (error) {
-      console.error('Error fetching barber profile:', error);
+    } catch (error: any) {
+      if (__DEV__) {
+        console.warn('[BarberRepository getBarberProfile Error]', error?.code, error?.message || error);
+      }
       return null;
     }
   },
@@ -67,10 +72,13 @@ export const barberRepository = {
       });
 
       return { success: true };
-    } catch (error) {
+    } catch (error: any) {
+      if (__DEV__) {
+        console.warn('[BarberRepository updateBarberProfile Error]', error?.code, error?.message || error);
+      }
       return {
         success: false,
-        error: { message: 'Failed to update barber profile' },
+        error: { message: error?.message || 'Failed to update barber profile' },
       };
     }
   },
@@ -80,18 +88,22 @@ export const barberRepository = {
    */
   async getBarberServices(barberId: string): Promise<BarberService[]> {
     try {
+      if (!barberId) return [];
+
       const q = query(
         collection(firestore, 'barberServices'),
         where('barberId', '==', barberId),
       );
 
       const snapshot = await getDocs(q);
-            return snapshot.docs.map((doc) => ({
-        ...doc.data(),
-        id: doc.id,
+      return snapshot.docs.map((docSnap) => ({
+        ...docSnap.data(),
+        id: docSnap.id,
       })) as unknown as BarberService[];
-    } catch (error) {
-      console.error('Error fetching barber services:', error);
+    } catch (error: any) {
+      if (__DEV__) {
+        console.warn('[BarberRepository getBarberServices Error]', error?.code, error?.message || error);
+      }
       return [];
     }
   },
@@ -104,11 +116,11 @@ export const barberRepository = {
     data: BarberAddServiceRequest,
   ): Promise<{ success: boolean; serviceId?: string; error?: { message: string } }> {
     try {
-      if (!barberId || !data.name || !data.price) {
-        return { success: false, error: { message: 'Missing required fields' } };
+      if (!barberId || !data.name || data.price === undefined || data.price < 0) {
+        return { success: false, error: { message: 'Missing or invalid required fields' } };
       }
 
-            const service = {
+      const service = {
         barberId,
         name: data.name,
         price: data.price,
@@ -121,22 +133,27 @@ export const barberRepository = {
       const docRef = await addDoc(collection(firestore, 'barberServices'), service);
 
       return { success: true, serviceId: docRef.id };
-    } catch (error) {
+    } catch (error: any) {
+      if (__DEV__) {
+        console.warn('[BarberRepository addBarberService Error]', error?.code, error?.message || error);
+      }
       return {
         success: false,
-        error: { message: 'Failed to add service' },
+        error: { message: error?.message || 'Failed to add service' },
       };
     }
   },
 
   /**
-   * Get barber bookings
+   * Get barber bookings with canonical status mapping
    */
   async getBarberBookings(
     barberId: string,
     status?: string,
   ): Promise<BarberBooking[]> {
     try {
+      if (!barberId) return [];
+
       let q;
       if (status) {
         q = query(
@@ -152,12 +169,18 @@ export const barberRepository = {
       }
 
       const snapshot = await getDocs(q);
-      return snapshot.docs.map((doc) => ({
-        ...doc.data(),
-        bookingId: doc.id,
-      })) as BarberBooking[];
-    } catch (error) {
-      console.error('Error fetching barber bookings:', error);
+      return snapshot.docs.map((docSnap) => {
+        const data = docSnap.data();
+        return {
+          ...data,
+          bookingId: docSnap.id,
+          status: mapLegacyBookingStatus(data.status),
+        } as BarberBooking;
+      });
+    } catch (error: any) {
+      if (__DEV__) {
+        console.warn('[BarberRepository getBarberBookings Error]', error?.code, error?.message || error);
+      }
       return [];
     }
   },
@@ -167,6 +190,8 @@ export const barberRepository = {
    */
   async getBookingDetail(barberId: string, bookingId: string): Promise<BarberBooking | null> {
     try {
+      if (!barberId || !bookingId) return null;
+
       const docRef = doc(firestore, 'bookings', bookingId);
       const snapshot = await getDoc(docRef);
 
@@ -179,20 +204,26 @@ export const barberRepository = {
         return null;
       }
 
-      return { ...data, bookingId: snapshot.id } as BarberBooking;
-    } catch (error) {
-      console.error('Error fetching booking detail:', error);
+      return {
+        ...data,
+        bookingId: snapshot.id,
+        status: mapLegacyBookingStatus(data.status),
+      } as BarberBooking;
+    } catch (error: any) {
+      if (__DEV__) {
+        console.warn('[BarberRepository getBookingDetail Error]', error?.code, error?.message || error);
+      }
       return null;
     }
   },
 
   /**
-   * Update booking status
+   * Update booking status with canonical status verification
    */
   async updateBookingStatus(
     barberId: string,
     bookingId: string,
-    newStatus: string,
+    newStatus: BookingStatus,
   ): Promise<{ success: boolean; error?: { message: string } }> {
     try {
       if (!barberId || !bookingId || !newStatus) {
@@ -213,10 +244,13 @@ export const barberRepository = {
       });
 
       return { success: true };
-    } catch (error) {
+    } catch (error: any) {
+      if (__DEV__) {
+        console.warn('[BarberRepository updateBookingStatus Error]', error?.code, error?.message || error);
+      }
       return {
         success: false,
-        error: { message: 'Failed to update booking status' },
+        error: { message: error?.message || 'Failed to update booking status' },
       };
     }
   },
@@ -247,10 +281,13 @@ export const barberRepository = {
       });
 
       return { success: true };
-    } catch (error) {
+    } catch (error: any) {
+      if (__DEV__) {
+        console.warn('[BarberRepository cancelBooking Error]', error?.code, error?.message || error);
+      }
       return {
         success: false,
-        error: { message: 'Failed to cancel booking' },
+        error: { message: error?.message || 'Failed to cancel booking' },
       };
     }
   },
@@ -260,13 +297,18 @@ export const barberRepository = {
    */
   async getBookingStatusSummary(barberId: string): Promise<BarberBookingStatusSummary> {
     try {
+      if (!barberId) return { total: 0, completed: 0, pending: 0, cancelled: 0 };
+
       const q = query(
         collection(firestore, 'bookings'),
         where('barberId', '==', barberId),
       );
 
       const snapshot = await getDocs(q);
-      const bookings = snapshot.docs.map((doc) => doc.data());
+      const bookings = snapshot.docs.map((docSnap) => ({
+        ...docSnap.data(),
+        status: mapLegacyBookingStatus(docSnap.data().status),
+      }));
 
       return {
         total: bookings.length,
@@ -274,8 +316,10 @@ export const barberRepository = {
         pending: bookings.filter((b) => b.status === 'pending').length,
         cancelled: bookings.filter((b) => b.status === 'cancelled').length,
       };
-    } catch (error) {
-      console.error('Error fetching booking summary:', error);
+    } catch (error: any) {
+      if (__DEV__) {
+        console.warn('[BarberRepository getBookingStatusSummary Error]', error?.code, error?.message || error);
+      }
       return { total: 0, completed: 0, pending: 0, cancelled: 0 };
     }
   },
@@ -285,6 +329,8 @@ export const barberRepository = {
    */
   async getWeeklySchedule(barberId: string): Promise<BarberWeeklySchedule | null> {
     try {
+      if (!barberId) return null;
+
       const docRef = doc(firestore, 'barberSchedules', barberId);
       const snapshot = await getDoc(docRef);
 
@@ -293,8 +339,10 @@ export const barberRepository = {
       }
 
       return snapshot.data() as BarberWeeklySchedule;
-    } catch (error) {
-      console.error('Error fetching weekly schedule:', error);
+    } catch (error: any) {
+      if (__DEV__) {
+        console.warn('[BarberRepository getWeeklySchedule Error]', error?.code, error?.message || error);
+      }
       return null;
     }
   },
@@ -317,10 +365,13 @@ export const barberRepository = {
       });
 
       return { success: true };
-    } catch (error) {
+    } catch (error: any) {
+      if (__DEV__) {
+        console.warn('[BarberRepository updateWeeklySchedule Error]', error?.code, error?.message || error);
+      }
       return {
         success: false,
-        error: { message: 'Failed to update schedule' },
+        error: { message: error?.message || 'Failed to update schedule' },
       };
     }
   },
@@ -330,18 +381,22 @@ export const barberRepository = {
    */
   async getBarberReviews(barberId: string): Promise<BarberReview[]> {
     try {
+      if (!barberId) return [];
+
       const q = query(
         collection(firestore, 'reviews'),
         where('barberId', '==', barberId),
       );
 
       const snapshot = await getDocs(q);
-            return snapshot.docs.map((doc) => ({
-        ...doc.data(),
-        id: doc.id,
+      return snapshot.docs.map((docSnap) => ({
+        ...docSnap.data(),
+        id: docSnap.id,
       })) as unknown as BarberReview[];
-    } catch (error) {
-      console.error('Error fetching barber reviews:', error);
+    } catch (error: any) {
+      if (__DEV__) {
+        console.warn('[BarberRepository getBarberReviews Error]', error?.code, error?.message || error);
+      }
       return [];
     }
   },
@@ -365,10 +420,13 @@ export const barberRepository = {
       });
 
       return { success: true };
-    } catch (error) {
+    } catch (error: any) {
+      if (__DEV__) {
+        console.warn('[BarberRepository replyToReview Error]', error?.code, error?.message || error);
+      }
       return {
         success: false,
-        error: { message: 'Failed to reply to review' },
+        error: { message: error?.message || 'Failed to reply to review' },
       };
     }
   },
@@ -381,19 +439,32 @@ export const barberRepository = {
     period: 'daily' | 'weekly' | 'monthly' = 'monthly',
   ): Promise<BarberAnalytics> {
     try {
+      if (!barberId) {
+        return {
+          period,
+          totalBookings: 0,
+          completedBookings: 0,
+          pendingBookings: 0,
+          cancelledBookings: 0,
+          totalRevenue: 0,
+        };
+      }
+
       const q = query(
         collection(firestore, 'bookings'),
         where('barberId', '==', barberId),
       );
 
       const snapshot = await getDocs(q);
-      const bookings = snapshot.docs.map((doc) => doc.data());
+      const bookings = snapshot.docs.map((docSnap) => ({
+        ...docSnap.data(),
+        status: mapLegacyBookingStatus(docSnap.data().status),
+      }));
 
-      // Calculate analytics
       const completed = bookings.filter((b) => b.status === 'completed').length;
       const pending = bookings.filter((b) => b.status === 'pending').length;
       const cancelled = bookings.filter((b) => b.status === 'cancelled').length;
-      const totalRevenue = bookings.reduce((sum, b) => sum + (b.totalPrice || 0), 0);
+      const totalRevenue = bookings.reduce((sum, b) => sum + ((b as any).totalPrice || 0), 0);
 
       return {
         period,
@@ -403,8 +474,10 @@ export const barberRepository = {
         cancelledBookings: cancelled,
         totalRevenue,
       };
-    } catch (error) {
-      console.error('Error fetching barber analytics:', error);
+    } catch (error: any) {
+      if (__DEV__) {
+        console.warn('[BarberRepository getBarberAnalytics Error]', error?.code, error?.message || error);
+      }
       return {
         period,
         totalBookings: 0,
@@ -421,6 +494,8 @@ export const barberRepository = {
    */
   async getBarberDashboard(barberId: string): Promise<BarberDashboardData | null> {
     try {
+      if (!barberId) return null;
+
       const profile = await this.getBarberProfile(barberId);
       const summary = await this.getBookingStatusSummary(barberId);
       const analytics = await this.getBarberAnalytics(barberId);
@@ -430,14 +505,16 @@ export const barberRepository = {
         return null;
       }
 
-            return {
-              profile,
-              bookingsSummary: summary,
-              analytics,
-              recentBookings: recentBookings.slice(0, 5),
-            } as unknown as BarberDashboardData;
-    } catch (error) {
-      console.error('Error fetching barber dashboard:', error);
+      return {
+        profile,
+        bookingsSummary: summary,
+        analytics,
+        recentBookings: recentBookings.slice(0, 5),
+      } as unknown as BarberDashboardData;
+    } catch (error: any) {
+      if (__DEV__) {
+        console.warn('[BarberRepository getBarberDashboard Error]', error?.code, error?.message || error);
+      }
       return null;
     }
   },
@@ -456,15 +533,16 @@ export const barberRepository = {
 
       const analytics = await this.getBarberAnalytics(barberId);
 
-      // In production, use Firebase Cloud Functions to generate and return signed URL
-      // For now, return a placeholder
       const reportUrl = `gs://your-bucket/reports/barber-${barberId}-${Date.now()}.${format}`;
 
       return { success: true, url: reportUrl };
-    } catch (error) {
+    } catch (error: any) {
+      if (__DEV__) {
+        console.warn('[BarberRepository exportAnalyticsReport Error]', error?.code, error?.message || error);
+      }
       return {
         success: false,
-        error: { message: 'Failed to export analytics report' },
+        error: { message: error?.message || 'Failed to export analytics report' },
       };
     }
   },

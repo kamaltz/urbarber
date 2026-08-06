@@ -206,16 +206,18 @@ export const customerRepository = {
    */
   async getCustomerHomeData(customerId: string): Promise<CustomerHomeData | null> {
     try {
-      if (!customerId) return { ...MOCK_CUSTOMER_HOME_DATA, userId: customerId };
+      if (!customerId) return null;
       const docRef = doc(firestore, 'customerHomeData', customerId);
-      const snapshot = await withTimeout(getDoc(docRef), 5000, 'Customer home data fetch timed out');
+      const snapshot = await withTimeout(getDoc(docRef), 10000, 'Customer home data fetch timed out');
 
-      if (!snapshot.exists()) return { ...MOCK_CUSTOMER_HOME_DATA, userId: customerId };
+      if (!snapshot.exists()) return null;
 
-      return { ...MOCK_CUSTOMER_HOME_DATA, userId: customerId, ...snapshot.data() } as CustomerHomeData;
-    } catch (error) {
-      if (!isOfflineError(error)) console.warn('Unable to fetch home data; using fallback.', error);
-      return { ...MOCK_CUSTOMER_HOME_DATA, userId: customerId };
+      return { userId: customerId, ...snapshot.data() } as CustomerHomeData;
+    } catch (error: any) {
+      if (__DEV__) {
+        console.warn('[CustomerRepository getCustomerHomeData Error]', error?.code, error?.message || error);
+      }
+      return null;
     }
   },
 
@@ -224,16 +226,18 @@ export const customerRepository = {
    */
   async getCustomerExploreData(customerId: string): Promise<CustomerExploreData | null> {
     try {
-      if (!customerId) return { ...MOCK_CUSTOMER_EXPLORE_DATA, userId: customerId };
+      if (!customerId) return null;
       const docRef = doc(firestore, 'customerExploreData', customerId);
-      const snapshot = await withTimeout(getDoc(docRef), 5000, 'Customer explore data fetch timed out');
+      const snapshot = await withTimeout(getDoc(docRef), 10000, 'Customer explore data fetch timed out');
 
-      if (!snapshot.exists()) return { ...MOCK_CUSTOMER_EXPLORE_DATA, userId: customerId };
+      if (!snapshot.exists()) return null;
 
-      return { ...MOCK_CUSTOMER_EXPLORE_DATA, userId: customerId, ...snapshot.data() } as CustomerExploreData;
-    } catch (error) {
-      if (!isOfflineError(error)) console.warn('Unable to fetch explore data; using fallback.', error);
-      return { ...MOCK_CUSTOMER_EXPLORE_DATA, userId: customerId };
+      return { userId: customerId, ...snapshot.data() } as CustomerExploreData;
+    } catch (error: any) {
+      if (__DEV__) {
+        console.warn('[CustomerRepository getCustomerExploreData Error]', error?.code, error?.message || error);
+      }
+      return null;
     }
   },
 
@@ -253,13 +257,12 @@ export const customerRepository = {
         searchQueryRef = firestoreQuery(barbersRef, where('serviceType', 'array-contains', filters.category));
       }
 
-      const snapshot = await withTimeout(getDocs(searchQueryRef), 5000, 'Barbers search timed out');
-      const barbers = snapshot.docs.map((doc) => ({
-        ...(doc.data() as object),
-        id: doc.id,
+      const snapshot = await withTimeout(getDocs(searchQueryRef), 10000, 'Barbers search timed out');
+      const barbers = snapshot.docs.map((docSnap) => ({
+        ...(docSnap.data() as object),
+        id: docSnap.id,
       }));
 
-      // Filter by query string if provided
       const filtered = query
         ? barbers.filter(
             (barber: any) =>
@@ -275,11 +278,13 @@ export const customerRepository = {
         selectedCategory: filters?.category,
         nearbyBarbers: filtered as any,
         categoryChips: [],
-        featuredBarber: (filtered[0] as any) || MOCK_CUSTOMER_EXPLORE_DATA.featuredBarber,
+        featuredBarber: (filtered[0] as any) || null,
       } as unknown as CustomerExploreData;
-    } catch (error) {
-      console.error('Error searching barbers:', error);
-      return MOCK_CUSTOMER_EXPLORE_DATA;
+    } catch (error: any) {
+      if (__DEV__) {
+        console.warn('[CustomerRepository searchBarbers Error]', error?.code, error?.message || error);
+      }
+      return null;
     }
   },
 

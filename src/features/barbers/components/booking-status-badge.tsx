@@ -5,33 +5,46 @@
 
 import React from 'react';
 import { Text, View } from 'react-native';
+import type { BookingStatus } from '@/types/domain';
 
 interface BookingStatusBadgeProps {
-  status: 'waiting' | 'processing' | 'completed' | 'cancelled';
+  status: BookingStatus;
   size?: 'sm' | 'md' | 'lg';
 }
 
-const statusConfig = {
-  waiting: {
-    bg: 'bg-yellow-50',
-    text: 'text-yellow-600',
+const statusConfig: Record<BookingStatus, { bg: string; text: string; label: string; icon: string }> = {
+  pending: {
+    bg: 'bg-amber-50',
+    text: 'text-amber-700',
     label: 'Menunggu',
     icon: '⏱',
   },
-  processing: {
+  accepted: {
     bg: 'bg-blue-50',
-    text: 'text-blue-600',
+    text: 'text-blue-700',
+    label: 'Diterima',
+    icon: '📋',
+  },
+  rejected: {
+    bg: 'bg-rose-50',
+    text: 'text-rose-700',
+    label: 'Ditolak',
+    icon: '✕',
+  },
+  in_progress: {
+    bg: 'bg-orange-50',
+    text: 'text-orange-700',
     label: 'Proses',
-    icon: '⚙️',
+    icon: '✂️',
   },
   completed: {
-    bg: 'bg-green-50',
-    text: 'text-green-600',
+    bg: 'bg-emerald-50',
+    text: 'text-emerald-700',
     label: 'Selesai',
     icon: '✓',
   },
   cancelled: {
-    bg: 'bg-slate-50',
+    bg: 'bg-slate-100',
     text: 'text-slate-600',
     label: 'Dibatalkan',
     icon: '✕',
@@ -54,7 +67,7 @@ export function BookingStatusBadge({
   status,
   size = 'md',
 }: BookingStatusBadgeProps) {
-  const config = statusConfig[status];
+  const config = statusConfig[status] || statusConfig.pending;
 
   return (
     <View className={`${config.bg} ${sizeStyles[size]} rounded-full flex-row items-center gap-1`}>

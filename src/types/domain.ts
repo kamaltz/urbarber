@@ -13,6 +13,48 @@ export type BookingStatus =
   | "completed"
   | "cancelled";
 
+/**
+ * Explicit legacy status read mapper.
+ * Translates old stored database values to canonical BookingStatus.
+ * All new Firestore writes must use canonical values directly.
+ */
+export function mapLegacyBookingStatus(rawStatus?: string): BookingStatus {
+  if (!rawStatus) return "pending";
+
+  const normalized = rawStatus.toLowerCase().trim();
+
+  switch (normalized) {
+    case "booked":
+    case "waiting":
+    case "pending":
+      return "pending";
+
+    case "approved":
+    case "accepted":
+      return "accepted";
+
+    case "declined":
+    case "rejected":
+      return "rejected";
+
+    case "on_process":
+    case "processing":
+    case "in_progress":
+      return "in_progress";
+
+    case "finished":
+    case "completed":
+      return "completed";
+
+    case "canceled":
+    case "cancelled":
+      return "cancelled";
+
+    default:
+      return "pending";
+  }
+}
+
 export interface User {
   id: string;
   name: string;
@@ -20,7 +62,8 @@ export interface User {
   phone?: string;
   role: UserRole;
   status: UserStatus;
-  avatarUrl?: string;
+  profileImageUrl?: string;
+  profileImagePath?: string;
 }
 
 export interface Barber {
@@ -32,7 +75,8 @@ export interface Barber {
   ratingAverage: number;
   reviewCount: number;
   verified: boolean;
-  imageUrl?: string;
+  profileImageUrl?: string;
+  profileImagePath?: string;
 }
 
 export interface BarberService {

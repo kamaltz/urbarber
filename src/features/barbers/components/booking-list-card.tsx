@@ -4,21 +4,24 @@
  */
 
 import { AppButton } from '@/components/ui/AppButton';
+import type { BookingStatus } from '@/types/domain';
 import { Pressable, Text, View } from 'react-native';
 import type { BarberBooking } from '../types/barber';
 
 interface BookingListCardProps {
   booking: BarberBooking;
   onPress?: () => void;
-  onStatusChange?: (status: string) => void;
+  onStatusChange?: (status: BookingStatus) => void;
   actionLabel?: string;
 }
 
-const statusStyles: Record<string, { bg: string; text: string; label: string }> = {
-  waiting: { bg: 'bg-yellow-50', text: 'text-yellow-600', label: 'Menunggu' },
-  processing: { bg: 'bg-blue-50', text: 'text-blue-600', label: 'Proses' },
-  completed: { bg: 'bg-green-50', text: 'text-green-600', label: 'Selesai' },
-  cancelled: { bg: 'bg-slate-50', text: 'text-slate-600', label: 'Dibatalkan' },
+const statusStyles: Record<BookingStatus, { bg: string; text: string; label: string }> = {
+  pending: { bg: 'bg-amber-50', text: 'text-amber-700', label: 'Menunggu' },
+  accepted: { bg: 'bg-blue-50', text: 'text-blue-700', label: 'Diterima' },
+  rejected: { bg: 'bg-rose-50', text: 'text-rose-700', label: 'Ditolak' },
+  in_progress: { bg: 'bg-orange-50', text: 'text-orange-700', label: 'Proses' },
+  completed: { bg: 'bg-emerald-50', text: 'text-emerald-700', label: 'Selesai' },
+  cancelled: { bg: 'bg-slate-100', text: 'text-slate-600', label: 'Dibatalkan' },
 };
 
 export function BookingListCard({
@@ -27,7 +30,7 @@ export function BookingListCard({
   onStatusChange,
   actionLabel = 'Detail',
 }: BookingListCardProps) {
-  const statusStyle = statusStyles[booking.status] || statusStyles.waiting;
+  const statusStyle = statusStyles[booking.status] || statusStyles.pending;
   const bookingTime = booking.bookingTime; // HH:MM
   const serviceNames = booking.services.map((s) => s.name).join(', ');
 
@@ -59,11 +62,11 @@ export function BookingListCard({
         </Text>
       </View>
 
-            {onStatusChange && booking.status === 'waiting' && (
+      {onStatusChange && booking.status === 'pending' && (
         <AppButton
           label="Terima Pesanan"
           size="sm"
-          onPress={() => onStatusChange('processing')}
+          onPress={() => onStatusChange('accepted')}
           className="bg-orange-600"
         />
       )}

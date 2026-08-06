@@ -4,6 +4,7 @@
  */
 
 import { useAsyncDetail } from '@/hooks/use-async-data';
+import type { BookingStatus } from '../../../types/domain';
 import { useState } from 'react';
 import { barberRepository } from '../repository/barber.repository';
 import type { BarberBooking, BarberBookingStatusSummary } from '../types/barber';
@@ -26,7 +27,7 @@ export function useBarberBookings(barberId: string, status?: string) {
     { skip: !barberId }
   );
 
-  const updateBookingStatus = async (bookingId: string, newStatus: string) => {
+  const updateBookingStatus = async (bookingId: string, newStatus: BookingStatus) => {
     if (!barberId) return { success: false };
 
     try {
@@ -39,16 +40,14 @@ export function useBarberBookings(barberId: string, status?: string) {
       if (result.success) {
         setBookings((prev) =>
           prev.map((b) =>
-            b.bookingId === bookingId ? { ...b, status: newStatus as any } : b
+            b.bookingId === bookingId ? { ...b, status: newStatus } : b
           )
         );
       }
+
       return result;
-    } catch (err) {
-      return {
-        success: false,
-        error: { message: 'Failed to update status' },
-      };
+    } catch {
+      return { success: false, error: { message: 'Failed to update booking status' } };
     }
   };
 

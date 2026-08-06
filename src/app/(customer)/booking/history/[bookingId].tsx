@@ -119,7 +119,7 @@ export default function BookingHistoryDetailScreen() {
                 className="h-12 rounded-lg"
               />
 
-              {booking.status === 'finished' && (
+              {booking.status === 'completed' && (
                 <AppButton
                   label="Beri Ulasan"
                   onPress={() => router.push(`/(customer)/booking/rating/${booking.id}`)}

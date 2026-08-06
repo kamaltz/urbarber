@@ -10,7 +10,7 @@ export const mockBarbers: Barber[] = [
     ratingAverage: 4.8,
     reviewCount: 124,
     verified: true,
-    imageUrl: "https://images.unsplash.com/photo-placeholder",
+    profileImageUrl: "https://images.unsplash.com/photo-placeholder",
   },
 ];
 

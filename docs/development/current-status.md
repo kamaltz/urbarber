@@ -2,78 +2,63 @@
 
 ## 1. Executive Summary
 
-This report presents an empirical code audit of the URBarber repository on branch `fix/batch-01-foundation` (based on `feat/complete-thesis-mvp`).
+This report presents an empirical code audit of the URBarber repository on branch `feat/batch-02-data-model-security` (based on `feat/complete-thesis-mvp`).
 
-Batch 01 (Foundation Stabilization: Firebase Auth, Supabase Storage, Avatar, and Firestore Customer Profile) is fully stabilized and verified:
+**Batch 01 (Foundation Stabilization)** and **Batch 02 (Data Model Harmonization & Firestore Security Rules)** are fully stabilized and verified:
 - **Firebase Authentication** is the sole authentication provider.
-- **Supabase Storage Client & SQL Policies** are updated with safe, idempotent RLS rules enforcing Firebase text UID path validation (`{firebaseUid}/...`).
-- **Avatar Upload Flow** validates MIME type and file size (< 5 MB) before sending requests, uploads to `{firebaseUid}/avatar/{uniqueFileName}` with `upsert: false`, and persists canonical metadata fields (`profileImageUrl` and `profileImagePath`) to Firestore.
-- **Firestore Profile Timeout Handling** is stabilized with mounted state guards and clean development error logging.
+- **Canonical Domain Models & Enums**: Defined in `src/types/domain.ts`:
+  - `UserRole`: `"customer"` | `"barber"` | `"admin"`
+  - `UserStatus`: `"active"` | `"pending_verification"` | `"suspended"`
+  - `BookingStatus`: `"pending"` | `"accepted"` | `"rejected"` | `"in_progress"` | `"completed"` | `"cancelled"`
+- **Purged Mock Fallbacks**: Production repository paths no longer return hardcoded mock data or fake payment simulations (`Math.random() > 0.1` purged).
+- **Cloud Firestore Security Rules**: Production-grade `firestore.rules` (v2) implemented with default deny, RBAC helpers (`isSignedIn()`, `uid()`, `appRole()`, `isAdmin()`, `isBarber()`, `isCustomer()`, `isOwner(userId)`), and booking transition enforcement.
+- **Firestore Configuration**: `firebase.json` and `firestore.indexes.json` configured for compound query indexes.
+- **Rules Test Suite**: 18 automated rules unit tests added in `scripts/test-firestore-rules.js`.
 
 ---
 
 ## 2. Technical Specifications & Configuration Baseline
 
 ### 2.1 Required Firebase Custom Claims
-To access Supabase Storage via RLS, Firebase Auth ID tokens must contain these custom claims:
+To access Cloud Firestore & Supabase Storage via RLS, Firebase Auth ID tokens must contain these custom claims:
 - `role`: `"authenticated"` (Required for Supabase JWT authentication)
-- `app_role`: `"customer"` | `"barber"` | `"admin"` (Required for role-based storage access)
+- `app_role`: `"customer"` | `"barber"` | `"admin"` (Required for role-based access control)
 - `sub`: `{firebaseUid}` (Direct 28-character Firebase Auth text UID)
 
 *Script for claim assignment*: `node scripts/assign-firebase-custom-claims.js --uid=<USER_UID> --app_role=customer`
 
-### 2.2 Supabase Storage Buckets
-- `public-media`: Public bucket, 5 MB file size limit, allowed MIME types: `image/jpeg`, `image/png`, `image/webp`.
-- `private-documents`: Private bucket, 10 MB file size limit, allowed MIME types: `image/jpeg`, `image/png`, `application/pdf`.
-
-### 2.3 Storage Object Path Format
-All storage paths MUST follow the canonical pattern:
-`{firebaseUid}/...` (e.g. `{firebaseUid}/avatar/avatar-1723456789-a1b2c3.jpg`)
-
-### 2.4 Canonical Firestore Avatar Metadata Fields
-All avatar updates write strictly to these canonical fields:
-- `profileImageUrl`: Public HTTPS URL of the avatar in Supabase Storage.
-- `profileImagePath`: Storage object relative path (e.g. `{firebaseUid}/avatar/{uniqueFileName}`).
+### 2.2 Canonical Firestore Collections & Models
+1. `users/{userId}`: Core identity and role mapping (`uid`, `email`, `name`, `phoneNumber`, `role`, `status`, `profileImageUrl`, `profileImagePath`, `createdAt`, `updatedAt`).
+2. `customers/{customerId}`: Customer specific profile details.
+3. `barbers/{barberId}`: Barber public listing, rating aggregate, and verification state.
+4. `barberServices/{serviceId}`: Offered grooming services with price and duration.
+5. `barberSchedules/{barberId}`: Operating schedule and unavailable dates.
+6. `categories/{categoryId}`: Service category taxonomy.
+7. `bookings/{bookingId}`: Booking transactions tracking canonical `status`.
+8. `reviews/{reviewId}`: Customer reviews for completed bookings (1–5 rating).
+9. `favorites/{favoriteId}`: Customer favorite barber bookmarks.
+10. `supportTickets/{ticketId}`: Support tickets and replies.
 
 ---
 
-## 3. Manual Action Required (Hosted Supabase SQL Procedure)
+## 3. Manual Actions Required
 
 > [!IMPORTANT]
-> **MANUAL ACTION REQUIRED**: Run `supabase/storage-policies.sql` in the Supabase Dashboard SQL Editor for your hosted project.
->
-> The migration script:
-> 1. Initializes buckets `public-media` and `private-documents` idempotently.
-> 2. Drops legacy policy names explicitly.
-> 3. Creates the 8 canonical security policies using `auth.jwt() ->> 'sub'` and `TO authenticated`.
+> **MANUAL ACTION REQUIRED**:
+> 1. Run `supabase/storage-policies.sql` in the Supabase Dashboard SQL Editor for hosted Supabase storage.
+> 2. Deploy `firestore.rules` and `firestore.indexes.json` to Firebase via Firebase Console or CLI (`firebase deploy --only firestore`).
 
 ---
 
 ## 4. Test Specifications & Verification Baseline
 
-1. **Positive Avatar Upload Test**:
-   - User picks a valid JPEG/PNG/WebP image under 5 MB.
-   - Upload succeeds to `public-media` path `{firebaseUid}/avatar/{uniqueFileName}`.
-   - Firestore `customers/{uid}` and `users/{uid}` update with `profileImageUrl` and `profileImagePath`.
-   - Avatar image displays correctly on screen and persists across app restarts.
-2. **Negative Cross-UID RLS Test**:
-   - Authenticated user attempts upload to a path belonging to another UID (`fake-foreign-uid/...`).
-   - Request is immediately rejected by Supabase RLS with 403 Forbidden.
-3. **Private Document Access Test**:
-   - File owner can read/write their own files in `private-documents/{firebaseUid}/...`.
-   - Admin (`app_role = 'admin'`) can read private documents across all user folders.
-   - Non-owner and non-admin users receive 403 Forbidden.
+1. **Automated Rules Unit Tests**: Run `npm run test:rules` (tests 18 authorization and transition rules).
+2. **Typecheck & Lint**: Run `npm run check` (`tsc --noEmit` and `expo lint`).
+3. **Expo Doctor**: Run `npm run doctor` (`npx expo-doctor`).
+4. **Git Diff Audit**: Run `git diff --check`.
 
 ---
 
 ## 5. Known Remaining Blockers & Next Batches
 
-- **Batch 02+ Scope**: Booking flow, payments, barber operational dashboard, admin moderation dashboard, real-time chat, push notifications, and AI recommendations are strictly excluded from Batch 01.
-
----
-
-## 6. Required Validation Commands
-
-- `npm run check` (Typecheck & Linting)
-- `npm run doctor` (Expo Doctor)
-- `git diff --check` (Whitespace & conflict marker audit)
+- **Next Batches**: Customer discovery UI, booking screens, barber operational dashboard, admin moderation dashboard.

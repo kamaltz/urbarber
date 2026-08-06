@@ -17,7 +17,8 @@ interface UserDocument {
   phoneNumber?: string;
   role: "customer" | "barber" | "admin";  // Canonical UserRole
   status: "active" | "pending_verification" | "suspended";
-  avatarUrl?: string;          // Public URL from Supabase Storage
+  profileImageUrl?: string;    // Public URL from Supabase Storage
+  profileImagePath?: string;   // Relative storage object path
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
@@ -29,10 +30,11 @@ Customer specific profile document indexed by `userId` (matches `uid`).
 interface CustomerDocument {
   userId: string;
   email: string;
-  fullName: string;
+  name: string;
   phoneNumber?: string;
   address?: string;
-  profileImage?: string;       // Supabase Storage URL
+  profileImageUrl?: string;    // Supabase Storage URL
+  profileImagePath?: string;   // Relative storage object path
   role: "customer";
   createdAt: Timestamp;
   updatedAt: Timestamp;
@@ -52,7 +54,8 @@ interface BarberDocument {
   reviewCount: number;         // e.g. 124
   verified: boolean;           // Approved by admin (F-25)
   verificationStatus: "pending" | "approved" | "rejected";
-  imageUrl?: string;           // Supabase Storage URL
+  profileImageUrl?: string;    // Supabase Storage URL
+  profileImagePath?: string;   // Storage object path
   serviceTypes: string[];      // Array of category IDs offered
   status: "active" | "suspended";
   createdAt: Timestamp;
@@ -164,10 +167,19 @@ interface FavoriteDocument {
 - **Structure**:
   ```
   public-media/
-  ├── avatars/{userId}/avatar.jpg
-  ├── barbers/{barberId}/storefront.jpg
-  ├── services/{serviceId}/service.jpg
-  └── verifications/{barberId}/identity.jpg
+  └── {firebaseUid}/
+      ├── avatar/avatar-{timestamp}-{random}.jpg
+      ├── barbers/storefront.jpg
+      └── services/service.jpg
+  ```
+
+### 3.2 Bucket: `private-documents`
+- **Visibility**: Private (Owner UID or Admin access only).
+- **Structure**:
+  ```
+  private-documents/
+  └── {firebaseUid}/
+      └── verifications/identity.pdf
   ```
 
 ---
@@ -176,11 +188,11 @@ interface FavoriteDocument {
 
 ### 4.1 Firestore Security Rules Architecture
 - `users`: User can read their own record; admin can read/write all.
-- `customers`: Customer can write own profile (`request.auth.uid == userId`).
-- `barbers`: Barber can write own profile (`request.auth.uid == userId`); admin can update `verificationStatus`.
-- `bookings`: Customer can create booking with status `pending`. Barber can update status to `accepted`, `rejected`, `in_progress`, `completed`. Both can update status to `cancelled`.
-- `reviews`: Customer can create review only if matching booking status is `completed`.
+- `customers`: Customer can write own profile (`request.auth.uid == customerId`).
+- `barbers`: Barber can write own profile (`request.auth.uid == barberId`); admin can update `verificationStatus`.
+- `bookings`: Customer can create booking with status `pending`. Barber can update status `pending` -> `accepted`/`rejected`, `accepted` -> `in_progress`, `in_progress` -> `completed`. Customer can update `pending`/`accepted` -> `cancelled`.
+- `reviews`: Customer can create review only if matching booking status is `completed` and `rating` is between 1 and 5.
 
 ### 4.2 Supabase Storage RLS Policies
 - Policy 1 (Public Read): Allow `SELECT` on `public-media` bucket for all users.
-- Policy 2 (Authenticated Write): Allow `INSERT`/`UPDATE` on `public-media` where path prefix matches Firebase JWT `request.auth.uid`.
+- Policy 2 (Authenticated Write): Allow `INSERT`/`UPDATE`/`DELETE` on `public-media` where path prefix matches `(auth.jwt() ->> 'sub')`.

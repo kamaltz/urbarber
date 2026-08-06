@@ -3,12 +3,15 @@
  * Defines interfaces for barber operations, services, bookings, and analytics
  */
 
+import type { BookingStatus } from '@/types/domain';
+
 export interface BarberProfile {
   barberId: string;
   name: string;
   email: string;
   phone: string;
   profileImageUrl?: string;
+  profileImagePath?: string;
   shopName: string;
   shopDescription: string;
   shopAddress: string;
@@ -37,7 +40,7 @@ export interface BarberBooking {
   customerCode?: string;
   bookingDate: string;
   bookingTime: string;
-  status: 'waiting' | 'processing' | 'completed' | 'cancelled';
+  status: BookingStatus;
   services: BarberService[];
   totalAmount: number;
   paymentStatus: 'pending' | 'completed' | 'failed';
@@ -82,7 +85,7 @@ export interface BarberAnalytics {
   weeklyRevenue?: number;
   monthlyRevenue?: number;
   averageRating?: number;
-  chartData?: Array<{ label: string; value: number }>;
+  chartData?: { label: string; value: number }[];
   latestReview?: BarberReview;
 }
 

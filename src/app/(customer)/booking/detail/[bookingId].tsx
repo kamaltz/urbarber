@@ -137,7 +137,7 @@ export default function BookingDetailScreen() {
                   <Text className="text-xs font-semibold text-slate-900">Chat</Text>
                 </Pressable>
 
-                {['booked', 'waiting'].includes(booking.status) && (
+                {['pending', 'accepted'].includes(booking.status) && (
                   <Pressable
                     onPress={handleCancel}
                     className="flex-1 items-center gap-2 rounded-lg bg-red-100 py-3">

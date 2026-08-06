@@ -2,7 +2,9 @@
  * Booking Feature Types
  */
 
-export type BookingStatus = 'booked' | 'waiting' | 'on_process' | 'finished' | 'cancelled';
+import type { BookingStatus as DomainBookingStatus } from '@/types/domain';
+
+export type BookingStatus = DomainBookingStatus;
 export type BookingType = 'home' | 'onsite';
 export type PaymentMethod = 'ewallet' | 'bank_transfer';
 

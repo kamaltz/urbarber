@@ -15,49 +15,66 @@ import {
     where,
 } from 'firebase/firestore';
 import { firestore } from '@/lib/firebase';
+import { mapLegacyBookingStatus, BookingStatus } from '@/types/domain';
 import { Booking, BookingReview, CouponCode, TimeSlotAvailability } from '../types/booking';
 
 class BookingRepository {
   /**
-   * Get all active bookings
+   * Get active bookings for a customer (pending, accepted, in_progress)
    */
   async getActiveBookings(customerId: string): Promise<Booking[]> {
     try {
+      if (!customerId) return [];
+
       const q = query(
         collection(firestore, 'bookings'),
         where('customerId', '==', customerId),
-        where('status', 'in', ['booked', 'waiting', 'on_process']),
+        where('status', 'in', ['pending', 'accepted', 'in_progress']),
       );
 
       const snapshot = await getDocs(q);
-      return snapshot.docs.map((doc) => ({
-        ...doc.data(),
-        id: doc.id,
-      })) as Booking[];
-    } catch (error) {
-      console.error('Error fetching active bookings:', error);
+      return snapshot.docs.map((docSnap) => {
+        const data = docSnap.data();
+        return {
+          ...data,
+          id: docSnap.id,
+          status: mapLegacyBookingStatus(data.status),
+        } as Booking;
+      });
+    } catch (error: any) {
+      if (__DEV__) {
+        console.warn('[BookingRepository getActiveBookings Error]', error?.code, error?.message || error);
+      }
       return [];
     }
   }
 
   /**
-   * Get booking history (past bookings)
+   * Get booking history for a customer (completed, cancelled, rejected)
    */
   async getBookingHistory(customerId: string): Promise<Booking[]> {
     try {
+      if (!customerId) return [];
+
       const q = query(
         collection(firestore, 'bookings'),
         where('customerId', '==', customerId),
-        where('status', 'in', ['finished', 'cancelled']),
+        where('status', 'in', ['completed', 'cancelled', 'rejected']),
       );
 
       const snapshot = await getDocs(q);
-      return snapshot.docs.map((doc) => ({
-        ...doc.data(),
-        id: doc.id,
-      })) as Booking[];
-    } catch (error) {
-      console.error('Error fetching booking history:', error);
+      return snapshot.docs.map((docSnap) => {
+        const data = docSnap.data();
+        return {
+          ...data,
+          id: docSnap.id,
+          status: mapLegacyBookingStatus(data.status),
+        } as Booking;
+      });
+    } catch (error: any) {
+      if (__DEV__) {
+        console.warn('[BookingRepository getBookingHistory Error]', error?.code, error?.message || error);
+      }
       return [];
     }
   }
@@ -67,6 +84,8 @@ class BookingRepository {
    */
   async getBookingDetail(bookingId: string): Promise<Booking | null> {
     try {
+      if (!bookingId) return null;
+
       const docRef = doc(firestore, 'bookings', bookingId);
       const snapshot = await getDoc(docRef);
 
@@ -74,12 +93,16 @@ class BookingRepository {
         return null;
       }
 
+      const data = snapshot.data();
       return {
-        ...snapshot.data(),
+        ...data,
         id: snapshot.id,
+        status: mapLegacyBookingStatus(data.status),
       } as Booking;
-    } catch (error) {
-      console.error('Error fetching booking detail:', error);
+    } catch (error: any) {
+      if (__DEV__) {
+        console.warn('[BookingRepository getBookingDetail Error]', error?.code, error?.message || error);
+      }
       return null;
     }
   }
@@ -89,6 +112,8 @@ class BookingRepository {
    */
   async getAvailableSlots(barberId: string, date: string): Promise<TimeSlotAvailability> {
     try {
+      if (!barberId || !date) return { date, slots: [] };
+
       const q = query(
         collection(firestore, 'barberSchedules'),
         where('barberId', '==', barberId),
@@ -99,7 +124,6 @@ class BookingRepository {
       const scheduleDoc = snapshot.docs[0];
 
       if (!scheduleDoc) {
-        // Return default empty slots
         return { date, slots: [] };
       }
 
@@ -108,18 +132,20 @@ class BookingRepository {
         date,
         slots: scheduleData.availableSlots || [],
       };
-    } catch (error) {
-      console.error('Error fetching available slots:', error);
+    } catch (error: any) {
+      if (__DEV__) {
+        console.warn('[BookingRepository getAvailableSlots Error]', error?.code, error?.message || error);
+      }
       return { date, slots: [] };
     }
   }
 
   /**
-   * Create a new booking
+   * Create a new booking (initial status strictly 'pending')
    */
   async createBooking(bookingData: any): Promise<{ success: boolean; bookingId?: string; error?: any }> {
     try {
-      if (!bookingData.barberId || !bookingData.customerId || !bookingData.services?.length) {
+      if (!bookingData.barberId || !bookingData.customerId) {
         return {
           success: false,
           error: { code: 'INVALID_DATA', message: 'Data booking tidak lengkap' },
@@ -128,7 +154,7 @@ class BookingRepository {
 
       const booking = {
         ...bookingData,
-        status: 'waiting',
+        status: 'pending',
         createdAt: Timestamp.now(),
         updatedAt: Timestamp.now(),
       };
@@ -139,16 +165,19 @@ class BookingRepository {
         success: true,
         bookingId: docRef.id,
       };
-    } catch (error) {
+    } catch (error: any) {
+      if (__DEV__) {
+        console.warn('[BookingRepository createBooking Error]', error?.code, error?.message || error);
+      }
       return {
         success: false,
-        error: { code: 'CREATE_FAILED', message: 'Gagal membuat booking' },
+        error: { code: 'CREATE_FAILED', message: error?.message || 'Gagal membuat booking' },
       };
     }
   }
 
   /**
-   * Cancel a booking
+   * Cancel a booking (transition allowed from 'pending' or 'accepted' to 'cancelled')
    */
   async cancelBooking(bookingId: string): Promise<{ success: boolean; error?: any }> {
     try {
@@ -161,10 +190,10 @@ class BookingRepository {
         };
       }
 
-      if (!['booked', 'waiting'].includes(booking.status)) {
+      if (!['pending', 'accepted'].includes(booking.status)) {
         return {
           success: false,
-          error: { code: 'INVALID_STATUS', message: 'Booking tidak bisa dibatalkan' },
+          error: { code: 'INVALID_STATUS', message: 'Booking tidak dapat dibatalkan dalam status saat ini' },
         };
       }
 
@@ -174,20 +203,23 @@ class BookingRepository {
       });
 
       return { success: true };
-    } catch (error) {
+    } catch (error: any) {
+      if (__DEV__) {
+        console.warn('[BookingRepository cancelBooking Error]', error?.code, error?.message || error);
+      }
       return {
         success: false,
-        error: { code: 'CANCEL_FAILED', message: 'Gagal membatalkan booking' },
+        error: { code: 'CANCEL_FAILED', message: error?.message || 'Gagal membatalkan booking' },
       };
     }
   }
 
   /**
-   * Update booking status
+   * Update booking status with canonical validation
    */
   async updateBookingStatus(
     bookingId: string,
-    status: string,
+    status: BookingStatus,
   ): Promise<{ success: boolean; error?: any }> {
     try {
       const booking = await this.getBookingDetail(bookingId);
@@ -205,10 +237,13 @@ class BookingRepository {
       });
 
       return { success: true };
-    } catch (error) {
+    } catch (error: any) {
+      if (__DEV__) {
+        console.warn('[BookingRepository updateBookingStatus Error]', error?.code, error?.message || error);
+      }
       return {
         success: false,
-        error: { code: 'UPDATE_FAILED', message: 'Gagal mengupdate booking' },
+        error: { code: 'UPDATE_FAILED', message: error?.message || 'Gagal mengupdate booking' },
       };
     }
   }
@@ -218,6 +253,7 @@ class BookingRepository {
    */
   async validateCoupon(code: string): Promise<CouponCode | null> {
     try {
+      if (!code) return null;
       const docRef = doc(firestore, 'coupons', code);
       const snapshot = await getDoc(docRef);
 
@@ -232,8 +268,10 @@ class BookingRepository {
         description: data.description,
         isValid: data.isValid ?? true,
       };
-    } catch (error) {
-      console.error('Error validating coupon:', error);
+    } catch (error: any) {
+      if (__DEV__) {
+        console.warn('[BookingRepository validateCoupon Error]', error?.code, error?.message || error);
+      }
       return null;
     }
   }
@@ -264,10 +302,13 @@ class BookingRepository {
       await addDoc(collection(firestore, 'reviews'), review);
 
       return { success: true };
-    } catch (error) {
+    } catch (error: any) {
+      if (__DEV__) {
+        console.warn('[BookingRepository submitReview Error]', error?.code, error?.message || error);
+      }
       return {
         success: false,
-        error: { code: 'REVIEW_FAILED', message: 'Gagal mengirim review' },
+        error: { code: 'REVIEW_FAILED', message: error?.message || 'Gagal mengirim review' },
       };
     }
   }
@@ -277,6 +318,8 @@ class BookingRepository {
    */
   async getBookingReview(bookingId: string): Promise<BookingReview | null> {
     try {
+      if (!bookingId) return null;
+
       const q = query(
         collection(firestore, 'reviews'),
         where('bookingId', '==', bookingId),
@@ -296,69 +339,43 @@ class BookingRepository {
         rating: data.rating,
         reviewText: data.reviewText,
         tags: data.tags || [],
-        createdAt: data.createdAt?.toDate().toISOString() || new Date().toISOString(),
+        createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
       } as BookingReview;
-    } catch (error) {
-      console.error('Error fetching booking review:', error);
+    } catch (error: any) {
+      if (__DEV__) {
+        console.warn('[BookingRepository getBookingReview Error]', error?.code, error?.message || error);
+      }
       return null;
     }
   }
 
   /**
-   * Process payment
+   * Confirm booking creation (deterministic, no payment gateway or fake simulation)
    */
   async processPayment(bookingId: string, paymentData: any): Promise<{ success: boolean; error?: any }> {
     try {
       if (!bookingId || !paymentData.method) {
         return {
           success: false,
-          error: { code: 'INVALID_PAYMENT', message: 'Data pembayaran tidak lengkap' },
+          error: { code: 'INVALID_PAYMENT', message: 'Data pesanan tidak lengkap' },
         };
       }
 
-      // Create payment record in Firestore
-      const payment = {
-        bookingId,
-        method: paymentData.method,
-        amount: paymentData.amount,
+      // Update booking directly with payment method and canonical pending status
+      await updateDoc(doc(firestore, 'bookings', bookingId), {
+        paymentMethod: paymentData.method,
         status: 'pending',
-        createdAt: Timestamp.now(),
-      };
+        updatedAt: Timestamp.now(),
+      });
 
-      const paymentRef = await addDoc(collection(firestore, 'payments'), payment);
-
-      // In production, integrate with payment gateway (Stripe, Midtrans, etc.)
-      // For now, simulate successful payment
-      const success = Math.random() > 0.1;
-
-      if (success) {
-        await updateDoc(doc(firestore, 'payments', paymentRef.id), {
-          status: 'completed',
-          completedAt: Timestamp.now(),
-        });
-
-        await updateDoc(doc(firestore, 'bookings', bookingId), {
-          paymentMethod: paymentData.method,
-          status: 'booked',
-          updatedAt: Timestamp.now(),
-        });
-
-        return { success: true };
-      } else {
-        await updateDoc(doc(firestore, 'payments', paymentRef.id), {
-          status: 'failed',
-          failedAt: Timestamp.now(),
-        });
-
-        return {
-          success: false,
-          error: { code: 'PAYMENT_FAILED', message: 'Pembayaran gagal, silakan coba lagi' },
-        };
+      return { success: true };
+    } catch (error: any) {
+      if (__DEV__) {
+        console.warn('[BookingRepository processPayment Error]', error?.code, error?.message || error);
       }
-    } catch (error) {
       return {
         success: false,
-        error: { code: 'PAYMENT_ERROR', message: 'Error memproses pembayaran' },
+        error: { code: 'CONFIRMATION_ERROR', message: error?.message || 'Gagal mengonfirmasi booking' },
       };
     }
   }

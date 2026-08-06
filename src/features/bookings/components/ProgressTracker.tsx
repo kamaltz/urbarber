@@ -3,17 +3,17 @@
  */
 
 import { Text, View } from 'react-native';
-import { BookingStatus } from '../types/booking';
+import type { BookingStatus } from '@/types/domain';
 
 export type ProgressTrackerProps = {
   status: BookingStatus;
 };
 
 const STAGES = [
-  { key: 'booked', label: 'Dipesan', icon: '📋' },
-  { key: 'waiting', label: 'Menunggu', icon: '⏱️' },
-  { key: 'on_process', label: 'Proses', icon: '✂️' },
-  { key: 'finished', label: 'Selesai', icon: '✓' },
+  { key: 'pending', label: 'Menunggu', icon: '⏱️' },
+  { key: 'accepted', label: 'Diterima', icon: '📋' },
+  { key: 'in_progress', label: 'Proses', icon: '✂️' },
+  { key: 'completed', label: 'Selesai', icon: '✓' },
 ];
 
 export function ProgressTracker({ status }: ProgressTrackerProps) {
