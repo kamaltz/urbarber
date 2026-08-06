@@ -1,84 +1,68 @@
 /**
  * Firebase Payments Repository
- * Client data access layer for initiating Midtrans Snap payments, syncing status, and real-time payment document subscriptions.
+ * Client data access layer for calling Vercel API endpoints and real-time payment document subscriptions.
  */
 
-import { firebaseFunctions, firestore } from '@/lib/firebase';
+import { firestore } from '@/lib/firebase';
 import type { PaymentRecord } from '@/types/domain';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
-import { httpsCallable } from 'firebase/functions';
+import {
+  paymentApiService,
+  type CreateBookingPaymentPayload,
+} from '../services/payment-api.service';
 import type {
-  CreateBookingPaymentRequest,
   CreateBookingPaymentResponse,
   SyncPaymentStatusResponse,
 } from '../types/payment';
 
 class PaymentRepository {
   /**
-   * Create booking payment via Cloud Functions
+   * Create booking payment via Vercel Backend API
    */
   async createBookingPayment(
-    payload: CreateBookingPaymentRequest
+    payload: CreateBookingPaymentPayload
   ): Promise<{ success: boolean; data?: CreateBookingPaymentResponse; error?: any }> {
-    try {
-      const callable = httpsCallable<CreateBookingPaymentRequest, CreateBookingPaymentResponse>(
-        firebaseFunctions,
-        'createBookingPayment'
-      );
-      const res = await callable(payload);
+    const res = await paymentApiService.createBookingPayment(payload);
+    if (res.success) {
       return {
         success: true,
         data: res.data,
       };
-    } catch (error: any) {
-      if (__DEV__) {
-        console.warn('[PaymentRepository createBookingPayment Error]', error?.code, error?.message || error);
-      }
-      return {
-        success: false,
-        error: {
-          code: error?.code || 'PAYMENT_CREATION_FAILED',
-          message: error?.message || 'Gagal membuat transaksi pembayaran',
-        },
-      };
     }
+    return {
+      success: false,
+      error: res.error,
+    };
   }
 
   /**
-   * Sync payment status from Midtrans server-side
+   * Sync payment status from Midtrans server-side via Vercel API
    */
   async syncBookingPaymentStatus(
     bookingId: string
   ): Promise<{ success: boolean; data?: SyncPaymentStatusResponse; error?: any }> {
-    try {
-      if (!bookingId) {
-        return { success: false, error: { message: 'bookingId tidak valid' } };
-      }
-      const callable = httpsCallable<{ bookingId: string }, SyncPaymentStatusResponse>(
-        firebaseFunctions,
-        'syncBookingPaymentStatus'
-      );
-      const res = await callable({ bookingId });
+    const res = await paymentApiService.syncBookingPaymentStatus(bookingId);
+    if (res.success) {
       return {
         success: true,
         data: res.data,
       };
-    } catch (error: any) {
-      if (__DEV__) {
-        console.warn('[PaymentRepository syncBookingPaymentStatus Error]', error?.code, error?.message || error);
-      }
-      return {
-        success: false,
-        error: {
-          code: error?.code || 'SYNC_FAILED',
-          message: error?.message || 'Gagal menyinkronkan status pembayaran',
-        },
-      };
     }
+    return {
+      success: false,
+      error: res.error,
+    };
   }
 
   /**
-   * Get payment record by bookingId
+   * Cancel booking payment via Vercel API
+   */
+  async cancelBookingPayment(bookingId: string, reason?: string) {
+    return paymentApiService.cancelBookingPayment(bookingId, reason);
+  }
+
+  /**
+   * Get payment record by bookingId from Firestore
    */
   async getPaymentRecord(bookingId: string): Promise<PaymentRecord | null> {
     try {

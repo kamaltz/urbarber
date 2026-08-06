@@ -7,7 +7,7 @@ import { paymentRepository } from '@/features/payments/repository/payment.reposi
 import type { PaymentRecord, PaymentStatus } from '@/types/domain';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, ScrollView, Text, View } from 'react-native';
 
 export default function BookingInvoiceScreen() {
@@ -24,6 +24,18 @@ export default function BookingInvoiceScreen() {
     bookingId?: string;
   }>();
 
+  // Unique requestId per booking flow session (retained on retry)
+  const requestIdRef = useRef<string | null>(null);
+
+  const getRequestId = useCallback(() => {
+    if (!requestIdRef.current) {
+      const timestamp = Date.now();
+      const randomStr = Math.random().toString(36).substring(2, 9);
+      requestIdRef.current = `REQ-${timestamp}-${randomStr}`;
+    }
+    return requestIdRef.current;
+  }, []);
+
   const [bookingId, setBookingId] = useState<string | null>(params.bookingId || null);
   const [redirectUrl, setRedirectUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(!params.bookingId);
@@ -31,7 +43,7 @@ export default function BookingInvoiceScreen() {
   const [paymentRecord, setPaymentRecord] = useState<PaymentRecord | null>(null);
   const [syncing, setSyncing] = useState<boolean>(false);
 
-  // Initialize booking & Midtrans Snap payment
+  // Initialize booking & Midtrans Snap payment via Vercel Backend
   const handleInitiatePayment = useCallback(async () => {
     if (bookingId && redirectUrl) return;
 
@@ -39,6 +51,7 @@ export default function BookingInvoiceScreen() {
     setError(null);
 
     const res = await paymentRepository.createBookingPayment({
+      requestId: getRequestId(),
       barberId: params.barberId || '',
       serviceId: params.serviceId || '',
       date: params.date || new Date().toISOString().split('T')[0],
@@ -54,15 +67,49 @@ export default function BookingInvoiceScreen() {
       setError(res.error?.message || 'Gagal menyiapkan tagihan pembayaran.');
     }
     setLoading(false);
-  }, [bookingId, redirectUrl, params]);
+  }, [bookingId, redirectUrl, params, getRequestId]);
 
   useEffect(() => {
-    if (!params.bookingId && !bookingId) {
-      void handleInitiatePayment();
+    let isMounted = true;
+    if (!params.bookingId && !bookingId && !redirectUrl) {
+      paymentRepository
+        .createBookingPayment({
+          requestId: getRequestId(),
+          barberId: params.barberId || '',
+          serviceId: params.serviceId || '',
+          date: params.date || new Date().toISOString().split('T')[0],
+          startTime: params.startTime || '10:00',
+          address: params.address || 'Alamat Pelanggan',
+          notes: params.notes || '',
+        })
+        .then((res) => {
+          if (!isMounted) return;
+          if (res.success && res.data) {
+            setBookingId(res.data.bookingId);
+            setRedirectUrl(res.data.redirectUrl);
+          } else {
+            setError(res.error?.message || 'Gagal menyiapkan tagihan pembayaran.');
+          }
+          setLoading(false);
+        });
     }
-  }, [params.bookingId, bookingId, handleInitiatePayment]);
+    return () => {
+      isMounted = false;
+    };
+  }, [
+    params.bookingId,
+    bookingId,
+    redirectUrl,
+    params.barberId,
+    params.serviceId,
+    params.date,
+    params.startTime,
+    params.address,
+    params.notes,
+    getRequestId,
+  ]);
 
-  // Real-time subscription to payment document
+  // Real-time subscription to Firestore payment document
   useEffect(() => {
     if (!bookingId) return;
 
@@ -71,7 +118,6 @@ export default function BookingInvoiceScreen() {
       (record) => {
         setPaymentRecord(record);
         if (record?.status === 'paid') {
-          // Automatic navigation on paid
           setTimeout(() => {
             router.replace(routes.customer.activeBooking(bookingId));
           }, 1200);
@@ -100,7 +146,6 @@ export default function BookingInvoiceScreen() {
     } catch (err: any) {
       if (__DEV__) console.warn('[WebBrowser Open Error]', err);
     } finally {
-      // After browser closes, call syncBookingPaymentStatus server-side
       if (bookingId) {
         await paymentRepository.syncBookingPaymentStatus(bookingId);
       }
@@ -173,7 +218,7 @@ export default function BookingInvoiceScreen() {
       <CustomerScreen title="Tagihan Pembayaran" description="Menyiapkan gerbang pembayaran Midtrans Snap...">
         <View className="py-20 items-center justify-center">
           <Loading />
-          <Text className="text-xs text-slate-500 mt-4 font-medium">Menghubungkan ke server Midtrans Sandbox...</Text>
+          <Text className="text-xs text-slate-500 mt-4 font-medium">Menghubungkan ke Vercel Backend & Midtrans Sandbox...</Text>
         </View>
       </CustomerScreen>
     );
@@ -238,6 +283,19 @@ export default function BookingInvoiceScreen() {
               onPress={() => bookingId && router.replace(routes.customer.activeBooking(bookingId))}
               variant="primary"
             />
+          ) : ['expired', 'cancelled', 'failed'].includes(currentStatus) ? (
+            <>
+              <AppButton
+                label="Buat Pesanan Baru"
+                onPress={() => router.replace(routes.customer.home)}
+                variant="primary"
+              />
+              <AppButton
+                label="Kembali ke Beranda"
+                onPress={() => router.replace(routes.customer.home)}
+                variant="secondary"
+              />
+            </>
           ) : (
             <>
               <AppButton

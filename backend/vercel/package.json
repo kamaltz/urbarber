@@ -1,0 +1,25 @@
+{
+  "name": "urbarber-vercel-backend",
+  "version": "1.0.0",
+  "private": true,
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "dev": "vercel dev"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.0.0",
+    "midtrans-client": "^1.4.2",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@vercel/node": "^3.2.0",
+    "typescript": "^5.5.4",
+    "vitest": "^2.0.5"
+  }
+}

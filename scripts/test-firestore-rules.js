@@ -417,6 +417,33 @@ async function runRulesTests() {
       );
     });
 
+    // 25. Customer can read own paymentRequests document, but client cannot create directly
+    await test('25. Customer can read own paymentRequests document, but client cannot create directly', async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('paymentRequests').doc('req1').set({
+          requestId: 'req1',
+          customerId: 'cust1',
+          status: 'completed',
+        });
+      });
+
+      const cust1Db = testEnv.authenticatedContext('cust1', { app_role: 'customer' }).firestore();
+      await assertSucceeds(cust1Db.collection('paymentRequests').doc('req1').get());
+      await assertFails(
+        cust1Db.collection('paymentRequests').doc('req2').set({
+          requestId: 'req2',
+          customerId: 'cust1',
+          status: 'completed',
+        })
+      );
+    });
+
+    // 26. Customer cannot read another customer's paymentRequests document
+    await test("26. Customer cannot read another customer's paymentRequests document", async () => {
+      const cust2Db = testEnv.authenticatedContext('cust2', { app_role: 'customer' }).firestore();
+      await assertFails(cust2Db.collection('paymentRequests').doc('req1').get());
+    });
+
   } finally {
     await testEnv.cleanup();
     console.log(`\nTest Execution Complete: ${passed} Passed, ${failed} Failed.\n`);

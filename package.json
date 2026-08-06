@@ -56,6 +56,7 @@
     "typecheck": "tsc --noEmit",
     "doctor": "npx expo-doctor",
     "test": "node ./scripts/test-midtrans-payment.js",
+    "check:secrets": "powershell -ExecutionPolicy Bypass ./scripts/check-secrets.ps1",
     "test:rules": "node ./scripts/test-firestore-rules.js",
     "test:firestore-rules": "npm run test:rules",
     "test:discovery": "node ./scripts/test-customer-discovery.js",

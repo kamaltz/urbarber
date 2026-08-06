@@ -204,6 +204,17 @@ service cloud.firestore {
     }
 
     // =========================================================================
+    // 7c. COLLECTION: paymentRequests
+    // =========================================================================
+    match /paymentRequests/{requestId} {
+      // Customer or admin can read payment request idempotency record
+      allow read: if isOwner(resource.data.customerId) || isAdmin();
+
+      // Clients CANNOT create, update, or delete payment requests directly (Admin SDK only)
+      allow create, update, delete: if false;
+    }
+
+    // =========================================================================
     // 8. COLLECTION: reviews
     // =========================================================================
     match /reviews/{reviewId} {

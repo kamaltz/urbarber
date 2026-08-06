@@ -159,10 +159,26 @@ interface PaymentDocument {
   updatedAt: Timestamp;
   paidAt?: Timestamp;
   expiresAt?: Timestamp;
+  lastNotificationAt?: Timestamp;
+  lastSyncedAt?: Timestamp;
 }
 ```
 
-### 2.9 Collection: `reviews`
+### 2.9 Collection: `paymentRequests`
+Idempotency tracking records for client booking payment requests. Indexed by `{customerId}_{requestId}`.
+```typescript
+interface PaymentRequestDocument {
+  requestId: string;
+  customerId: string;
+  bookingId: string;
+  orderId: string;
+  status: "processing" | "completed" | "failed";
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+```
+
+### 2.10 Collection: `reviews`
 Ratings and reviews submitted by customers after booking completion (F-13).
 ```typescript
 interface ReviewDocument {
