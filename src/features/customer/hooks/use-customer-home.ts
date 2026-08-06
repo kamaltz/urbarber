@@ -1,67 +1,63 @@
 /**
  * useCustomerHome Hook
- * Manages customer home dashboard state
+ * Manages customer home dashboard state with pull-to-refresh support
  */
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { customerRepository } from '../repository/customer.repository';
 import type { CustomerHomeData } from '../types/customer';
 
 export function useCustomerHome(customerId: string) {
   const [homeData, setHomeData] = useState<CustomerHomeData | null>(null);
   const [loading, setLoading] = useState<boolean>(Boolean(customerId));
+  const [refreshing, setRefreshing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!customerId) {
-      return;
-    }
-
-    let isMounted = true;
-
-    const loadHomeData = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        const data = await customerRepository.getCustomerHomeData(customerId);
-        if (isMounted) {
-          setHomeData(data);
-          if (!data) {
-            setError('Home data not found');
-          }
-        }
-      } catch (err) {
-        if (isMounted) setError(err instanceof Error ? err.message : 'Failed to load home data');
-      } finally {
-        if (isMounted) setLoading(false);
-      }
-    };
-
-    loadHomeData();
-    return () => {
-      isMounted = false;
-    };
-  }, [customerId]);
-
-  const refresh = async () => {
+  const fetchHome = useCallback(async (isRefresh = false) => {
     if (!customerId) return;
 
     try {
-      setLoading(true);
+      if (isRefresh) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+
       const data = await customerRepository.getCustomerHomeData(customerId);
       setHomeData(data);
       setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Refresh failed');
+    } catch (err: any) {
+      setError(err?.message || 'Gagal memuat beranda');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  };
+  }, [customerId]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function init() {
+      if (!customerId) {
+        setLoading(false);
+        return;
+      }
+      await Promise.resolve();
+      if (!active) return;
+      await fetchHome(false);
+    }
+
+    void init();
+    return () => {
+      active = false;
+    };
+  }, [customerId, fetchHome]);
 
   return {
     homeData,
     loading,
+    refreshing,
     error,
-    refresh,
+    refresh: () => fetchHome(true),
   };
 }

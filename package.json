@@ -57,6 +57,9 @@
     "doctor": "npx expo-doctor",
     "test:rules": "node ./scripts/test-firestore-rules.js",
     "test:firestore-rules": "npm run test:rules",
+    "test:discovery": "node ./scripts/test-customer-discovery.js",
+    "seed:discovery": "node ./scripts/seed-discovery-data.js",
+    "seed:discovery:live": "node ./scripts/seed-discovery-data.js --live",
     "check": "npm run typecheck && npm run lint"
   },
   "private": true

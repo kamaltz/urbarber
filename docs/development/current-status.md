@@ -2,18 +2,23 @@
 
 ## 1. Executive Summary
 
-This report presents an empirical code audit of the URBarber repository on branch `feat/batch-02-data-model-security` (based on `feat/complete-thesis-mvp`).
+This report presents an empirical code audit of the URBarber repository on branch `feat/batch-03-customer-discovery-profile` (based on `feat/batch-02-data-model-security`).
 
-**Batch 01 (Foundation Stabilization)** and **Batch 02 (Data Model Harmonization & Firestore Security Rules)** are fully stabilized and verified:
+**Batch 01 (Foundation Stabilization)**, **Batch 02 (Data Model Harmonization & Security Rules)**, and **Batch 03 (Customer Discovery & Profile Sub-System)** are fully stabilized and verified:
 - **Firebase Authentication** is the sole authentication provider.
-- **Canonical Domain Models & Enums**: Defined in `src/types/domain.ts`:
-  - `UserRole`: `"customer"` | `"barber"` | `"admin"`
-  - `UserStatus`: `"active"` | `"pending_verification"` | `"suspended"`
-  - `BookingStatus`: `"pending"` | `"accepted"` | `"rejected"` | `"in_progress"` | `"completed"` | `"cancelled"`
-- **Purged Mock Fallbacks**: Production repository paths no longer return hardcoded mock data or fake payment simulations (`Math.random() > 0.1` purged).
-- **Cloud Firestore Security Rules**: Production-grade `firestore.rules` (v2) implemented with default deny, RBAC helpers (`isSignedIn()`, `uid()`, `appRole()`, `isAdmin()`, `isBarber()`, `isCustomer()`, `isOwner(userId)`), and booking transition enforcement.
-- **Firestore Configuration**: `firebase.json` and `firestore.indexes.json` configured for compound query indexes.
-- **Rules Test Suite**: 18 automated rules unit tests added in `scripts/test-firestore-rules.js`.
+- **Canonical Domain Models & Enums**: Defined in `src/types/domain.ts` and `src/features/customer/types/customer.ts`.
+- **Live Customer Discovery & Profile Sub-System**:
+  - `/(customer)/home`: Displays live active & verified barbers and categories.
+  - `/(customer)/explore`: Debounced search query and category filtering against Firestore `barbers` (`status == 'active'`, `verified == true`).
+  - `/(customer)/favorites`: Favorite barbers using deterministic document identity (`favorites/{customerId}_{barberId}`).
+  - `/(customer)/barber/[barberId]`: Detail view of active barber profile and services with IDR price and minute duration formatting.
+  - `/(customer)/profile/account`: Edit customer profile fields (`name`, `phone`, `location`) with merge-safe Firestore updates and Supabase Storage avatar upload.
+  - `/(customer)/profile/change-password`: Update password using Firebase Auth reauthentication and Indonesian error messages.
+  - `/(customer)/profile/help` & `about`: FAQ and thesis application information.
+  - Deleted orphaned root template `src/app/explore.tsx`.
+- **Unit & Rules Test Suite**:
+  - 18 automated rules unit tests in `scripts/test-firestore-rules.js`.
+  - 8 automated customer discovery & profile unit tests in `scripts/test-customer-discovery.js`.
 
 ---
 
@@ -47,18 +52,20 @@ To access Cloud Firestore & Supabase Storage via RLS, Firebase Auth ID tokens mu
 > **MANUAL ACTION REQUIRED**:
 > 1. Run `supabase/storage-policies.sql` in the Supabase Dashboard SQL Editor for hosted Supabase storage.
 > 2. Deploy `firestore.rules` and `firestore.indexes.json` to Firebase via Firebase Console or CLI (`firebase deploy --only firestore`).
+> 3. Seed test barber data in development environment: `npm run seed:discovery`.
 
 ---
 
 ## 4. Test Specifications & Verification Baseline
 
-1. **Automated Rules Unit Tests**: Run `npm run test:rules` (tests 18 authorization and transition rules).
-2. **Typecheck & Lint**: Run `npm run check` (`tsc --noEmit` and `expo lint`).
-3. **Expo Doctor**: Run `npm run doctor` (`npx expo-doctor`).
-4. **Git Diff Audit**: Run `git diff --check`.
+1. **Automated Discovery Unit Tests**: Run `npm run test:discovery` (tests 8 search, filtering, favorite ID, and validation rules).
+2. **Automated Rules Unit Tests**: Run `firebase emulators:exec --only firestore "npm run test:rules"` (tests 18 authorization and transition rules).
+3. **Typecheck & Lint**: Run `npm run check` (`tsc --noEmit` and `expo lint`).
+4. **Expo Doctor**: Run `npm run doctor` (`npx expo-doctor`).
+5. **Git Diff Audit**: Run `git diff --check`.
 
 ---
 
 ## 5. Known Remaining Blockers & Next Batches
 
-- **Next Batches**: Customer discovery UI, booking screens, barber operational dashboard, admin moderation dashboard.
+- **Next Batches**: Booking creation & schedule reservation screens, barber operational dashboard, admin moderation dashboard.

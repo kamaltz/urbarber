@@ -56,10 +56,28 @@ export interface NearbyBarber {
   reviewCount?: number;
 }
 
+export interface PublicBarberSummary {
+  id: string;
+  userId: string;
+  displayName: string;
+  description: string;
+  address: string;
+  profileImageUrl?: string;
+  profileImagePath?: string;
+  ratingAverage: number;
+  reviewCount: number;
+  verified: boolean;
+  verificationStatus: 'pending' | 'approved' | 'rejected';
+  status: 'active' | 'suspended';
+  serviceTypes?: string[];
+  createdAt?: string;
+}
+
 export interface CategoryChip {
   id: string;
   label: string;
   isActive: boolean;
+  order?: number;
 }
 
 export interface CustomerSettings {

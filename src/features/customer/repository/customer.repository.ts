@@ -1,37 +1,33 @@
 /**
  * Firebase Customer Repository
- * Data access layer for customer profile, discovery, and preferences
+ * Data access layer for customer profile, discovery, categories, and favorites
  */
 
 import { firebaseAuth, firestore } from '@/lib/firebase';
 import { withTimeout } from '@/lib/promise';
 import {
-    addDoc,
-    collection,
-    deleteDoc,
-    doc,
-    query as firestoreQuery,
-    getDoc,
-    getDocs,
-    setDoc,
-    Timestamp,
-    updateDoc,
-    where
+  collection,
+  deleteDoc,
+  doc,
+  query as firestoreQuery,
+  getDoc,
+  getDocs,
+  orderBy,
+  setDoc,
+  Timestamp,
+  updateDoc,
+  where,
 } from 'firebase/firestore';
-import {
-    MOCK_CUSTOMER_EXPLORE_DATA,
-    MOCK_CUSTOMER_HOME_DATA,
-} from '../mock/customers';
 import type {
-    CategoryChip,
-    CustomerExploreData,
-    CustomerFavoritesData,
-    CustomerHomeData,
-    CustomerLocationData,
-    CustomerNotification,
-    CustomerProfile,
-    RecentSearch,
-    UpdateProfileData,
+  CategoryChip,
+  CustomerExploreData,
+  CustomerFavoritesData,
+  CustomerHomeData,
+  CustomerNotification,
+  CustomerProfile,
+  PublicBarberSummary,
+  RecentSearch,
+  UpdateProfileData,
 } from '../types/customer';
 
 function isOfflineError(error: unknown) {
@@ -40,13 +36,341 @@ function isOfflineError(error: unknown) {
   return candidate.code === 'unavailable' || candidate.message?.toLowerCase().includes('client is offline') === true;
 }
 
+/**
+ * Normalizes search text for case-insensitive keyword matching
+ */
+export function normalizeSearchKeyword(text?: string): string {
+  return text ? text.toLowerCase().trim() : '';
+}
+
 export const customerRepository = {
   /**
-   * Get customer profile matching exact registration name from Firestore & Auth
+   * Get active service categories from Firestore
+   */
+  async getCategories(): Promise<CategoryChip[]> {
+    try {
+      const q = firestoreQuery(
+        collection(firestore, 'categories'),
+        where('active', '==', true),
+        orderBy('order', 'asc')
+      );
+      const snapshot = await withTimeout(getDocs(q), 5000, 'Categories fetch timed out');
+      return snapshot.docs.map((docSnap) => {
+        const data = docSnap.data();
+        return {
+          id: docSnap.id,
+          label: data.name || docSnap.id,
+          isActive: false,
+          order: data.order ?? 0,
+        };
+      });
+    } catch (error: any) {
+      if (__DEV__ && !isOfflineError(error)) {
+        console.warn('[CustomerRepository getCategories Error]', error?.code, error?.message || error);
+      }
+      return [];
+    }
+  },
+
+  /**
+   * Get active and verified barbers for public customer discovery
+   */
+  async getPublicBarbers(filters?: { categoryId?: string }): Promise<PublicBarberSummary[]> {
+    try {
+      const barbersRef = collection(firestore, 'barbers');
+      let q = firestoreQuery(
+        barbersRef,
+        where('status', '==', 'active'),
+        where('verified', '==', true)
+      );
+
+      if (filters?.categoryId) {
+        q = firestoreQuery(
+          barbersRef,
+          where('status', '==', 'active'),
+          where('verified', '==', true),
+          where('serviceTypes', 'array-contains', filters.categoryId)
+        );
+      }
+
+      const snapshot = await withTimeout(getDocs(q), 8000, 'Public barbers fetch timed out');
+      const barbers = snapshot.docs.map((docSnap) => {
+        const data = docSnap.data();
+        return {
+          id: docSnap.id,
+          userId: data.userId || docSnap.id,
+          displayName: data.displayName || data.name || 'Barber URBarber',
+          description: data.description || data.shopDescription || '',
+          address: data.address || data.shopAddress || '',
+          profileImageUrl: data.profileImageUrl || data.shopImageUrl || undefined,
+          profileImagePath: data.profileImagePath || undefined,
+          ratingAverage: typeof data.ratingAverage === 'number' ? data.ratingAverage : 0,
+          reviewCount: typeof data.reviewCount === 'number' ? data.reviewCount : 0,
+          verified: data.verified === true,
+          verificationStatus: data.verificationStatus || 'approved',
+          status: data.status || 'active',
+          serviceTypes: Array.isArray(data.serviceTypes) ? data.serviceTypes : [],
+          createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : undefined,
+        } as PublicBarberSummary;
+      });
+
+      // Sort deterministically: ratingAverage DESC, reviewCount DESC
+      return barbers.sort((a, b) => {
+        if (b.ratingAverage !== a.ratingAverage) {
+          return b.ratingAverage - a.ratingAverage;
+        }
+        return b.reviewCount - a.reviewCount;
+      });
+    } catch (error: any) {
+      if (__DEV__ && !isOfflineError(error)) {
+        console.warn('[CustomerRepository getPublicBarbers Error]', error?.code, error?.message || error);
+      }
+      return [];
+    }
+  },
+
+  /**
+   * Get customer home data containing live active barbers & categories
+   */
+  async getCustomerHomeData(customerId: string): Promise<CustomerHomeData | null> {
+    try {
+      const [barbers, categories] = await Promise.all([
+        this.getPublicBarbers(),
+        this.getCategories(),
+      ]);
+
+      const authUser = firebaseAuth.currentUser;
+      const userName = authUser?.displayName || authUser?.email?.split('@')[0] || 'Pelanggan';
+
+      const barberSuggestions = barbers.map((b) => ({
+        barberId: b.id,
+        name: b.displayName,
+        status: b.status === 'active' ? 'Tersedia' : 'Tutup',
+        rating: b.ratingAverage,
+        distance: 'Garut',
+        imageUrl: b.profileImageUrl,
+        location: b.address,
+      }));
+
+      const featuredServices = categories.map((c) => ({
+        id: c.id,
+        title: c.label,
+        subtitle: `Layanan ${c.label}`,
+      }));
+
+      return {
+        userId: customerId,
+        userName,
+        profileImageUrl: authUser?.photoURL || undefined,
+        featuredServices,
+        barberSuggestions,
+        notificationCount: 0,
+      };
+    } catch (error: any) {
+      if (__DEV__ && !isOfflineError(error)) {
+        console.warn('[CustomerRepository getCustomerHomeData Error]', error?.code, error?.message || error);
+      }
+      return null;
+    }
+  },
+
+  /**
+   * Search barbers with debounced text matching & category filter
+   */
+  async searchBarbers(
+    customerId: string,
+    query: string,
+    filters?: { category?: string; location?: string }
+  ): Promise<CustomerExploreData | null> {
+    try {
+      const barbers = await this.getPublicBarbers({ categoryId: filters?.category });
+      const categories = await this.getCategories();
+
+      const normalizedQuery = normalizeSearchKeyword(query);
+
+      const filteredBarbers = normalizedQuery
+        ? barbers.filter((barber) => {
+            const nameMatch = normalizeSearchKeyword(barber.displayName).includes(normalizedQuery);
+            const addressMatch = normalizeSearchKeyword(barber.address).includes(normalizedQuery);
+            const descMatch = normalizeSearchKeyword(barber.description).includes(normalizedQuery);
+            const typeMatch = barber.serviceTypes?.some((st) =>
+              normalizeSearchKeyword(st).includes(normalizedQuery)
+            );
+            return nameMatch || addressMatch || descMatch || typeMatch;
+          })
+        : barbers;
+
+      const categoryChips: CategoryChip[] = categories.map((cat) => ({
+        ...cat,
+        isActive: cat.id === filters?.category,
+      }));
+
+      const nearbyBarbers = filteredBarbers.map((b) => ({
+        barberId: b.id,
+        name: b.displayName,
+        imageUrl: b.profileImageUrl,
+        serviceType: b.serviceTypes && b.serviceTypes.length > 0 ? b.serviceTypes.join(', ') : 'Grooming',
+        location: b.address || 'Garut',
+        distance: 'Garut',
+        rating: b.ratingAverage,
+        reviewCount: b.reviewCount,
+      }));
+
+      const featured = filteredBarbers[0]
+        ? {
+            barberId: filteredBarbers[0].id,
+            name: filteredBarbers[0].displayName,
+            imageUrl: filteredBarbers[0].profileImageUrl,
+            location: filteredBarbers[0].address || 'Garut',
+            distance: 'Garut',
+            rating: filteredBarbers[0].ratingAverage,
+            isFavorite: false,
+            serviceTags: filteredBarbers[0].serviceTypes || [],
+            reviewCount: filteredBarbers[0].reviewCount,
+          }
+        : {
+            barberId: '',
+            name: 'Tidak ada barber',
+            location: '',
+            distance: '',
+            rating: 0,
+            isFavorite: false,
+            serviceTags: [],
+          };
+
+      return {
+        userId: customerId,
+        searchQuery: query,
+        selectedCategory: filters?.category,
+        featuredBarber: featured,
+        nearbyBarbers,
+        categoryChips,
+        sliderPosition: 0,
+      };
+    } catch (error: any) {
+      if (__DEV__ && !isOfflineError(error)) {
+        console.warn('[CustomerRepository searchBarbers Error]', error?.code, error?.message || error);
+      }
+      return null;
+    }
+  },
+
+  /**
+   * Get favorite barber IDs belonging to customer
+   */
+  async getFavoriteIds(customerId: string): Promise<string[]> {
+    try {
+      if (!customerId) return [];
+      const q = firestoreQuery(
+        collection(firestore, 'favorites'),
+        where('customerId', '==', customerId)
+      );
+      const snapshot = await withTimeout(getDocs(q), 5000, 'Favorites fetch timed out');
+      return snapshot.docs.map((docSnap) => (docSnap.data() as { barberId: string }).barberId);
+    } catch (error: any) {
+      if (__DEV__ && !isOfflineError(error)) {
+        console.warn('[CustomerRepository getFavoriteIds Error]', error?.code, error?.message || error);
+      }
+      return [];
+    }
+  },
+
+  /**
+   * Check if a specific barber is favorited by customer
+   */
+  async isFavorite(customerId: string, barberId: string): Promise<boolean> {
+    try {
+      if (!customerId || !barberId) return false;
+      const favId = `${customerId}_${barberId}`;
+      const docRef = doc(firestore, 'favorites', favId);
+      const snap = await getDoc(docRef);
+      return snap.exists();
+    } catch (error: any) {
+      return false;
+    }
+  },
+
+  /**
+   * Get favorite barbers for customer
+   */
+  async getFavoriteBarbers(customerId: string): Promise<CustomerFavoritesData | null> {
+    try {
+      if (!customerId) return null;
+      const favoriteIds = await this.getFavoriteIds(customerId);
+      const allBarbers = await this.getPublicBarbers();
+      const categories = await this.getCategories();
+
+      const favoriteBarbers = allBarbers
+        .filter((b) => favoriteIds.includes(b.id))
+        .map((b) => ({
+          barberId: b.id,
+          name: b.displayName,
+          status: b.status === 'active' ? 'Tersedia' : 'Tutup',
+          rating: b.ratingAverage,
+          distance: 'Garut',
+          imageUrl: b.profileImageUrl,
+          location: b.address,
+        }));
+
+      return {
+        userId: customerId,
+        favoriteBarbers,
+        categoryChips: categories,
+      };
+    } catch (error: any) {
+      if (__DEV__ && !isOfflineError(error)) {
+        console.warn('[CustomerRepository getFavoriteBarbers Error]', error?.code, error?.message || error);
+      }
+      return null;
+    }
+  },
+
+  /**
+   * Toggle favorite barber using deterministic document ID favorites/{customerId}_{barberId}
+   */
+  async toggleFavoriteBarber(
+    customerId: string,
+    barberId: string
+  ): Promise<{ success: boolean; isFavorite: boolean; error?: { message: string } }> {
+    try {
+      if (!customerId || !barberId) {
+        return { success: false, isFavorite: false, error: { message: 'ID Pelanggan dan Barber diperlukan' } };
+      }
+
+      const favId = `${customerId}_${barberId}`;
+      const favRef = doc(firestore, 'favorites', favId);
+      const snap = await getDoc(favRef);
+
+      if (snap.exists()) {
+        await deleteDoc(favRef);
+        return { success: true, isFavorite: false };
+      } else {
+        await setDoc(favRef, {
+          id: favId,
+          customerId,
+          barberId,
+          createdAt: Timestamp.now(),
+        });
+        return { success: true, isFavorite: true };
+      }
+    } catch (error: any) {
+      if (__DEV__) {
+        console.warn('[CustomerRepository toggleFavoriteBarber Error]', error?.code, error?.message || error);
+      }
+      return {
+        success: false,
+        isFavorite: false,
+        error: { message: error?.message || 'Gagal mengubah status favorit' },
+      };
+    }
+  },
+
+  /**
+   * Get customer profile matching exact registration UID from Firestore & Auth
    */
   async getCustomerProfile(customerId: string): Promise<CustomerProfile | null> {
     const authUser = firebaseAuth.currentUser;
-    const fallbackName = authUser?.displayName || authUser?.email?.split('@')[0] || 'Customer URBarber';
+    const fallbackName = authUser?.displayName || authUser?.email?.split('@')[0] || 'Pelanggan URBarber';
 
     try {
       if (!customerId) {
@@ -61,7 +385,7 @@ export const customerRepository = {
       }
 
       const docRef = doc(firestore, 'customers', customerId);
-      const snapshot = await withTimeout(getDoc(docRef), 10000, 'Customer profile fetch timed out');
+      const snapshot = await withTimeout(getDoc(docRef), 8000, 'Customer profile fetch timed out');
 
       let name = fallbackName;
       let email = authUser?.email || '';
@@ -74,13 +398,12 @@ export const customerRepository = {
         const data = snapshot.data();
         if (data.name || data.fullName) name = data.name || data.fullName;
         if (data.email) email = data.email;
-        // Support reading legacy avatar fields for backward compatibility, but map to profileImageUrl & profileImagePath
         if (data.profileImageUrl || data.profileImage || data.avatarUrl) {
           profileImageUrl = data.profileImageUrl || data.profileImage || data.avatarUrl;
         }
         if (data.profileImagePath) profileImagePath = data.profileImagePath;
         if (data.phoneNumber || data.phone) phone = data.phoneNumber || data.phone;
-        if (data.location) location = data.location;
+        if (data.location || data.address) location = data.location || data.address;
       } else {
         // Fallback check users/{uid} collection if customers/{uid} does not exist yet
         try {
@@ -93,6 +416,8 @@ export const customerRepository = {
             if (uData.profileImageUrl || uData.profileImage || uData.avatarUrl) {
               profileImageUrl = uData.profileImageUrl || uData.profileImage || uData.avatarUrl;
             }
+            if (uData.profileImagePath) profileImagePath = uData.profileImagePath;
+            if (uData.phoneNumber || uData.phone) phone = uData.phoneNumber || uData.phone;
           }
         } catch (fallbackErr: any) {
           if (__DEV__) {
@@ -133,7 +458,7 @@ export const customerRepository = {
    */
   async updateCustomerProfile(
     customerId: string,
-    data: UpdateProfileData,
+    data: UpdateProfileData
   ): Promise<{ success: boolean; error?: { message: string } }> {
     try {
       if (!customerId) {
@@ -157,23 +482,24 @@ export const customerRepository = {
         updatedAt: Timestamp.now(),
       };
 
-      // Only write canonical fields that are explicitly provided
       if (data.name !== undefined) {
-        customerUpdatePayload.name = data.name;
-        customerUpdatePayload.fullName = data.name;
-        userUpdatePayload.name = data.name;
+        const trimmedName = data.name.trim();
+        customerUpdatePayload.name = trimmedName;
+        userUpdatePayload.name = trimmedName;
       }
       if (data.email !== undefined) {
-        customerUpdatePayload.email = data.email;
-        userUpdatePayload.email = data.email;
+        customerUpdatePayload.email = data.email.trim();
+        userUpdatePayload.email = data.email.trim();
       }
       if (data.location !== undefined) {
-        customerUpdatePayload.location = data.location;
+        customerUpdatePayload.location = data.location.trim();
+        customerUpdatePayload.address = data.location.trim();
       }
       if (data.phone !== undefined) {
-        customerUpdatePayload.phone = data.phone;
-        customerUpdatePayload.phoneNumber = data.phone;
-        userUpdatePayload.phoneNumber = data.phone;
+        const trimmedPhone = data.phone.trim();
+        customerUpdatePayload.phone = trimmedPhone;
+        customerUpdatePayload.phoneNumber = trimmedPhone;
+        userUpdatePayload.phoneNumber = trimmedPhone;
       }
       if (data.profileImageUrl !== undefined) {
         customerUpdatePayload.profileImageUrl = data.profileImageUrl;
@@ -202,234 +528,23 @@ export const customerRepository = {
   },
 
   /**
-   * Get customer home data
-   */
-  async getCustomerHomeData(customerId: string): Promise<CustomerHomeData | null> {
-    try {
-      if (!customerId) return null;
-      const docRef = doc(firestore, 'customerHomeData', customerId);
-      const snapshot = await withTimeout(getDoc(docRef), 10000, 'Customer home data fetch timed out');
-
-      if (!snapshot.exists()) return null;
-
-      return { userId: customerId, ...snapshot.data() } as CustomerHomeData;
-    } catch (error: any) {
-      if (__DEV__) {
-        console.warn('[CustomerRepository getCustomerHomeData Error]', error?.code, error?.message || error);
-      }
-      return null;
-    }
-  },
-
-  /**
-   * Get customer explore/discovery data
-   */
-  async getCustomerExploreData(customerId: string): Promise<CustomerExploreData | null> {
-    try {
-      if (!customerId) return null;
-      const docRef = doc(firestore, 'customerExploreData', customerId);
-      const snapshot = await withTimeout(getDoc(docRef), 10000, 'Customer explore data fetch timed out');
-
-      if (!snapshot.exists()) return null;
-
-      return { userId: customerId, ...snapshot.data() } as CustomerExploreData;
-    } catch (error: any) {
-      if (__DEV__) {
-        console.warn('[CustomerRepository getCustomerExploreData Error]', error?.code, error?.message || error);
-      }
-      return null;
-    }
-  },
-
-  /**
-   * Search barbers or services
-   */
-  async searchBarbers(
-    customerId: string,
-    query: string,
-    filters?: { category?: string; location?: string; maxDistance?: number },
-  ): Promise<CustomerExploreData | null> {
-    try {
-      const barbersRef = collection(firestore, 'barbers');
-      let searchQueryRef: any = barbersRef;
-
-      if (filters?.category) {
-        searchQueryRef = firestoreQuery(barbersRef, where('serviceType', 'array-contains', filters.category));
-      }
-
-      const snapshot = await withTimeout(getDocs(searchQueryRef), 10000, 'Barbers search timed out');
-      const barbers = snapshot.docs.map((docSnap) => ({
-        ...(docSnap.data() as object),
-        id: docSnap.id,
-      }));
-
-      const filtered = query
-        ? barbers.filter(
-            (barber: any) =>
-              barber.name?.toLowerCase().includes(query.toLowerCase()) ||
-              barber.serviceType?.some((s: string) =>
-                s.toLowerCase().includes(query.toLowerCase()),
-              ),
-          )
-        : barbers;
-
-      return {
-        searchQuery: query,
-        selectedCategory: filters?.category,
-        nearbyBarbers: filtered as any,
-        categoryChips: [],
-        featuredBarber: (filtered[0] as any) || null,
-      } as unknown as CustomerExploreData;
-    } catch (error: any) {
-      if (__DEV__) {
-        console.warn('[CustomerRepository searchBarbers Error]', error?.code, error?.message || error);
-      }
-      return null;
-    }
-  },
-
-  /**
-   * Get favorite barbers
-   */
-  async getFavoriteBarbers(customerId: string): Promise<CustomerFavoritesData | null> {
-    try {
-      const q = firestoreQuery(
-        collection(firestore, 'favorites'),
-        where('customerId', '==', customerId),
-      );
-
-      const snapshot = await withTimeout(getDocs(q), 5000, 'Favorites fetch timed out');
-      const favorites = snapshot.docs.map((doc) => (doc.data() as any).barberId);
-
-      return {
-        favoriteBarbers: favorites.map((id) => ({
-          id,
-          name: 'Barber',
-          rating: 4.5,
-          reviewCount: 50,
-          distance: '1.2 km',
-        })) as any,
-      } as unknown as CustomerFavoritesData;
-    } catch (error) {
-      console.error('Error fetching favorite barbers:', error);
-      return null;
-    }
-  },
-
-  /**
-   * Toggle favorite barber
-   */
-  async toggleFavoriteBarber(
-    customerId: string,
-    barberId: string,
-  ): Promise<{ success: boolean; isFavorite: boolean; error?: { message: string } }> {
-    try {
-      if (!customerId || !barberId) {
-        return { success: false, isFavorite: false, error: { message: 'Missing parameters' } };
-      }
-
-      const q = firestoreQuery(
-        collection(firestore, 'favorites'),
-        where('customerId', '==', customerId),
-        where('barberId', '==', barberId),
-      );
-
-      const snapshot = await getDocs(q);
-
-      if (snapshot.empty) {
-        // Add to favorites
-        await addDoc(collection(firestore, 'favorites'), {
-          customerId,
-          barberId,
-          createdAt: Timestamp.now(),
-        });
-        return { success: true, isFavorite: true };
-      } else {
-        // Remove from favorites
-        await deleteDoc(doc(firestore, 'favorites', snapshot.docs[0].id));
-        return { success: true, isFavorite: false };
-      }
-    } catch (error) {
-      return {
-        success: false,
-        isFavorite: false,
-        error: { message: 'Failed to toggle favorite' },
-      };
-    }
-  },
-
-  /**
-   * Get location search results
-   */
-  async searchLocations(query: string): Promise<CustomerLocationData> {
-    try {
-      const locationsRef = collection(firestore, 'locations');
-      const snapshot = await getDocs(locationsRef);
-      const allLocations = snapshot.docs.map((doc) => doc.data());
-
-      const filtered = allLocations.filter(
-        (loc: any) =>
-          loc.locationName.toLowerCase().includes(query.toLowerCase()) ||
-          loc.locationAddress.toLowerCase().includes(query.toLowerCase()),
-      );
-
-      return {
-        recentSearches: [],
-        suggestedLocations: filtered as any,
-      };
-    } catch (error) {
-      console.error('Error searching locations:', error);
-      return {
-        recentSearches: [],
-        suggestedLocations: [],
-      };
-    }
-  },
-
-  /**
    * Get customer notifications
    */
   async getNotifications(customerId: string): Promise<CustomerNotification[]> {
     try {
+      if (!customerId) return [];
       const q = firestoreQuery(
         collection(firestore, 'notifications'),
-        where('customerId', '==', customerId),
+        where('customerId', '==', customerId)
       );
 
       const snapshot = await getDocs(q);
-      return snapshot.docs.map((doc) => ({
-        ...(doc.data() as any),
-        id: doc.id,
+      return snapshot.docs.map((docSnap) => ({
+        ...(docSnap.data() as any),
+        id: docSnap.id,
       })) as CustomerNotification[];
     } catch (error) {
-      console.error('Error fetching notifications:', error);
       return [];
-    }
-  },
-
-  /**
-   * Mark notification as read
-   */
-  async markNotificationAsRead(
-    customerId: string,
-    notificationId: string,
-  ): Promise<{ success: boolean; error?: { message: string } }> {
-    try {
-      if (!customerId || !notificationId) {
-        return { success: false, error: { message: 'Missing parameters' } };
-      }
-
-      await updateDoc(doc(firestore, 'notifications', notificationId), {
-        read: true,
-        readAt: Timestamp.now(),
-      });
-
-      return { success: true };
-    } catch (error) {
-      return {
-        success: false,
-        error: { message: 'Failed to mark notification as read' },
-      };
     }
   },
 
@@ -438,102 +553,19 @@ export const customerRepository = {
    */
   async getRecentSearches(customerId: string): Promise<RecentSearch[]> {
     try {
+      if (!customerId) return [];
       const q = firestoreQuery(
         collection(firestore, 'recentSearches'),
-        where('customerId', '==', customerId),
+        where('customerId', '==', customerId)
       );
 
       const snapshot = await getDocs(q);
-      return snapshot.docs.map((doc) => ({
-        ...(doc.data() as any),
-        id: doc.id,
+      return snapshot.docs.map((docSnap) => ({
+        ...(docSnap.data() as any),
+        id: docSnap.id,
       })) as RecentSearch[];
     } catch (error) {
-      console.error('Error fetching recent searches:', error);
       return [];
-    }
-  },
-
-  /**
-   * Add to recent searches
-   */
-  async addRecentSearch(
-    customerId: string,
-    query: string,
-    type: 'barber' | 'location' | 'service',
-  ): Promise<{ success: boolean; error?: { message: string } }> {
-    try {
-      if (!customerId || !query) {
-        return { success: false, error: { message: 'Missing parameters' } };
-      }
-
-      await addDoc(collection(firestore, 'recentSearches'), {
-        customerId,
-        query,
-        type,
-        createdAt: Timestamp.now(),
-      });
-
-      return { success: true };
-    } catch (error) {
-      return {
-        success: false,
-        error: { message: 'Failed to add recent search' },
-      };
-    }
-  },
-
-  /**
-   * Clear recent searches
-   */
-  async clearRecentSearches(customerId: string): Promise<{ success: boolean; error?: { message: string } }> {
-    try {
-      if (!customerId) {
-        return { success: false, error: { message: 'Missing customer ID' } };
-      }
-
-      const q = firestoreQuery(
-        collection(firestore, 'recentSearches'),
-        where('customerId', '==', customerId),
-      );
-
-      const snapshot = await getDocs(q);
-      for (const docItem of snapshot.docs) {
-        await deleteDoc(docItem.ref);
-      }
-
-      return { success: true };
-    } catch (error) {
-      return {
-        success: false,
-        error: { message: 'Failed to clear recent searches' },
-      };
-    }
-  },
-
-  /**
-   * Update category filter
-   */
-  async updateCategoryFilter(
-    customerId: string,
-    categoryId: string,
-  ): Promise<{ success: boolean; categories?: CategoryChip[]; error?: { message: string } }> {
-    try {
-      if (!customerId || !categoryId) {
-        return { success: false, error: { message: 'Missing parameters' } };
-      }
-
-      await updateDoc(doc(firestore, 'customers', customerId), {
-        selectedCategories: categoryId,
-        updatedAt: Timestamp.now(),
-      });
-
-      return { success: true };
-    } catch (error) {
-      return {
-        success: false,
-        error: { message: 'Failed to update category filter' },
-      };
     }
   },
 
@@ -542,17 +574,37 @@ export const customerRepository = {
    */
   async getUnreadNotificationCount(customerId: string): Promise<number> {
     try {
+      if (!customerId) return 0;
       const q = firestoreQuery(
         collection(firestore, 'notifications'),
         where('customerId', '==', customerId),
-        where('read', '==', false),
+        where('read', '==', false)
       );
-
       const snapshot = await getDocs(q);
       return snapshot.size;
     } catch (error) {
-      console.error('Error fetching unread notification count:', error);
       return 0;
+    }
+  },
+
+  /**
+   * Mark notification as read
+   */
+  async markNotificationAsRead(
+    customerId: string,
+    notificationId: string
+  ): Promise<{ success: boolean; error?: { message: string } }> {
+    try {
+      if (!customerId || !notificationId) {
+        return { success: false, error: { message: 'Missing parameters' } };
+      }
+      await updateDoc(doc(firestore, 'notifications', notificationId), {
+        read: true,
+        readAt: Timestamp.now(),
+      });
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: { message: error?.message || 'Failed to mark notification as read' } };
     }
   },
 };

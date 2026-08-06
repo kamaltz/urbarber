@@ -1,3 +1,4 @@
+import { CustomerBottomNavigation } from '@/components/navigation/CustomerBottomNavigation';
 import { AppButton } from '@/components/ui/AppButton';
 import { AppCard } from '@/components/ui/AppCard';
 import { Avatar } from '@/components/ui/Avatar';
@@ -5,7 +6,6 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Header } from '@/components/ui/Header';
 import { Loading } from '@/components/ui/Loading';
 import { Rating } from '@/components/ui/Rating';
-import { CustomerBottomNavigation } from '@/components/navigation/CustomerBottomNavigation';
 import { routes } from '@/constants/routes';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { useCustomerHome } from '@/features/customer/hooks/use-customer-home';
@@ -14,21 +14,20 @@ import { firebaseAuth } from '@/lib/firebase';
 import { router } from 'expo-router';
 import { useCallback } from 'react';
 import {
-    Image,
-    Pressable,
-    RefreshControl,
-    SafeAreaView,
-    ScrollView,
-    Text,
-    View,
+  Pressable,
+  RefreshControl,
+  SafeAreaView,
+  ScrollView,
+  Text,
+  View,
 } from 'react-native';
 
 export default function HomeScreen() {
   const { user, isAuthenticated, loading: authLoading } = useAuth();
-  const customerId = user?.uid;
+  const customerId = user?.uid || '';
 
-  const { profile } = useCustomerProfile(customerId || '');
-  const { homeData, refresh } = useCustomerHome(customerId || '');
+  const { profile } = useCustomerProfile(customerId);
+  const { homeData, loading: homeLoading, refreshing, error: homeError, refresh } = useCustomerHome(customerId);
 
   const handleRefresh = useCallback(() => {
     refresh();
@@ -42,12 +41,12 @@ export default function HomeScreen() {
     return (
       <SafeAreaView className="flex-1 bg-white">
         <View className="flex-1 items-center justify-center px-6">
-          <Text className="text-2xl font-bold text-[#D2691E] mb-4">Welcome to URBarber</Text>
+          <Text className="text-2xl font-bold text-[#D2691E] mb-4">Selamat datang di URBarber</Text>
           <Text className="text-center text-slate-600 mb-6">
-            Please sign in to continue
+            Silakan masuk untuk melanjutkan layanan pemesanan barber.
           </Text>
           <AppButton
-            label="Go to Login"
+            label="Ke Halaman Login"
             onPress={() => router.replace(routes.auth.login)}
             variant="primary"
           />
@@ -56,20 +55,19 @@ export default function HomeScreen() {
     );
   }
 
-  const displayName = profile?.name || (profile as any)?.fullName || user?.displayName || user?.email?.split('@')[0] || 'Pelanggan';
+  const displayName = profile?.name || user?.displayName || user?.email?.split('@')[0] || 'Pelanggan';
   const avatarUrl =
     profile?.profileImageUrl ||
-    (profile as any)?.profileImage ||
     user?.photoURL ||
     firebaseAuth.currentUser?.photoURL;
 
   return (
     <SafeAreaView className="flex-1 bg-slate-50">
-      <Header title="Home" />
+      <Header title="Beranda" />
       <ScrollView
         className="flex-1"
         contentContainerStyle={{ flexGrow: 1 }}
-        refreshControl={<RefreshControl refreshing={false} onRefresh={handleRefresh} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={['#D2691E']} />}
       >
         {/* User Greeting Section */}
         <View className="px-4 pt-6 pb-4">
@@ -81,89 +79,86 @@ export default function HomeScreen() {
             />
             <View className="flex-1">
               <Text className="text-2xl font-bold text-slate-900">
-                Hello, {displayName.split(' ')[0]}! 👋
+                Halo, {displayName.split(' ')[0]}! 👋
               </Text>
               <Text className="text-sm text-slate-600 mt-1">
-                Ready to look your best?
+                Siap untuk tampil rapi hari ini?
               </Text>
             </View>
           </View>
         </View>
 
-        {/* Quick Stats Cards */}
-        <View className="px-4 pb-4">
-          <View className="flex-row gap-3">
-            <AppCard className="flex-1 p-4">
-              <Text className="text-sm text-slate-600">Upcoming</Text>
-              <Text className="text-2xl font-bold text-[#D2691E] mt-1">0</Text>
-              <Text className="text-xs text-slate-500 mt-1">Bookings</Text>
-            </AppCard>
-            <AppCard className="flex-1 p-4">
-              <Text className="text-sm text-slate-600">Favorites</Text>
-              <Text className="text-2xl font-bold text-[#D2691E] mt-1">
-                {homeData?.barberSuggestions?.length || 0}
-              </Text>
-              <Text className="text-xs text-slate-500 mt-1">Barbers</Text>
-            </AppCard>
-          </View>
-        </View>
-
         {/* Quick Actions */}
         <View className="px-4 pb-4">
-          <Text className="text-lg font-bold text-slate-900 mb-3">Quick Actions</Text>
+          <Text className="text-lg font-bold text-slate-900 mb-3">Aksi Cepat</Text>
           <AppButton
-            label="Book an Appointment"
+            label="Cari Barber Terdekat"
             onPress={() => router.push(routes.customer.explore)}
             variant="primary"
             className="mb-2"
           />
           <View className="flex-row gap-2">
             <AppButton
-              label="Favorites"
+              label="Barber Favorit"
               onPress={() => router.push(routes.customer.favorites)}
               variant="secondary"
               className="flex-1"
             />
             <AppButton
-              label="Messages"
-              onPress={() => router.push(routes.customer.chats)}
+              label="Riwayat Booking"
+              onPress={() => router.push(routes.customer.bookingHistory)}
               variant="secondary"
               className="flex-1"
             />
           </View>
         </View>
 
-        {/* Featured Services */}
-        {homeData?.featuredServices && homeData.featuredServices.length > 0 && (
-          <View className="px-4 pb-4">
-            <Text className="text-lg font-bold text-slate-900 mb-3">Featured Services</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} className="gap-3">
-              {homeData.featuredServices.map((service) => (
-                <AppCard key={service.id} className="w-40 p-3">
-                  {service.imageUrl && (
-                    <Image
-                      source={{ uri: service.imageUrl }}
-                      className="w-full h-24 rounded-md mb-2"
-                    />
-                  )}
-                  <Text className="font-semibold text-slate-900 text-sm">{service.title}</Text>
-                  <Text className="text-xs text-slate-600 mt-1">{service.subtitle}</Text>
-                </AppCard>
+        {/* Category Chips / Service Catalog */}
+        <View className="px-4 pb-4">
+          <Text className="text-lg font-bold text-slate-900 mb-3">Kategori Layanan</Text>
+          {homeData?.featuredServices && homeData.featuredServices.length > 0 ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row gap-3">
+              {homeData.featuredServices.map((cat) => (
+                <Pressable
+                  key={cat.id}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/(customer)/explore',
+                      params: { category: cat.id },
+                    })
+                  }
+                  className="rounded-xl bg-white px-4 py-3 border border-slate-200 shadow-sm mr-2"
+                >
+                  <Text className="font-bold text-slate-900 text-sm">{cat.title}</Text>
+                  <Text className="text-xs text-slate-500 mt-1">{cat.subtitle}</Text>
+                </Pressable>
               ))}
             </ScrollView>
-          </View>
-        )}
+          ) : (
+            <Text className="text-xs text-slate-500">Memuat kategori...</Text>
+          )}
+        </View>
 
-        {/* Suggested Barbers */}
-        {homeData?.barberSuggestions && homeData.barberSuggestions.length > 0 && (
-          <View className="px-4 pb-4">
-            <View className="flex-row items-center justify-between mb-3">
-              <Text className="text-lg font-bold text-slate-900">Suggested Barbers</Text>
-              <Pressable onPress={() => router.push(routes.customer.explore)}>
-                <Text className="text-sm text-[#D2691E] font-semibold">View All</Text>
-              </Pressable>
+        {/* Featured / Recommended Barbers Section */}
+        <View className="px-4 pb-4">
+          <View className="flex-row items-center justify-between mb-3">
+            <Text className="text-lg font-bold text-slate-900">Rekomendasi Barber Active</Text>
+            <Pressable onPress={() => router.push(routes.customer.explore)}>
+              <Text className="text-sm text-[#D2691E] font-semibold">Lihat Semua</Text>
+            </Pressable>
+          </View>
+
+          {homeLoading && !refreshing ? (
+            <View className="py-6 items-center">
+              <Loading />
             </View>
-            {homeData.barberSuggestions.slice(0, 3).map((barber) => (
+          ) : homeError ? (
+            <View className="p-4 rounded-xl bg-red-50 border border-red-200 my-2">
+              <Text className="text-sm text-red-700 text-center mb-2">{homeError}</Text>
+              <AppButton label="Coba Lagi" onPress={() => refresh()} variant="secondary" />
+            </View>
+          ) : homeData?.barberSuggestions && homeData.barberSuggestions.length > 0 ? (
+            homeData.barberSuggestions.slice(0, 5).map((barber) => (
               <AppCard
                 key={barber.barberId}
                 onPress={() =>
@@ -172,41 +167,47 @@ export default function HomeScreen() {
                     params: { barberId: barber.barberId },
                   })
                 }
-                className="mb-3 p-3"
+                className="mb-3 p-4"
               >
                 <View className="flex-row items-center gap-3">
-                  {barber.imageUrl && (
-                    <Image
-                      source={{ uri: barber.imageUrl }}
-                      className="w-12 h-12 rounded-full"
-                    />
-                  )}
+                  <Avatar
+                    size="md"
+                    name={barber.name}
+                    source={barber.imageUrl ? { uri: barber.imageUrl } : undefined}
+                  />
                   <View className="flex-1">
-                    <Text className="font-semibold text-slate-900">{barber.name}</Text>
-                    <Text className="text-xs text-slate-600 mt-1">{barber.status}</Text>
+                    <View className="flex-row items-center justify-between">
+                      <Text className="font-bold text-slate-900 text-base">{barber.name}</Text>
+                      <View className="rounded-full bg-emerald-100 px-2 py-0.5">
+                        <Text className="text-[10px] font-semibold text-emerald-800">
+                          {barber.status}
+                        </Text>
+                      </View>
+                    </View>
+                    <Text className="text-xs text-slate-600 mt-1" numberOfLines={1}>
+                      📍 {barber.location || 'Garut'}
+                    </Text>
                     {barber.rating !== undefined && (
-                      <View className="mt-1">
+                      <View className="mt-1 flex-row items-center gap-1">
                         <Rating value={barber.rating} size="sm" />
+                        <Text className="text-xs font-semibold text-slate-700">
+                          ({barber.rating.toFixed(1)})
+                        </Text>
                       </View>
                     )}
                   </View>
                 </View>
               </AppCard>
-            ))}
-          </View>
-        )}
-
-        {/* Empty State */}
-        {!homeData?.barberSuggestions?.length && !homeData?.featuredServices?.length && (
-          <View className="px-4 py-8">
+            ))
+          ) : (
             <EmptyState
-              title="No suggestions yet"
-              description="Complete your profile to get personalized barber recommendations"
-              actionLabel="Complete Profile"
-              onActionPress={() => router.push(routes.customer.profile)}
+              title="Belum ada barber terdaftar"
+              description="Barber aktif akan muncul di sini setelah diverifikasi."
+              actionLabel="Jelajahi Katalog"
+              onActionPress={() => router.push(routes.customer.explore)}
             />
-          </View>
-        )}
+          )}
+        </View>
 
         <View className="h-6" />
       </ScrollView>
