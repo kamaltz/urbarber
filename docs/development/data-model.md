@@ -113,7 +113,7 @@ interface BarberScheduleDocument {
 ```
 
 ### 2.7 Collection: `bookings`
-Home-service booking transactions. Uses canonical booking status.
+Home-service booking transactions. Uses canonical booking status and separate payment status.
 ```typescript
 interface BookingDocument {
   id: string;                  // Auto-generated Firestore ID
@@ -127,12 +127,42 @@ interface BookingDocument {
   notes?: string;              // Special instructions
   totalPrice: number;          // Total price in IDR
   status: "pending" | "accepted" | "rejected" | "in_progress" | "completed" | "cancelled";
+  paymentStatus?: "initiated" | "pending" | "paid" | "failed" | "expired" | "cancelled" | "refunded" | "partially_refunded";
+  paymentProvider?: "midtrans";
+  paymentOrderId?: string;     // URB-{bookingId}
+  paymentId?: string;          // bookingId
+  paidAt?: Timestamp;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
 ```
 
-### 2.8 Collection: `reviews`
+### 2.8 Collection: `payments`
+Midtrans Snap payment transaction records. Indexed by `bookingId`.
+```typescript
+interface PaymentDocument {
+  bookingId: string;           // Primary Key (matches bookingId)
+  customerId: string;
+  barberId: string;
+  provider: "midtrans";
+  environment: "sandbox" | "production";
+  orderId: string;             // URB-{bookingId}
+  grossAmount: number;
+  status: "initiated" | "pending" | "paid" | "failed" | "expired" | "cancelled" | "refunded" | "partially_refunded";
+  transactionStatus?: string;  // Midtrans raw status
+  fraudStatus?: string;        // "accept" | "challenge" | "deny"
+  paymentType?: string;        // "bank_transfer" | "gopay" | "qris" | etc.
+  transactionId?: string;      // Midtrans transaction ID
+  snapToken?: string;
+  redirectUrl?: string;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+  paidAt?: Timestamp;
+  expiresAt?: Timestamp;
+}
+```
+
+### 2.9 Collection: `reviews`
 Ratings and reviews submitted by customers after booking completion (F-13).
 ```typescript
 interface ReviewDocument {

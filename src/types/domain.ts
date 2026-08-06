@@ -13,6 +13,16 @@ export type BookingStatus =
   | "completed"
   | "cancelled";
 
+export type PaymentStatus =
+  | "initiated"
+  | "pending"
+  | "paid"
+  | "failed"
+  | "expired"
+  | "cancelled"
+  | "refunded"
+  | "partially_refunded";
+
 /**
  * Explicit legacy status read mapper.
  * Translates old stored database values to canonical BookingStatus.
@@ -101,7 +111,34 @@ export interface Booking {
   notes?: string;
   totalPrice: number;
   status: BookingStatus;
+  paymentStatus?: PaymentStatus;
+  paymentProvider?: string;
+  paymentOrderId?: string;
+  paymentId?: string;
+  paidAt?: string;
   createdAt: string;
+  updatedAt?: string;
+}
+
+export interface PaymentRecord {
+  bookingId: string;
+  customerId: string;
+  barberId: string;
+  provider: string;
+  environment: string;
+  orderId: string;
+  grossAmount: number;
+  status: PaymentStatus;
+  transactionStatus?: string;
+  fraudStatus?: string;
+  paymentType?: string;
+  transactionId?: string;
+  snapToken?: string;
+  redirectUrl?: string;
+  createdAt: string;
+  updatedAt: string;
+  paidAt?: string;
+  expiresAt?: string;
 }
 
 export interface Review {

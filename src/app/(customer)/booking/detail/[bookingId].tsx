@@ -124,6 +124,35 @@ export default function BookingDetailScreen() {
               totalPrice={booking.totalPrice}
             />
 
+            {/* Payment Status Banner */}
+            <View className="rounded-lg bg-slate-50 p-4 border border-slate-200 flex-row items-center justify-between">
+              <View>
+                <Text className="text-xs text-slate-500 font-medium">Status Pembayaran</Text>
+                <Text className="text-sm font-bold text-slate-900 uppercase">
+                  {booking.paymentStatus || 'Initiated'}
+                </Text>
+              </View>
+
+              {(!booking.paymentStatus || ['pending', 'initiated', 'failed'].includes(booking.paymentStatus)) ? (
+                <Pressable
+                  onPress={() =>
+                    router.push({
+                      pathname: '/(customer)/booking/invoice',
+                      params: {
+                        bookingId: booking.id,
+                        serviceName: booking.services?.[0]?.name || 'Layanan Barber',
+                        servicePrice: String(booking.totalPrice || 0),
+                        barberName: booking.barber?.name || 'Barber URBarber',
+                      },
+                    })
+                  }
+                  className="rounded-lg bg-[#D2691E] px-4 py-2"
+                >
+                  <Text className="text-xs font-bold text-white">Bayar Sekarang</Text>
+                </Pressable>
+              ) : null}
+            </View>
+
             {/* Action Buttons */}
             <View className="gap-3">
               <View className="flex-row gap-3">

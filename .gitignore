@@ -55,3 +55,7 @@ docs/figma/screenshots/barber/*.png
 docs/figma/screenshots/auth/*.png
 docs/figma/screenshots/shared/profile/*.png
 docs/figma/screenshots/shared/*.png
+
+functions/.env.local
+functions/.secret.local
+functions/.env.*.local

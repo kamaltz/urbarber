@@ -183,6 +183,7 @@ async function runRulesTests() {
           customerId: 'cust1',
           barberId: 'barb1',
           status: 'pending',
+          paymentStatus: 'paid',
           createdAt: '2026-01-01',
         });
       });
@@ -313,6 +314,105 @@ async function runRulesTests() {
       await assertSucceeds(
         adminDb.collection('categories').doc('cat1').set({
           name: 'Gentleman Cut',
+        })
+      );
+    });
+
+    // 19. Customer can read own payment document
+    await test('19. Customer can read own payment document', async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('payments').doc('pay1').set({
+          bookingId: 'pay1',
+          customerId: 'cust1',
+          barberId: 'barb1',
+          status: 'pending',
+          grossAmount: 50000,
+        });
+      });
+
+      const cust1Db = testEnv.authenticatedContext('cust1', { app_role: 'customer' }).firestore();
+      await assertSucceeds(cust1Db.collection('payments').doc('pay1').get());
+    });
+
+    // 20. Customer cannot read another customer's payment document
+    await test("20. Customer cannot read another customer's payment document", async () => {
+      const cust2Db = testEnv.authenticatedContext('cust2', { app_role: 'customer' }).firestore();
+      await assertFails(cust2Db.collection('payments').doc('pay1').get());
+    });
+
+    // 21. Client cannot create or write payment document directly
+    await test('21. Client cannot create or write payment document directly', async () => {
+      const cust1Db = testEnv.authenticatedContext('cust1', { app_role: 'customer' }).firestore();
+      await assertFails(
+        cust1Db.collection('payments').doc('pay2').set({
+          customerId: 'cust1',
+          status: 'paid',
+        })
+      );
+    });
+
+    // 22. Customer cannot update paymentStatus on booking document directly
+    await test('22. Customer cannot update paymentStatus on booking document directly', async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('bookings').doc('book_pay_status').set({
+          customerId: 'cust1',
+          barberId: 'barb1',
+          status: 'pending',
+          paymentStatus: 'pending',
+          createdAt: '2026-01-01',
+        });
+      });
+
+      const cust1Db = testEnv.authenticatedContext('cust1', { app_role: 'customer' }).firestore();
+      await assertFails(
+        cust1Db.collection('bookings').doc('book_pay_status').update({
+          paymentStatus: 'paid',
+        })
+      );
+    });
+
+    // 23. Barber cannot process/accept an unpaid booking
+    await test("23. Barber cannot process an unpaid booking (paymentStatus != 'paid')", async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('bookings').doc('book_unpaid').set({
+          customerId: 'cust1',
+          barberId: 'barb1',
+          status: 'pending',
+          paymentStatus: 'pending',
+          createdAt: '2026-01-01',
+        });
+      });
+
+      const barb1Db = testEnv.authenticatedContext('barb1', { app_role: 'barber' }).firestore();
+      await assertFails(
+        barb1Db.collection('bookings').doc('book_unpaid').update({
+          status: 'accepted',
+          customerId: 'cust1',
+          barberId: 'barb1',
+          createdAt: '2026-01-01',
+        })
+      );
+    });
+
+    // 24. Barber can process/accept a paid booking
+    await test("24. Barber can process a paid booking (paymentStatus == 'paid')", async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('bookings').doc('book_paid').set({
+          customerId: 'cust1',
+          barberId: 'barb1',
+          status: 'pending',
+          paymentStatus: 'paid',
+          createdAt: '2026-01-01',
+        });
+      });
+
+      const barb1Db = testEnv.authenticatedContext('barb1', { app_role: 'barber' }).firestore();
+      await assertSucceeds(
+        barb1Db.collection('bookings').doc('book_paid').update({
+          status: 'accepted',
+          customerId: 'cust1',
+          barberId: 'barb1',
+          createdAt: '2026-01-01',
         })
       );
     });

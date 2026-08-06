@@ -2,7 +2,7 @@
  * Booking Feature Types
  */
 
-import type { BookingStatus as DomainBookingStatus } from '@/types/domain';
+import type { BookingStatus as DomainBookingStatus, PaymentStatus as DomainPaymentStatus } from '@/types/domain';
 
 export type BookingStatus = DomainBookingStatus;
 export type BookingType = 'home' | 'onsite';
@@ -49,6 +49,7 @@ export interface Booking {
   barber: Barber;
   services: Service[];
   status: BookingStatus;
+  paymentStatus?: DomainPaymentStatus;
   bookingType: BookingType;
   scheduledAt: string; // ISO date
   scheduledTime: string; // HH:MM format

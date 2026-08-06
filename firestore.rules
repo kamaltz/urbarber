@@ -163,11 +163,15 @@ service cloud.firestore {
           && request.resource.data.customerId == resource.data.customerId
           && request.resource.data.barberId == resource.data.barberId
           && request.resource.data.createdAt == resource.data.createdAt
+          && (!('paymentStatus' in request.resource.data) || request.resource.data.paymentStatus == resource.data.paymentStatus)
         )
         ||
         // Barber transitions: pending -> accepted / rejected, accepted -> in_progress, in_progress -> completed
+        // Barber can process/accept booking ONLY when paymentStatus is 'paid'
         (
           isOwner(resource.data.barberId)
+          && 'paymentStatus' in resource.data
+          && resource.data.paymentStatus == 'paid'
           && (
             (resource.data.status == 'pending' && (request.resource.data.status == 'accepted' || request.resource.data.status == 'rejected'))
             || (resource.data.status == 'accepted' && request.resource.data.status == 'in_progress')
@@ -176,6 +180,7 @@ service cloud.firestore {
           && request.resource.data.customerId == resource.data.customerId
           && request.resource.data.barberId == resource.data.barberId
           && request.resource.data.createdAt == resource.data.createdAt
+          && (!('paymentStatus' in request.resource.data) || request.resource.data.paymentStatus == resource.data.paymentStatus)
         )
         ||
         isAdmin()
@@ -183,6 +188,19 @@ service cloud.firestore {
 
       // Clients cannot delete booking records
       allow delete: if false;
+    }
+
+    // =========================================================================
+    // 7b. COLLECTION: payments
+    // =========================================================================
+    match /payments/{bookingId} {
+      // Customer, assigned barber, or admin can read payment record
+      allow read: if isOwner(resource.data.customerId)
+        || isOwner(resource.data.barberId)
+        || isAdmin();
+
+      // Clients CANNOT create, update, or delete payment records directly (Admin SDK only)
+      allow create, update, delete: if false;
     }
 
     // =========================================================================
