@@ -28,11 +28,10 @@ export default function ProfileScreen() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isError, setIsError] = useState(false);
 
-  const displayName = profile?.name || (profile as any)?.fullName || user?.displayName || 'Customer URBarber';
+  const displayName = profile?.name || user?.displayName || 'Pelanggan URBarber';
   const avatarUrl =
     uploadedAvatarUrl ||
     profile?.profileImageUrl ||
-    (profile as any)?.profileImage ||
     user?.photoURL ||
     firebaseAuth.currentUser?.photoURL;
 
@@ -46,85 +45,65 @@ export default function ProfileScreen() {
       if (!picked) return;
 
       setUploading(true);
-      setStatusMessage('Memeriksa izin token...');
+      setStatusMessage('Memeriksa status autentikasi...');
 
       const currentUser = firebaseAuth.currentUser;
-      if (!currentUser) throw new Error('Pengguna belum login.');
+      if (!currentUser) {
+        throw new Error('Pengguna belum terautentikasi. Silakan login kembali.');
+      }
 
-      // Force Firebase to fetch latest ID token with custom claims
       await currentUser.getIdToken(true);
-
       const tokenResult = await currentUser.getIdTokenResult();
-
-      console.log('Firebase JWT validation:', {
-        uid: currentUser.uid,
-        sub: tokenResult.claims.sub,
-        role: tokenResult.claims.role,
-        appRole: tokenResult.claims.app_role,
-        issuer: tokenResult.claims.iss,
-        audience: tokenResult.claims.aud,
-      });
 
       if (tokenResult.claims.role !== 'authenticated') {
         throw new Error(
-          `Custom claim Firebase (role: authenticated) belum aktif untuk UID ${currentUser.uid}.\nJalankan perintah:\nnode scripts/assign-firebase-custom-claims.js --uid=${currentUser.uid} --app_role=customer`,
+          `Claim role 'authenticated' belum aktif pada token. Silakan perbarui klaim via script backend.`,
         );
       }
 
-      if (tokenResult.claims.app_role !== 'customer') {
-        throw new Error(
-          `Claim app_role tidak valid: ${String(tokenResult.claims.app_role)}. Harus 'customer'.`,
-        );
-      }
+      setStatusMessage('Mengunggah avatar ke Supabase Storage...');
 
-      setStatusMessage('Mengunggah foto ke Supabase Storage...');
-
-      // Upload image to fixed single profile path in public-media with upsert=true (overwrites existing file)
-      const uploadResult = await storageService.uploadPublicFile(
+      const uploadResult = await storageService.uploadAvatar(
         picked.uri,
-        'avatars',
-        {
-          filename: 'avatar',
-          contentType: picked.mimeType ?? 'image/jpeg',
-          upsert: true,
-        },
+        picked.mimeType ?? 'image/jpeg',
       );
 
-      // Append timestamp query parameter to bypass browser/client image cache
-      const cacheBustedUrl = `${uploadResult.publicUrl}?t=${Date.now()}`;
-
-      // Immediately point avatar URL on screen to the new Supabase URL
+      const cacheBustedUrl = `${uploadResult.profileImageUrl}?t=${Date.now()}`;
       setUploadedAvatarUrl(cacheBustedUrl);
-      setStatusMessage('Memperbarui profil...');
 
-      // 1. Persist photoURL natively to Firebase Auth User Account
+      setStatusMessage('Menyimpan metadata profil...');
+
+      // Update Firebase Auth user photoURL
       try {
         await updateFirebaseProfile(currentUser, {
           photoURL: cacheBustedUrl,
         });
-      } catch (authErr) {
-        console.warn('Unable to update Firebase Auth user photoURL:', authErr);
+      } catch (authErr: any) {
+        if (__DEV__) {
+          console.warn('[ProfileScreen] Update Firebase Auth photoURL error:', authErr?.message);
+        }
       }
 
-      // 2. Persist profileImageUrl and profileImagePath to Firestore
+      // Update Firestore customer & user document with canonical avatar metadata fields
       const updateRes = await updateProfile({
         profileImageUrl: cacheBustedUrl,
-        profileImagePath: uploadResult.path,
+        profileImagePath: uploadResult.profileImagePath,
       });
 
       if (updateRes && !updateRes.success) {
-        throw new Error(updateRes.error?.message || 'Gagal memperbarui data profil di Firestore.');
+        throw new Error(updateRes.error?.message || 'Gagal menyimpan data profil ke Firestore.');
       }
 
-      setStatusMessage('Avatar berhasil diperbarui!');
+      setStatusMessage('Foto profil berhasil diperbarui!');
       setIsError(false);
 
-      // Background refresh
       void refresh();
       void reloadUser();
     } catch (err: any) {
-      console.error('Upload avatar error:', err);
-      setStatusMessage(err?.message || 'Gagal mengunggah avatar.');
+      if (__DEV__) {
+        console.warn('[ProfileScreen] Upload error:', err?.message || err);
+      }
+      setStatusMessage(err?.message || 'Gagal mengunggah foto profil.');
       setIsError(true);
     } finally {
       setUploading(false);

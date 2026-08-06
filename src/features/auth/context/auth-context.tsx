@@ -22,7 +22,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const userDocRef = doc(firestore, 'users', currentUser.uid);
       const userDocSnap = await withTimeout(
         getDoc(userDocRef),
-        8_000,
+        10_000,
         'Loading the user profile timed out',
       );
 
@@ -49,12 +49,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             },
             { merge: true },
           ),
-          8_000,
+          10_000,
           'Creating the user profile timed out',
         );
       }
-    } catch (error) {
-      console.warn('Error fetching or creating user profile in Firestore:', error);
+    } catch (error: any) {
+      if (__DEV__) {
+        console.warn('[AuthProvider fetchUserProfile Error]', error?.code, error?.message || error);
+      }
     }
 
     return {
@@ -85,11 +87,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   useEffect(() => {
+    let isMounted = true;
+
     const unsubscribe = onAuthStateChanged(firebaseAuth, async (currentUser) => {
+      if (!isMounted) return;
       await syncUser(currentUser);
     });
 
-    return () => unsubscribe();
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
   }, [syncUser]);
 
   const reloadUser = useCallback(async (): Promise<boolean> => {

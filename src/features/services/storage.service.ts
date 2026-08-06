@@ -13,6 +13,7 @@ import type {
   SignedUrlResult,
   StorageBucket,
   StorageServiceContract,
+  UploadAvatarResult,
   UploadedFileResult,
   UploadedPublicFileResult,
   UploadOptions,
@@ -46,9 +47,99 @@ export async function pickImage(): Promise<
 }
 
 /**
+ * Map raw Supabase / Storage errors into safe, user-friendly messages
+ */
+function handleStorageError(error: any, context: string): Error {
+  if (!error) return new Error(`${context} failed with unknown error.`);
+
+  const message = (error.message || "").toLowerCase();
+  const statusCode = String(error.statusCode || error.status || "");
+
+  if (message.includes("row-level security") || message.includes("rls") || statusCode === "403") {
+    return new Error("Akses penyimpanan ditolak oleh kebijakan RLS. Harap pastikan klaim token telah diperbarui.");
+  }
+
+  if (message.includes("already exists") || statusCode === "409" || message.includes("duplicate")) {
+    return new Error("Objek sudah ada di penyimpanan. Diperlukan nama file yang unik.");
+  }
+
+  if (message.includes("network") || message.includes("failed to fetch") || message.includes("fetch failed")) {
+    return new Error("Gagal terhubung ke server penyimpanan. Periksa koneksi jaringan Anda.");
+  }
+
+  if (message.includes("bucket not found") || message.includes("invalid bucket")) {
+    return new Error("Gagal konfigurasi penyimpanan Supabase. Bucket tidak ditemukan.");
+  }
+
+  return new Error(`${context}: ${error.message || "Kesalahan penyimpanan"}`);
+}
+
+/**
  * Storage Service implementation for public & private Supabase buckets
  */
 export const storageService: StorageServiceContract = {
+  async uploadAvatar(
+    fileUriOrBuffer: string | ArrayBuffer,
+    contentType = "image/jpeg",
+  ): Promise<UploadAvatarResult> {
+    const user = firebaseAuth.currentUser;
+    if (!user) {
+      throw new Error("Pengguna belum login. Silakan login terlebih dahulu.");
+    }
+
+    const allowedMimeTypes = STORAGE_CONFIG.ALLOWED_IMAGE_MIME_TYPES as readonly string[];
+    if (!allowedMimeTypes.includes(contentType)) {
+      throw new Error(
+        `Tipe file "${contentType}" tidak valid. Hanya JPEG, PNG, dan WebP yang diizinkan.`,
+      );
+    }
+
+    let body: ArrayBuffer;
+    if (typeof fileUriOrBuffer === "string") {
+      try {
+        const response = await fetch(fileUriOrBuffer);
+        body = await response.arrayBuffer();
+      } catch {
+        throw new Error("Gagal membaca berkas gambar lokal.");
+      }
+    } else {
+      body = fileUriOrBuffer;
+    }
+
+    // Pre-flight file size check before network request
+    if (body.byteLength > STORAGE_CONFIG.MAX_FILE_SIZE_BYTES) {
+      throw new Error("Ukuran berkas melebihi batas maksimum 5 MB.");
+    }
+
+    // Ensure Firebase custom claims are refreshed
+    await user.getIdToken(true);
+
+    const ext = contentType === "image/png" ? "png" : contentType === "image/webp" ? "webp" : "jpg";
+    const uniqueFileName = `avatar-${Date.now()}-${Math.random().toString(36).substring(2, 8)}.${ext}`;
+    const objectPath = `${user.uid}/avatar/${uniqueFileName}`;
+
+    const { data, error } = await supabase.storage
+      .from(PUBLIC_MEDIA_BUCKET)
+      .upload(objectPath, body, {
+        contentType,
+        upsert: false,
+        cacheControl: STORAGE_CONFIG.DEFAULT_CACHE_CONTROL,
+      });
+
+    if (error) {
+      throw handleStorageError(error, "Upload avatar");
+    }
+
+    const { data: publicUrlData } = supabase.storage
+      .from(PUBLIC_MEDIA_BUCKET)
+      .getPublicUrl(data.path);
+
+    return {
+      profileImageUrl: publicUrlData.publicUrl,
+      profileImagePath: data.path,
+    };
+  },
+
   async uploadPublicFile(
     fileUriOrBuffer: string | ArrayBuffer,
     folder: PublicMediaFolder,
@@ -63,58 +154,42 @@ export const storageService: StorageServiceContract = {
     const allowedMimeTypes = STORAGE_CONFIG.ALLOWED_IMAGE_MIME_TYPES as readonly string[];
     if (!allowedMimeTypes.includes(contentType)) {
       throw new Error(
-        `Tipe file "${contentType}" tidak diizinkan untuk media publik. Tipe yang diizinkan: ${allowedMimeTypes.join(", ")}.`,
+        `Tipe file "${contentType}" tidak diizinkan. Tipe yang diizinkan: ${allowedMimeTypes.join(", ")}.`,
       );
     }
 
-    // Force refresh Firebase ID Token to ensure custom claim { role: 'authenticated' } is active
-    await user.getIdToken(true);
-
-    // For avatar folder, delete any existing files (e.g. avatar.png, avatar.webp, old timestamp files) to prevent redundancy
-    if (folder === "avatars") {
-      try {
-        const { data: existingFiles } = await supabase.storage
-          .from(PUBLIC_MEDIA_BUCKET)
-          .list(`${user.uid}/${folder}`);
-
-        if (existingFiles && existingFiles.length > 0) {
-          const filesToDelete = existingFiles.map((f) => `${user.uid}/${folder}/${f.name}`);
-          await supabase.storage.from(PUBLIC_MEDIA_BUCKET).remove(filesToDelete);
-        }
-      } catch (cleanErr) {
-        console.warn("Cleanup of previous avatar files failed:", cleanErr);
-      }
-    }
-
-    // Standardize filename and extension for avatars to fixed avatar.jpg
-    const filename = folder === "avatars" ? "avatar" : (options?.filename ?? `file-${Date.now()}`);
-    const extension = folder === "avatars" ? "jpg" : (contentType.split("/")[1] === "jpeg" ? "jpg" : contentType.split("/")[1] ?? "jpg");
-    const path = `${user.uid}/${folder}/${filename}.${extension}`;
-
     let body: ArrayBuffer;
     if (typeof fileUriOrBuffer === "string") {
-      const response = await fetch(fileUriOrBuffer);
-      body = await response.arrayBuffer();
+      try {
+        const response = await fetch(fileUriOrBuffer);
+        body = await response.arrayBuffer();
+      } catch {
+        throw new Error("Gagal membaca berkas media publik.");
+      }
     } else {
       body = fileUriOrBuffer;
     }
 
     if (body.byteLength > STORAGE_CONFIG.MAX_FILE_SIZE_BYTES) {
-      throw new Error(
-        `Ukuran file melebihi batas maksimum ${STORAGE_CONFIG.MAX_FILE_SIZE_BYTES / (1024 * 1024)}MB.`,
-      );
+      throw new Error("Ukuran berkas melebihi batas 5 MB.");
     }
+
+    await user.getIdToken(true);
+
+    const filename = options?.filename ?? `file-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+    const ext = contentType.split("/")[1] === "jpeg" ? "jpg" : contentType.split("/")[1] ?? "jpg";
+    const path = `${user.uid}/${folder}/${filename}.${ext}`;
 
     const { data, error } = await supabase.storage
       .from(PUBLIC_MEDIA_BUCKET)
       .upload(path, body, {
-        contentType: folder === "avatars" ? "image/jpeg" : contentType,
-        upsert: folder === "avatars" ? true : (options?.upsert ?? true),
+        contentType,
+        upsert: options?.upsert ?? false,
         cacheControl: options?.cacheControl ?? STORAGE_CONFIG.DEFAULT_CACHE_CONTROL,
       });
 
     if (error) {
-      throw new Error(`Upload file publik gagal: ${error.message}`);
+      throw handleStorageError(error, "Upload media publik");
     }
 
     const { data: publicUrlData } = supabase.storage
@@ -148,21 +223,25 @@ export const storageService: StorageServiceContract = {
 
     let body: ArrayBuffer;
     if (typeof fileUriOrBuffer === "string") {
-      const response = await fetch(fileUriOrBuffer);
-      body = await response.arrayBuffer();
+      try {
+        const response = await fetch(fileUriOrBuffer);
+        body = await response.arrayBuffer();
+      } catch {
+        throw new Error("Gagal membaca berkas dokumen privat.");
+      }
     } else {
       body = fileUriOrBuffer;
     }
 
-    if (body.byteLength > STORAGE_CONFIG.MAX_FILE_SIZE_BYTES) {
-      throw new Error(
-        `Ukuran file melebihi batas maksimum ${STORAGE_CONFIG.MAX_FILE_SIZE_BYTES / (1024 * 1024)}MB.`,
-      );
+    if (body.byteLength > STORAGE_CONFIG.MAX_PRIVATE_FILE_SIZE_BYTES) {
+      throw new Error("Ukuran berkas dokumen melebihi batas 10 MB.");
     }
 
-    const filename = options?.filename ?? `doc-${Date.now()}`;
-    const extension = contentType.split("/")[1] ?? "pdf";
-    const path = `${user.uid}/${folder}/${filename}.${extension}`;
+    await user.getIdToken(true);
+
+    const filename = options?.filename ?? `doc-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+    const ext = contentType.split("/")[1] ?? "pdf";
+    const path = `${user.uid}/${folder}/${filename}.${ext}`;
 
     const { data, error } = await supabase.storage
       .from(PRIVATE_DOCUMENTS_BUCKET)
@@ -173,7 +252,7 @@ export const storageService: StorageServiceContract = {
       });
 
     if (error) {
-      throw new Error(`Upload file privat gagal: ${error.message}`);
+      throw handleStorageError(error, "Upload dokumen privat");
     }
 
     return {
@@ -212,7 +291,7 @@ export const storageService: StorageServiceContract = {
       });
 
     if (error) {
-      throw new Error(`Penggantian file gagal: ${error.message}`);
+      throw handleStorageError(error, "Penggantian file");
     }
 
     return {
@@ -230,7 +309,7 @@ export const storageService: StorageServiceContract = {
     const { error } = await supabase.storage.from(bucket).remove([path]);
 
     if (error) {
-      throw new Error(`Hapus file gagal: ${error.message}`);
+      throw handleStorageError(error, "Hapus file");
     }
   },
 
@@ -254,7 +333,7 @@ export const storageService: StorageServiceContract = {
       .createSignedUrl(path, expiresInSeconds);
 
     if (error || !data?.signedUrl) {
-      throw new Error(`Pembuatan URL privat gagal: ${error?.message ?? "URL tidak tersedia"}`);
+      throw handleStorageError(error ?? new Error("URL tidak tersedia"), "Pembuatan URL privat");
     }
 
     return {
@@ -266,17 +345,28 @@ export const storageService: StorageServiceContract = {
 };
 
 /**
- * Backward-compatible wrapper function for ImagePicker upload
+ * Backward-compatible wrapper function for ImagePicker avatar upload
  */
 export async function uploadPublicImage(
   image: ImagePicker.ImagePickerAsset,
   folder: PublicMediaFolder,
-  filename = `avatar-${Date.now()}`,
+  filename?: string,
 ): Promise<{ path: string; publicUrl: string }> {
+  if (folder === "avatar" || folder === "avatars") {
+    const result = await storageService.uploadAvatar(
+      image.uri,
+      image.mimeType ?? "image/jpeg",
+    );
+    return {
+      path: result.profileImagePath,
+      publicUrl: result.profileImageUrl,
+    };
+  }
+
   const result = await storageService.uploadPublicFile(image.uri, folder, {
     filename,
     contentType: image.mimeType ?? "image/jpeg",
-    upsert: true,
+    upsert: false,
   });
 
   return {

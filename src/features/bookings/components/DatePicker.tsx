@@ -14,8 +14,8 @@ export type DatePickerProps = {
 export function DatePicker({
   selectedDate,
   onDateChange,
-  startDate = new Date(),
-  endDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
+  startDate,
+  endDate,
 }: DatePickerProps) {
   const getMonthName = (date: Date) => {
     return date.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
@@ -29,7 +29,7 @@ export function DatePicker({
     return new Date(date.getFullYear(), date.getMonth(), 1).getDay();
   };
 
-  const currentDate = new Date();
+  const currentDate = startDate ?? new Date();
   const daysInMonth = getDaysInMonth(currentDate);
   const firstDay = getFirstDayOfMonth(currentDate);
   const days: (number | null)[] = Array(firstDay).fill(null);

@@ -9,30 +9,33 @@ import type { BarberReview } from '../types/barber';
 
 export function useBarberReviews(barberId: string) {
   const [reviews, setReviews] = useState<BarberReview[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(Boolean(barberId));
   const [error, setError] = useState<string | null>(null);
   const [replying, setReplying] = useState(false);
 
   useEffect(() => {
     if (!barberId) {
-      setLoading(false);
       return;
     }
 
+    let isMounted = true;
     const loadReviews = async () => {
       try {
         setLoading(true);
         setError(null);
         const data = await barberRepository.getBarberReviews(barberId);
-        setReviews(data);
+        if (isMounted) setReviews(data);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load reviews');
+        if (isMounted) setError(err instanceof Error ? err.message : 'Failed to load reviews');
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     };
 
     loadReviews();
+    return () => {
+      isMounted = false;
+    };
   }, [barberId]);
 
   const replyToReview = async (reviewId: string, replyText: string) => {
@@ -59,7 +62,7 @@ export function useBarberReviews(barberId: string) {
       }
 
       return result;
-    } catch (err) {
+    } catch {
       return { success: false, error: { message: 'Reply failed' } };
     } finally {
       setReplying(false);

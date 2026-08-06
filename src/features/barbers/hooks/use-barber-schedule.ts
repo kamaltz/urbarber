@@ -9,34 +9,38 @@ import type { BarberWeeklySchedule, UpdateBarberScheduleRequest } from '../types
 
 export function useBarberSchedule(barberId: string) {
   const [schedule, setSchedule] = useState<BarberWeeklySchedule | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(Boolean(barberId));
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!barberId) {
-      setLoading(false);
       return;
     }
 
+    let isMounted = true;
     const loadSchedule = async () => {
       try {
         setLoading(true);
         setError(null);
         const data = await barberRepository.getWeeklySchedule(barberId);
-        setSchedule(data);
-
-        if (!data) {
-          setError('Schedule not found');
+        if (isMounted) {
+          setSchedule(data);
+          if (!data) {
+            setError('Schedule not found');
+          }
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load schedule');
+        if (isMounted) setError(err instanceof Error ? err.message : 'Failed to load schedule');
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     };
 
     loadSchedule();
+    return () => {
+      isMounted = false;
+    };
   }, [barberId]);
 
   const updateSchedule = async (data: UpdateBarberScheduleRequest) => {
@@ -59,7 +63,7 @@ export function useBarberSchedule(barberId: string) {
       }
 
       return result;
-    } catch (err) {
+    } catch {
       return { success: false, error: { message: 'Save failed' } };
     } finally {
       setSaving(false);

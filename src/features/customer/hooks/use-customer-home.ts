@@ -9,33 +9,38 @@ import type { CustomerHomeData } from '../types/customer';
 
 export function useCustomerHome(customerId: string) {
   const [homeData, setHomeData] = useState<CustomerHomeData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(Boolean(customerId));
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!customerId) {
-      setLoading(false);
       return;
     }
+
+    let isMounted = true;
 
     const loadHomeData = async () => {
       try {
         setLoading(true);
         setError(null);
         const data = await customerRepository.getCustomerHomeData(customerId);
-        setHomeData(data);
-
-        if (!data) {
-          setError('Home data not found');
+        if (isMounted) {
+          setHomeData(data);
+          if (!data) {
+            setError('Home data not found');
+          }
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load home data');
+        if (isMounted) setError(err instanceof Error ? err.message : 'Failed to load home data');
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     };
 
     loadHomeData();
+    return () => {
+      isMounted = false;
+    };
   }, [customerId]);
 
   const refresh = async () => {

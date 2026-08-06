@@ -76,7 +76,7 @@ export function AppButton({
       style={style as ViewStyle}
       {...rest}>
       <View
-        pointerEvents="none"
+        style={{ pointerEvents: 'none' }}
         className={[
           'flex-row items-center justify-center gap-2',
           contentClassName ?? '',

@@ -16,29 +16,32 @@ export function useAdminAnalytics(
   period: 'daily' | 'weekly' | 'monthly' = 'monthly'
 ) {
   const [analytics, setAnalytics] = useState<AdminAnalyticsData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(Boolean(adminId));
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!adminId) {
-      setLoading(false);
       return;
     }
 
+    let isMounted = true;
     const loadAnalytics = async () => {
       try {
         setLoading(true);
         setError(null);
         const data = await adminRepository.getAdminAnalytics(adminId, period);
-        setAnalytics(data);
+        if (isMounted) setAnalytics(data);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load analytics');
+        if (isMounted) setError(err instanceof Error ? err.message : 'Failed to load analytics');
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     };
 
     loadAnalytics();
+    return () => {
+      isMounted = false;
+    };
   }, [adminId, period]);
 
   const refresh = async () => {
@@ -70,29 +73,32 @@ export function useAdminAnalytics(
  */
 export function useSystemHealth(adminId: string) {
   const [healthData, setHealthData] = useState<SystemHealthData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(Boolean(adminId));
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!adminId) {
-      setLoading(false);
       return;
     }
 
+    let isMounted = true;
     const loadHealth = async () => {
       try {
         setLoading(true);
         setError(null);
         const data = await adminRepository.getSystemHealth(adminId);
-        setHealthData(data);
+        if (isMounted) setHealthData(data);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load system health');
+        if (isMounted) setError(err instanceof Error ? err.message : 'Failed to load system health');
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     };
 
     loadHealth();
+    return () => {
+      isMounted = false;
+    };
   }, [adminId]);
 
   const refresh = async () => {

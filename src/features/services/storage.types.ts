@@ -2,9 +2,9 @@
  * Supabase Storage Types and Interfaces
  */
 
-import type { PUBLIC_MEDIA_BUCKET, PRIVATE_DOCUMENTS_BUCKET } from "./storage.config";
+import type { PRIVATE_DOCUMENTS_BUCKET, PUBLIC_MEDIA_BUCKET } from "./storage.config";
 
-export type PublicMediaFolder = "avatars" | "barber" | "services";
+export type PublicMediaFolder = "avatar" | "avatars" | "barber" | "services";
 export type PrivateDocumentFolder = "verifications" | "documents";
 
 export type StorageBucket =
@@ -27,6 +27,11 @@ export interface UploadedPublicFileResult extends UploadedFileResult {
   publicUrl: string;
 }
 
+export interface UploadAvatarResult {
+  profileImageUrl: string;
+  profileImagePath: string;
+}
+
 export interface SignedUrlResult {
   path: string;
   signedUrl: string;
@@ -34,6 +39,14 @@ export interface SignedUrlResult {
 }
 
 export interface StorageServiceContract {
+  /**
+   * Upload customer avatar image to public-media bucket ({firebaseUid}/avatar/{uniqueFileName})
+   */
+  uploadAvatar(
+    fileUriOrBuffer: string | ArrayBuffer,
+    contentType?: string,
+  ): Promise<UploadAvatarResult>;
+
   /**
    * Upload file to public storage bucket
    */

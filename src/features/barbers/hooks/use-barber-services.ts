@@ -9,30 +9,33 @@ import type { BarberAddServiceRequest, BarberService } from '../types/barber';
 
 export function useBarberServices(barberId: string) {
   const [services, setServices] = useState<BarberService[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(Boolean(barberId));
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
 
   useEffect(() => {
     if (!barberId) {
-      setLoading(false);
       return;
     }
 
+    let isMounted = true;
     const loadServices = async () => {
       try {
         setLoading(true);
         setError(null);
         const data = await barberRepository.getBarberServices(barberId);
-        setServices(data);
+        if (isMounted) setServices(data);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load services');
+        if (isMounted) setError(err instanceof Error ? err.message : 'Failed to load services');
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     };
 
     loadServices();
+    return () => {
+      isMounted = false;
+    };
   }, [barberId]);
 
   const addService = async (data: BarberAddServiceRequest) => {

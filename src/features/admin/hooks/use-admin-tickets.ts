@@ -9,29 +9,32 @@ import type { SupportTicket, TicketReplyData } from '../types/admin';
 
 export function useAdminTickets(adminId: string, status?: string) {
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(Boolean(adminId));
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!adminId) {
-      setLoading(false);
       return;
     }
 
+    let isMounted = true;
     const loadTickets = async () => {
       try {
         setLoading(true);
         setError(null);
         const data = await adminRepository.getSupportTickets(adminId, status);
-        setTickets(data);
+        if (isMounted) setTickets(data);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load tickets');
+        if (isMounted) setError(err instanceof Error ? err.message : 'Failed to load tickets');
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     };
 
     loadTickets();
+    return () => {
+      isMounted = false;
+    };
   }, [adminId, status]);
 
   const updateTicketStatus = async (ticketId: string, newStatus: string) => {
@@ -49,7 +52,7 @@ export function useAdminTickets(adminId: string, status?: string) {
       }
 
       return result;
-    } catch (err) {
+    } catch {
       return { success: false, error: { message: 'Update failed' } };
     }
   };
@@ -60,7 +63,7 @@ export function useAdminTickets(adminId: string, status?: string) {
     try {
       const result = await adminRepository.replyToTicket(adminId, ticketId, data);
       return result;
-    } catch (err) {
+    } catch {
       return { success: false, error: { message: 'Reply failed' } };
     }
   };
@@ -80,7 +83,7 @@ export function useAdminTickets(adminId: string, status?: string) {
       }
 
       return result;
-    } catch (err) {
+    } catch {
       return { success: false, error: { message: 'Assign failed' } };
     }
   };

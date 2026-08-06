@@ -9,29 +9,32 @@ import type { ReviewForModeration, ReviewModerationRequest } from '../types/admi
 
 export function useAdminReviews(adminId: string, status?: string) {
   const [reviews, setReviews] = useState<ReviewForModeration[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(Boolean(adminId));
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!adminId) {
-      setLoading(false);
       return;
     }
 
+    let isMounted = true;
     const loadReviews = async () => {
       try {
         setLoading(true);
         setError(null);
         const data = await adminRepository.getReviewsForModeration(adminId, status);
-        setReviews(data);
+        if (isMounted) setReviews(data);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load reviews');
+        if (isMounted) setError(err instanceof Error ? err.message : 'Failed to load reviews');
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     };
 
     loadReviews();
+    return () => {
+      isMounted = false;
+    };
   }, [adminId, status]);
 
   const moderateReview = async (data: ReviewModerationRequest) => {
@@ -51,7 +54,7 @@ export function useAdminReviews(adminId: string, status?: string) {
       }
 
       return result;
-    } catch (err) {
+    } catch {
       return { success: false, error: { message: 'Moderation failed' } };
     }
   };

@@ -58,17 +58,6 @@ export interface BarberWeeklySchedule {
   lastUpdated: string;
 }
 
-export interface BarberService {
-  serviceId: string;
-  name: string;
-  description: string;
-  price: number;
-  durationMinutes: number;
-  imageUrl?: string;
-  isActive: boolean;
-  createdAt: string;
-}
-
 export interface BarberReview {
   reviewId: string;
   customerId: string;

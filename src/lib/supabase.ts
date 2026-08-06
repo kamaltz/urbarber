@@ -9,26 +9,24 @@ const supabasePublishableKey =
   process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
 if (!supabaseUrl || !supabasePublishableKey) {
-  throw new Error("Konfigurasi Supabase belum lengkap.");
+  throw new Error(
+    "Supabase configuration error: Missing EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY environment variables.",
+  );
 }
 
-export const supabase = createClient(
-  supabaseUrl,
-  supabasePublishableKey,
-  {
-    accessToken: async () => {
-      const user = firebaseAuth.currentUser;
+export const supabase = createClient(supabaseUrl, supabasePublishableKey, {
+  accessToken: async () => {
+    const user = firebaseAuth.currentUser;
 
-      if (!user) {
-        return null;
-      }
+    if (!user) {
+      return null;
+    }
 
-      return user.getIdToken(false);
-    },
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-      detectSessionInUrl: false,
-    },
+    return user.getIdToken(false);
   },
-);
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+    detectSessionInUrl: false,
+  },
+});

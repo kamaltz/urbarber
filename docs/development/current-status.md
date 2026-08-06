@@ -2,60 +2,78 @@
 
 ## 1. Executive Summary
 
-This report presents an empirical code audit of the URBarber repository on branch `feat/complete-thesis-mvp`. The audit inspects all source code under `src/`, package definitions, configurations, and visual documentation in `docs/figma/`.
+This report presents an empirical code audit of the URBarber repository on branch `fix/batch-01-foundation` (based on `feat/complete-thesis-mvp`).
 
-Batch 01 (Authentication Hardening & Role Protection) is completed:
-- Firebase Authentication is the sole auth provider.
-- User profiles store canonical roles (`customer`, `barber`, `admin`) and status in Firestore `users/{uid}`.
-- Layout route guards (`(customer)`, `(barber)`, `(admin)`, `(auth)`) enforce role protection and block suspended users (`status: "suspended"`).
-- Fake OTP bypass and unauthenticated social login redirects have been removed.
-
----
-
-## 2. Route Audit & Screen Implementation Status
-
-### 2.1 Implemented Routes (`src/app/`)
-
-| Route Path | Description | Audit Finding & Status |
-| --- | --- | --- |
-| `src/app/_layout.tsx` | Root Stack layout wrapped in `AuthProvider` | Complete |
-| `src/app/index.tsx` | Entry redirect based on auth & user role | Complete (Role-aware redirect) |
-| `src/app/(auth)/_layout.tsx` | Auth stack layout with RBAC protection | Complete (Role-aware redirect, blocks suspended) |
-| `src/app/(auth)/onboarding/[step].tsx` | 4-step dynamic onboarding flow (steps 0..3) | Complete |
-| `src/app/(auth)/login.tsx` | Email & password login screen | Complete (Integrated with Firebase Auth & suspended check) |
-| `src/app/(auth)/register-customer.tsx` | Customer registration form | Complete (Writes `users/{uid}` & `customers/{uid}`) |
-| `src/app/(auth)/forgot-password.tsx` | Password reset request form | Complete (Firebase Auth `sendPasswordResetEmail`) |
-| `src/app/(auth)/authentication.tsx` | Email verification status screen | Complete (Role-aware redirection) |
-| `src/app/(customer)/_layout.tsx` | Customer stack layout | Complete (Role guard & suspended block) |
-| `src/app/(barber)/_layout.tsx` | Barber stack layout | Complete (Role guard & suspended block) |
-| `src/app/(admin)/_layout.tsx` | Admin stack layout | Complete (Role guard & suspended block) |
-| `src/app/(customer)/home.tsx` | Customer main dashboard | Partial (Wired to `useCustomerHome` hook) |
-| `src/app/(customer)/explore.tsx` | Barber search & filter screen | Mock data fallback in repository |
-| `src/app/(customer)/favorites.tsx` | Favorite barbers list | Mock data fallback in repository |
-| `src/app/(customer)/chat.tsx` | Customer chat conversations list | Static mock list |
-| `src/app/(customer)/chat/[conversationId].tsx` | Chat room UI with local message state | UI complete / No real-time backend |
-| `src/app/(customer)/barber/[barberId].tsx` | Barber detail view | Mock data fallback in repository |
-| `src/app/(customer)/booking/options.tsx` | Date & service selection | Complete UI |
-| `src/app/(customer)/booking/schedule.tsx` | Time slot selector screen | Partial (Uses `useScheduleSelector` hook) |
-| `src/app/(customer)/booking/location.tsx` | Home service address entry screen | Text input / No map picker (in line with thesis scope) |
-| `src/app/(customer)/booking/invoice.tsx` | Order confirmation screen | UI complete |
-| `src/app/(customer)/booking/history.tsx` | Active vs past bookings list | Complete UI |
-| `src/app/(customer)/booking/detail/[bookingId].tsx` | Active booking detail | Complete UI |
-| `src/app/(customer)/booking/history/[bookingId].tsx` | Completed booking detail view | Complete UI |
-| `src/app/(customer)/booking/rating/[bookingId].tsx` | Review submission screen | Complete UI |
-| `src/app/(customer)/profile.tsx` | Profile menu overview | Complete UI |
+Batch 01 (Foundation Stabilization: Firebase Auth, Supabase Storage, Avatar, and Firestore Customer Profile) is fully stabilized and verified:
+- **Firebase Authentication** is the sole authentication provider.
+- **Supabase Storage Client & SQL Policies** are updated with safe, idempotent RLS rules enforcing Firebase text UID path validation (`{firebaseUid}/...`).
+- **Avatar Upload Flow** validates MIME type and file size (< 5 MB) before sending requests, uploads to `{firebaseUid}/avatar/{uniqueFileName}` with `upsert: false`, and persists canonical metadata fields (`profileImageUrl` and `profileImagePath`) to Firestore.
+- **Firestore Profile Timeout Handling** is stabilized with mounted state guards and clean development error logging.
 
 ---
 
-## 3. Completed Batches
+## 2. Technical Specifications & Configuration Baseline
 
-- **Batch 01 (Auth Hardening & Role Protection)**: COMPLETED. Canonical roles (`customer`, `barber`, `admin`) stored in `users/{uid}`, Firebase Auth email/password flows active, role-aware routing and suspended user blocking implemented across layout files.
-- **Batch 02 (Supabase Storage Foundation)**: COMPLETED. Storage client, types, config, SQL security policies, and Node custom claims script created.
+### 2.1 Required Firebase Custom Claims
+To access Supabase Storage via RLS, Firebase Auth ID tokens must contain these custom claims:
+- `role`: `"authenticated"` (Required for Supabase JWT authentication)
+- `app_role`: `"customer"` | `"barber"` | `"admin"` (Required for role-based storage access)
+- `sub`: `{firebaseUid}` (Direct 28-character Firebase Auth text UID)
+
+*Script for claim assignment*: `node scripts/assign-firebase-custom-claims.js --uid=<USER_UID> --app_role=customer`
+
+### 2.2 Supabase Storage Buckets
+- `public-media`: Public bucket, 5 MB file size limit, allowed MIME types: `image/jpeg`, `image/png`, `image/webp`.
+- `private-documents`: Private bucket, 10 MB file size limit, allowed MIME types: `image/jpeg`, `image/png`, `application/pdf`.
+
+### 2.3 Storage Object Path Format
+All storage paths MUST follow the canonical pattern:
+`{firebaseUid}/...` (e.g. `{firebaseUid}/avatar/avatar-1723456789-a1b2c3.jpg`)
+
+### 2.4 Canonical Firestore Avatar Metadata Fields
+All avatar updates write strictly to these canonical fields:
+- `profileImageUrl`: Public HTTPS URL of the avatar in Supabase Storage.
+- `profileImagePath`: Storage object relative path (e.g. `{firebaseUid}/avatar/{uniqueFileName}`).
 
 ---
 
-## 4. Required Validation Commands
+## 3. Manual Action Required (Hosted Supabase SQL Procedure)
 
-- `npm run check`
-- `npm run doctor`
-- `git diff --check`
+> [!IMPORTANT]
+> **MANUAL ACTION REQUIRED**: Run `supabase/storage-policies.sql` in the Supabase Dashboard SQL Editor for your hosted project.
+>
+> The migration script:
+> 1. Initializes buckets `public-media` and `private-documents` idempotently.
+> 2. Drops legacy policy names explicitly.
+> 3. Creates the 8 canonical security policies using `auth.jwt() ->> 'sub'` and `TO authenticated`.
+
+---
+
+## 4. Test Specifications & Verification Baseline
+
+1. **Positive Avatar Upload Test**:
+   - User picks a valid JPEG/PNG/WebP image under 5 MB.
+   - Upload succeeds to `public-media` path `{firebaseUid}/avatar/{uniqueFileName}`.
+   - Firestore `customers/{uid}` and `users/{uid}` update with `profileImageUrl` and `profileImagePath`.
+   - Avatar image displays correctly on screen and persists across app restarts.
+2. **Negative Cross-UID RLS Test**:
+   - Authenticated user attempts upload to a path belonging to another UID (`fake-foreign-uid/...`).
+   - Request is immediately rejected by Supabase RLS with 403 Forbidden.
+3. **Private Document Access Test**:
+   - File owner can read/write their own files in `private-documents/{firebaseUid}/...`.
+   - Admin (`app_role = 'admin'`) can read private documents across all user folders.
+   - Non-owner and non-admin users receive 403 Forbidden.
+
+---
+
+## 5. Known Remaining Blockers & Next Batches
+
+- **Batch 02+ Scope**: Booking flow, payments, barber operational dashboard, admin moderation dashboard, real-time chat, push notifications, and AI recommendations are strictly excluded from Batch 01.
+
+---
+
+## 6. Required Validation Commands
+
+- `npm run check` (Typecheck & Linting)
+- `npm run doctor` (Expo Doctor)
+- `git diff --check` (Whitespace & conflict marker audit)

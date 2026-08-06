@@ -61,7 +61,7 @@ export const customerRepository = {
       }
 
       const docRef = doc(firestore, 'customers', customerId);
-      const snapshot = await withTimeout(getDoc(docRef), 3000, 'Customer profile fetch timed out');
+      const snapshot = await withTimeout(getDoc(docRef), 10000, 'Customer profile fetch timed out');
 
       let name = fallbackName;
       let email = authUser?.email || '';
@@ -74,12 +74,15 @@ export const customerRepository = {
         const data = snapshot.data();
         if (data.name || data.fullName) name = data.name || data.fullName;
         if (data.email) email = data.email;
-        if (data.profileImageUrl || data.profileImage) profileImageUrl = data.profileImageUrl || data.profileImage;
+        // Support reading legacy avatar fields for backward compatibility, but map to profileImageUrl & profileImagePath
+        if (data.profileImageUrl || data.profileImage || data.avatarUrl) {
+          profileImageUrl = data.profileImageUrl || data.profileImage || data.avatarUrl;
+        }
         if (data.profileImagePath) profileImagePath = data.profileImagePath;
         if (data.phoneNumber || data.phone) phone = data.phoneNumber || data.phone;
         if (data.location) location = data.location;
       } else {
-        // Fallback check users/{uid} collection
+        // Fallback check users/{uid} collection if customers/{uid} does not exist yet
         try {
           const userRef = doc(firestore, 'users', customerId);
           const userSnap = await getDoc(userRef);
@@ -87,9 +90,14 @@ export const customerRepository = {
             const uData = userSnap.data();
             if (uData.name || uData.fullName) name = uData.name || uData.fullName;
             if (uData.email) email = uData.email;
+            if (uData.profileImageUrl || uData.profileImage || uData.avatarUrl) {
+              profileImageUrl = uData.profileImageUrl || uData.profileImage || uData.avatarUrl;
+            }
           }
-        } catch {
-          // Keep auth fallback
+        } catch (fallbackErr: any) {
+          if (__DEV__) {
+            console.warn('[Firestore users fallback error]', fallbackErr?.code, fallbackErr?.message);
+          }
         }
       }
 
@@ -104,8 +112,10 @@ export const customerRepository = {
         createdAt: snapshot.exists() ? snapshot.data()?.createdAt || new Date().toISOString() : new Date().toISOString(),
         updatedAt: snapshot.exists() ? snapshot.data()?.updatedAt || new Date().toISOString() : new Date().toISOString(),
       };
-    } catch (error) {
-      if (!isOfflineError(error)) console.warn('Unable to fetch customer profile from Firestore.', error);
+    } catch (error: any) {
+      if (__DEV__ && !isOfflineError(error)) {
+        console.warn('[Firestore getCustomerProfile Error]', error?.code, error?.message || error);
+      }
       return {
         userId: customerId,
         name: fallbackName,
@@ -119,7 +129,7 @@ export const customerRepository = {
   },
 
   /**
-   * Update customer profile using setDoc with merge and dual collection sync
+   * Update customer profile using merge-safe setDoc on customers/{uid} and users/{uid}
    */
   async updateCustomerProfile(
     customerId: string,
@@ -127,35 +137,66 @@ export const customerRepository = {
   ): Promise<{ success: boolean; error?: { message: string } }> {
     try {
       if (!customerId) {
-        return { success: false, error: { message: 'Customer ID required' } };
+        return { success: false, error: { message: 'ID Pelanggan diperlukan' } };
       }
 
       if (!data || Object.keys(data).length === 0) {
-        return { success: false, error: { message: 'No data to update' } };
+        return { success: false, error: { message: 'Tidak ada data untuk diperbarui' } };
       }
 
       const docRef = doc(firestore, 'customers', customerId);
       const userRef = doc(firestore, 'users', customerId);
 
-      const updatePayload: Record<string, any> = {
+      const customerUpdatePayload: Record<string, any> = {
         userId: customerId,
-        ...data,
         updatedAt: Timestamp.now(),
       };
-      if (data.name) {
-        updatePayload.fullName = data.name;
+
+      const userUpdatePayload: Record<string, any> = {
+        uid: customerId,
+        updatedAt: Timestamp.now(),
+      };
+
+      // Only write canonical fields that are explicitly provided
+      if (data.name !== undefined) {
+        customerUpdatePayload.name = data.name;
+        customerUpdatePayload.fullName = data.name;
+        userUpdatePayload.name = data.name;
+      }
+      if (data.email !== undefined) {
+        customerUpdatePayload.email = data.email;
+        userUpdatePayload.email = data.email;
+      }
+      if (data.location !== undefined) {
+        customerUpdatePayload.location = data.location;
+      }
+      if (data.phone !== undefined) {
+        customerUpdatePayload.phone = data.phone;
+        customerUpdatePayload.phoneNumber = data.phone;
+        userUpdatePayload.phoneNumber = data.phone;
+      }
+      if (data.profileImageUrl !== undefined) {
+        customerUpdatePayload.profileImageUrl = data.profileImageUrl;
+        userUpdatePayload.profileImageUrl = data.profileImageUrl;
+      }
+      if (data.profileImagePath !== undefined) {
+        customerUpdatePayload.profileImagePath = data.profileImagePath;
+        userUpdatePayload.profileImagePath = data.profileImagePath;
       }
 
-      await Promise.allSettled([
-        withTimeout(setDoc(docRef, updatePayload, { merge: true }), 3000, 'Firestore customers write timed out'),
-        withTimeout(setDoc(userRef, { uid: customerId, ...data, updatedAt: Timestamp.now() }, { merge: true }), 3000, 'Firestore users write timed out'),
+      await Promise.all([
+        withTimeout(setDoc(docRef, customerUpdatePayload, { merge: true }), 10000, 'Gagal memperbarui profil pelanggan di Firestore'),
+        withTimeout(setDoc(userRef, userUpdatePayload, { merge: true }), 10000, 'Gagal memperbarui data pengguna di Firestore'),
       ]);
 
       return { success: true };
-    } catch (error) {
-      console.warn('Unable to persist customer profile in Firestore within timeout; proceed with local update.', error);
+    } catch (error: any) {
+      if (__DEV__) {
+        console.warn('[Firestore updateCustomerProfile Error]', error?.code, error?.message || error);
+      }
       return {
-        success: true,
+        success: false,
+        error: { message: error?.message || 'Gagal menyimpan data profil ke Firestore.' },
       };
     }
   },
@@ -167,7 +208,7 @@ export const customerRepository = {
     try {
       if (!customerId) return { ...MOCK_CUSTOMER_HOME_DATA, userId: customerId };
       const docRef = doc(firestore, 'customerHomeData', customerId);
-      const snapshot = await withTimeout(getDoc(docRef), 1500, 'Customer home data fetch timed out');
+      const snapshot = await withTimeout(getDoc(docRef), 5000, 'Customer home data fetch timed out');
 
       if (!snapshot.exists()) return { ...MOCK_CUSTOMER_HOME_DATA, userId: customerId };
 
@@ -185,7 +226,7 @@ export const customerRepository = {
     try {
       if (!customerId) return { ...MOCK_CUSTOMER_EXPLORE_DATA, userId: customerId };
       const docRef = doc(firestore, 'customerExploreData', customerId);
-      const snapshot = await withTimeout(getDoc(docRef), 1500, 'Customer explore data fetch timed out');
+      const snapshot = await withTimeout(getDoc(docRef), 5000, 'Customer explore data fetch timed out');
 
       if (!snapshot.exists()) return { ...MOCK_CUSTOMER_EXPLORE_DATA, userId: customerId };
 
@@ -212,7 +253,7 @@ export const customerRepository = {
         searchQueryRef = firestoreQuery(barbersRef, where('serviceType', 'array-contains', filters.category));
       }
 
-      const snapshot = await withTimeout(getDocs(searchQueryRef), 2000, 'Barbers search timed out');
+      const snapshot = await withTimeout(getDocs(searchQueryRef), 5000, 'Barbers search timed out');
       const barbers = snapshot.docs.map((doc) => ({
         ...(doc.data() as object),
         id: doc.id,
@@ -252,7 +293,7 @@ export const customerRepository = {
         where('customerId', '==', customerId),
       );
 
-      const snapshot = await withTimeout(getDocs(q), 1500, 'Favorites fetch timed out');
+      const snapshot = await withTimeout(getDocs(q), 5000, 'Favorites fetch timed out');
       const favorites = snapshot.docs.map((doc) => (doc.data() as any).barberId);
 
       return {

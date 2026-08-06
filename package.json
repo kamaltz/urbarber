@@ -53,7 +53,7 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
-    "doctor": "expo-doctor",
+    "doctor": "npx expo-doctor",
     "check": "npm run typecheck && npm run lint"
   },
   "private": true

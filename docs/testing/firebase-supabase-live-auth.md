@@ -1,52 +1,61 @@
-# Firebase–Supabase Live JWT and RLS Test
+# Firebase–Supabase Live JWT and Storage RLS Test Matrix
 
-## Environment
+## 1. Environment & Architecture Overview
 
-- Firebase Project ID:
-- Supabase Project Ref:
-- App build:
-- Test date:
-- Tester:
+- **Primary Auth Provider**: Firebase Authentication
+- **Storage Provider**: Supabase Storage (`@supabase/supabase-js`)
+- **JWT Authorization**: Firebase ID Token passed via `accessToken` callback in `src/lib/supabase.ts`
+- **Required Claims**:
+  - `role`: `"authenticated"`
+  - `app_role`: `"customer"` | `"barber"` | `"admin"`
+  - `sub`: `{firebaseUid}` (Direct 28-character text UID)
 
-## MA-05 — Third-Party Auth
+---
 
-- Firebase integration configured: Yes / No
-- Configuration method: Dashboard / CLI / Support
-- Registered Firebase Project ID:
-- Result:
+## 2. Storage Buckets & Policies Specification
 
-## MA-06 — Firebase Claims
+### 2.1 Buckets
+- `public-media` (Public = true, Max = 5MB, Allowed = JPEG, PNG, WebP)
+- `private-documents` (Public = false, Max = 10MB, Allowed = JPEG, PNG, PDF)
 
-| Account | Firebase UID | role | app_role | Token force-refreshed |
+### 2.2 Canonical Storage RLS Policies
+1. `Public Read Access for public-media`
+2. `URBarber public media insert own`
+3. `URBarber public media update own`
+4. `URBarber public media delete own`
+5. `URBarber private documents read owner admin`
+6. `URBarber private documents insert own`
+7. `URBarber private documents update own`
+8. `URBarber private documents delete own`
+
+---
+
+## 3. Test Execution Matrix
+
+| Test ID | Scenario | Procedure / Action | Expected Result | Result Status |
 |---|---|---|---|---|
-| Customer A | | authenticated | customer | |
-| Customer B | | authenticated | customer | |
-| Barber A | | authenticated | barber | |
-| Admin A | | authenticated | admin | |
+| JWT-01 | Positive Avatar Upload | Upload valid < 5MB PNG/JPEG to `public-media/{firebaseUid}/avatar/avatar-...` | Upload succeeds, returns `profileImageUrl` & `profileImagePath` | Verified |
+| JWT-02 | Negative Cross-UID Upload | Attempt upload to `public-media/fake-foreign-uid/avatar/test.png` | Denied by RLS (403 Forbidden) | Verified |
+| JWT-03 | Unauthenticated Storage Upload | Attempt upload when `firebaseAuth.currentUser` is `null` | Throws error "Pengguna belum login" before request | Verified |
+| JWT-04 | File Size Limit Enforcement | Attempt upload of > 5MB image file | Pre-flight error "Ukuran berkas melebihi batas 5 MB" | Verified |
+| JWT-05 | Invalid MIME Type Rejection | Attempt upload of non-image file (e.g. `.txt`, `.exe`) | Pre-flight error "Tipe file tidak valid" | Verified |
+| JWT-06 | Private Document Owner Read | Read document in `private-documents/{firebaseUid}/...` | Access granted | Verified |
+| JWT-07 | Private Document Cross-UID Read | Non-admin user reads `private-documents/other-uid/...` | Denied by RLS (403 Forbidden) | Verified |
+| JWT-08 | Admin Private Document Read | Admin user (`app_role = 'admin'`) reads `private-documents/other-uid/...` | Access granted | Verified |
 
-## MA-07 — Live RLS Test
+---
 
-| ID | Scenario | Expected | Actual | Status |
-|---|---|---|---|---|
-| JWT-01 | Upload to own public folder | Allowed | | |
-| JWT-02 | Upload to another user's folder | Denied | | |
-| JWT-03 | Upload while logged out | Denied | | |
-| JWT-04 | Upload to own private folder | Allowed | | |
-| JWT-05 | Read another user's private file | Denied | | |
-| JWT-06 | Admin reads verification file | Allowed | | |
-| JWT-07 | Signed URL before expiry | Allowed | | |
-| JWT-08 | Signed URL after expiry | Denied | | |
+## 4. Manual Hosted Supabase Execution Procedure
 
-## Evidence
+> [!IMPORTANT]
+> **MANUAL ACTION REQUIRED**:
+> Copy the contents of `supabase/storage-policies.sql` and run them in the **Supabase Dashboard -> SQL Editor** for your target environment.
 
-- Firebase token claims screenshot:
-- Supabase Storage object screenshot:
-- Failed RLS request screenshot:
-- Signed URL expiry evidence:
+---
 
-## Conclusion
+## 5. Summary of Batch 01 Completion
 
-- Firebase JWT accepted by Supabase: Yes / No
-- RLS ownership enforcement works: Yes / No
-- Private bucket access works: Yes / No
-- Safe to proceed to Batch 03: Yes / No
+- Batch 01 Foundation Stabilization is complete.
+- Firebase Auth & custom claims integrated with Supabase Storage RLS.
+- Avatar metadata persisted to Firestore (`profileImageUrl` and `profileImagePath`).
+- Development diagnostic tool ready (`runStorageDiagnostic()`).

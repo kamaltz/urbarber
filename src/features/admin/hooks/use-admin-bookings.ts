@@ -9,29 +9,32 @@ import type { BookingFlagRequest, BookingForVerification } from '../types/admin'
 
 export function useAdminBookings(adminId: string, status?: string) {
   const [bookings, setBookings] = useState<BookingForVerification[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(Boolean(adminId));
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!adminId) {
-      setLoading(false);
       return;
     }
 
+    let isMounted = true;
     const loadBookings = async () => {
       try {
         setLoading(true);
         setError(null);
         const data = await adminRepository.getBookingsForVerification(adminId, status);
-        setBookings(data);
+        if (isMounted) setBookings(data);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load bookings');
+        if (isMounted) setError(err instanceof Error ? err.message : 'Failed to load bookings');
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     };
 
     loadBookings();
+    return () => {
+      isMounted = false;
+    };
   }, [adminId, status]);
 
   const flagBooking = async (data: BookingFlagRequest) => {
@@ -55,7 +58,7 @@ export function useAdminBookings(adminId: string, status?: string) {
       }
 
       return result;
-    } catch (err) {
+    } catch {
       return { success: false, error: { message: 'Flag update failed' } };
     }
   };

@@ -127,6 +127,12 @@ export default function OtpVerificationScreen() {
   const [errorText, setErrorText] = useState('');
   const [cooldown, setCooldown] = useState(0);
 
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const timer = setTimeout(() => setCooldown((prev) => Math.max(0, prev - 1)), 1000);
+    return () => clearTimeout(timer);
+  }, [cooldown]);
+
   const isComplete = otpCode.length === OTP_LENGTH;
 
   if (!identifier) {
@@ -136,12 +142,6 @@ export default function OtpVerificationScreen() {
       </SafeAreaView>
     );
   }
-
-  useEffect(() => {
-    if (cooldown <= 0) return;
-    const timer = setTimeout(() => setCooldown((prev) => Math.max(0, prev - 1)), 1000);
-    return () => clearTimeout(timer);
-  }, [cooldown]);
 
   const handleVerify = async () => {
     if (!isComplete || verifyState === 'loading') return;
