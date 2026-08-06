@@ -44,6 +44,7 @@ export interface AuthUser {
   displayName: string | null;
   phoneNumber?: string | null;
   photoURL?: string | null;
+  profileImagePath?: string;
   role: UserRole;
   status: UserStatus;
   emailVerified: boolean;

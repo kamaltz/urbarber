@@ -5,7 +5,6 @@
 
 import { useAsyncDetail, useAsyncMutation } from '@/hooks/use-async-data';
 import { useState } from 'react';
-import { MOCK_CUSTOMER_PROFILE } from '../mock/customers';
 import { customerRepository } from '../repository/customer.repository';
 import type { CustomerProfile, UpdateProfileData } from '../types/customer';
 
@@ -29,7 +28,7 @@ export function useCustomerProfile(customerId: string) {
     (result) => {
       if (result) {
         setProfile((prev) => ({
-          ...(prev || { ...MOCK_CUSTOMER_PROFILE, userId: customerId }),
+          ...(prev || { userId: customerId, name: '', email: '', location: '', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }),
           ...profile,
           updatedAt: new Date().toISOString(),
         }));
@@ -45,7 +44,7 @@ export function useCustomerProfile(customerId: string) {
     updateProfile: async (updateData: UpdateProfileData) => {
       const res = await updateProfile(updateData);
       setProfile((prev) => ({
-        ...(prev || { ...MOCK_CUSTOMER_PROFILE, userId: customerId }),
+        ...(prev || { userId: customerId, name: '', email: '', location: '', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }),
         ...updateData,
         updatedAt: new Date().toISOString(),
       }));

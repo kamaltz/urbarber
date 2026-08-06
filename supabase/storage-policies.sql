@@ -63,14 +63,16 @@ DROP POLICY IF EXISTS "URBarber private documents update own" ON storage.objects
 DROP POLICY IF EXISTS "URBarber private documents delete own" ON storage.objects;
 
 -- ----------------------------------------------------------------------------
--- 3. CANONICAL RLS POLICIES FOR PUBLIC-MEDIA BUCKET
+-- 3. RLS POLICIES FOR PUBLIC-MEDIA BUCKET
 -- ----------------------------------------------------------------------------
 
+-- Policy 1: Anyone (public or authenticated) can view/download public media
 CREATE POLICY "Public Read Access for public-media"
 ON storage.objects FOR SELECT
 USING (bucket_id = 'public-media');
 
-CREATE POLICY "URBarber public media insert own"
+-- Policy 2: Authenticated users can upload to public-media ONLY inside their own Firebase UID folder
+CREATE POLICY "Authenticated Upload to public-media"
 ON storage.objects FOR INSERT
 TO authenticated
 WITH CHECK (
@@ -78,7 +80,8 @@ WITH CHECK (
   AND (storage.foldername(name))[1] = (auth.jwt() ->> 'sub')
 );
 
-CREATE POLICY "URBarber public media update own"
+-- Policy 3: Authenticated users can update files ONLY inside their own Firebase UID folder
+CREATE POLICY "Authenticated Update in public-media"
 ON storage.objects FOR UPDATE
 TO authenticated
 USING (
@@ -90,7 +93,8 @@ WITH CHECK (
   AND (storage.foldername(name))[1] = (auth.jwt() ->> 'sub')
 );
 
-CREATE POLICY "URBarber public media delete own"
+-- Policy 4: Authenticated users can delete files ONLY inside their own Firebase UID folder
+CREATE POLICY "Authenticated Delete in public-media"
 ON storage.objects FOR DELETE
 TO authenticated
 USING (
@@ -99,10 +103,11 @@ USING (
 );
 
 -- ----------------------------------------------------------------------------
--- 4. CANONICAL RLS POLICIES FOR PRIVATE-DOCUMENTS BUCKET
+-- 4. RLS POLICIES FOR PRIVATE-DOCUMENTS BUCKET
 -- ----------------------------------------------------------------------------
 
-CREATE POLICY "URBarber private documents read owner admin"
+-- Policy 5: File owner (matching UID folder) OR Admin (app_role = 'admin') can read private documents
+CREATE POLICY "Owner or Admin Read Access for private-documents"
 ON storage.objects FOR SELECT
 TO authenticated
 USING (
@@ -113,7 +118,8 @@ USING (
   )
 );
 
-CREATE POLICY "URBarber private documents insert own"
+-- Policy 6: Only the file owner can upload files to private-documents inside their own Firebase UID folder
+CREATE POLICY "Owner Upload to private-documents"
 ON storage.objects FOR INSERT
 TO authenticated
 WITH CHECK (
@@ -121,7 +127,8 @@ WITH CHECK (
   AND (storage.foldername(name))[1] = (auth.jwt() ->> 'sub')
 );
 
-CREATE POLICY "URBarber private documents update own"
+-- Policy 7: Only the file owner can update files in private-documents inside their own Firebase UID folder
+CREATE POLICY "Owner Update in private-documents"
 ON storage.objects FOR UPDATE
 TO authenticated
 USING (
@@ -133,7 +140,8 @@ WITH CHECK (
   AND (storage.foldername(name))[1] = (auth.jwt() ->> 'sub')
 );
 
-CREATE POLICY "URBarber private documents delete own"
+-- Policy 8: Only the file owner can delete files in private-documents inside their own Firebase UID folder
+CREATE POLICY "Owner Delete in private-documents"
 ON storage.objects FOR DELETE
 TO authenticated
 USING (

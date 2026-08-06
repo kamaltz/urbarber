@@ -20,13 +20,13 @@
 
 ### 2.2 Canonical Storage RLS Policies
 1. `Public Read Access for public-media`
-2. `URBarber public media insert own`
-3. `URBarber public media update own`
-4. `URBarber public media delete own`
-5. `URBarber private documents read owner admin`
-6. `URBarber private documents insert own`
-7. `URBarber private documents update own`
-8. `URBarber private documents delete own`
+2. `Authenticated Upload to public-media`
+3. `Authenticated Update in public-media`
+4. `Authenticated Delete in public-media`
+5. `Owner or Admin Read Access for private-documents`
+6. `Owner Upload to private-documents`
+7. `Owner Update in private-documents`
+8. `Owner Delete in private-documents`
 
 ---
 

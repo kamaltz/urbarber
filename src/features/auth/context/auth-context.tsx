@@ -17,6 +17,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let status: UserStatus = 'active';
     let phoneNumber: string | undefined = currentUser.phoneNumber || undefined;
     let photoURL: string | undefined = currentUser.photoURL || undefined;
+    let profileImagePath: string | undefined = undefined;
 
     try {
       const userDocRef = doc(firestore, 'users', currentUser.uid);
@@ -33,6 +34,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (data.phoneNumber) phoneNumber = data.phoneNumber;
         if (data.profileImageUrl || data.profileImage || data.avatarUrl) {
           photoURL = data.profileImageUrl || data.profileImage || data.avatarUrl;
+        }
+        if (data.profileImagePath) {
+          profileImagePath = data.profileImagePath;
         }
       } else {
         await withTimeout(
@@ -65,6 +69,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       displayName: currentUser.displayName || currentUser.email?.split('@')[0] || 'User',
       phoneNumber,
       photoURL: photoURL || currentUser.photoURL || undefined,
+      profileImagePath,
       role,
       status,
       emailVerified: currentUser.emailVerified,

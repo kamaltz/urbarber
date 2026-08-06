@@ -45,7 +45,7 @@ export default function ProfileScreen() {
       if (!picked) return;
 
       setUploading(true);
-      setStatusMessage('Memeriksa status autentikasi...');
+      setStatusMessage('Memeriksa izin token...');
 
       const currentUser = firebaseAuth.currentUser;
       if (!currentUser) {
@@ -57,7 +57,13 @@ export default function ProfileScreen() {
 
       if (tokenResult.claims.role !== 'authenticated') {
         throw new Error(
-          `Claim role 'authenticated' belum aktif pada token. Silakan perbarui klaim via script backend.`,
+          `Custom claim Firebase (role: authenticated) belum aktif untuk UID ${currentUser.uid}.\nJalankan: node scripts/assign-firebase-custom-claims.js --uid=${currentUser.uid} --app_role=customer`,
+        );
+      }
+
+      if (tokenResult.claims.app_role !== 'customer') {
+        throw new Error(
+          `Claim app_role tidak valid: ${String(tokenResult.claims.app_role)}. Harus 'customer'.`,
         );
       }
 

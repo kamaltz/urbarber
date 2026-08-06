@@ -1,7 +1,14 @@
 import { getApp, getApps, initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
+import {
+  browserLocalPersistence,
+  browserSessionPersistence,
+  getAuth,
+  indexedDBLocalPersistence,
+  initializeAuth,
+} from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getFunctions } from "firebase/functions";
+import { Platform } from "react-native";
 
 const firebaseConfig = {
   apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
@@ -28,6 +35,27 @@ if (requiredConfig.length > 0) {
 export const firebaseApp =
   getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
-export const firebaseAuth = getAuth(firebaseApp);
+/**
+ * Initialize Firebase Auth with web persistence fallbacks
+ * Prevents "Database is closing/hidden" IndexedDB browser crashes
+ */
+export const firebaseAuth = (() => {
+  if (Platform.OS === "web") {
+    try {
+      return initializeAuth(firebaseApp, {
+        persistence: [
+          indexedDBLocalPersistence,
+          browserLocalPersistence,
+          browserSessionPersistence,
+        ],
+      });
+    } catch {
+      return getAuth(firebaseApp);
+    }
+  }
+
+  return getAuth(firebaseApp);
+})();
+
 export const firestore = getFirestore(firebaseApp);
 export const firebaseFunctions = getFunctions(firebaseApp);

@@ -475,6 +475,23 @@ class FirebaseAuthService {
       };
     }
   }
+
+  /**
+   * Get Firestore user document by UID
+   */
+  async getUserProfile(uid: string): Promise<Record<string, any> | null> {
+    try {
+      const userDocRef = doc(firestore, 'users', uid);
+      const userDocSnap = await getDoc(userDocRef);
+      if (userDocSnap.exists()) {
+        return userDocSnap.data();
+      }
+      return null;
+    } catch (error) {
+      console.warn('Error fetching Firestore user profile:', error);
+      return null;
+    }
+  }
 }
 
 export const authService = new FirebaseAuthService();
