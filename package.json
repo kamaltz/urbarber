@@ -62,6 +62,8 @@
     "test:discovery": "node ./scripts/test-customer-discovery.js",
     "seed:discovery": "node ./scripts/seed-discovery-data.js",
     "seed:discovery:live": "node ./scripts/seed-discovery-data.js --live",
+    "seed:barber": "node ./scripts/seed-barber-operations.js",
+    "seed:barber:live": "node ./scripts/seed-barber-operations.js --live",
     "check": "npm run typecheck && npm run lint"
   },
   "private": true

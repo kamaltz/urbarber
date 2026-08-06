@@ -31,5 +31,6 @@ export const routes = {
     activeBooking: (bookingId: string) => ({ pathname: '/(customer)/booking/detail/[bookingId]' as const, params: { bookingId } }),
     pastBooking: (bookingId: string) => ({ pathname: '/(customer)/booking/history/[bookingId]' as const, params: { bookingId } }),
     rating: (bookingId: string) => ({ pathname: '/(customer)/booking/rating/[bookingId]' as const, params: { bookingId } }),
+    registerBarber: '/(customer)/profile/register-barber',
   },
 } as const;

@@ -12,6 +12,7 @@ import {
     getDoc,
     getDocs,
     query,
+    setDoc,
     Timestamp,
     updateDoc,
     where,
@@ -142,6 +143,73 @@ export const barberRepository = {
         error: { message: error?.message || 'Failed to add service' },
       };
     }
+  },
+
+  /**
+   * Update existing barber service
+   */
+  async updateBarberService(
+    serviceId: string,
+    data: Partial<BarberAddServiceRequest>,
+  ): Promise<{ success: boolean; error?: { message: string } }> {
+    try {
+      if (!serviceId || !data) {
+        return { success: false, error: { message: 'Missing parameters' } };
+      }
+
+      await updateDoc(doc(firestore, 'barberServices', serviceId), {
+        ...data,
+        updatedAt: Timestamp.now(),
+      });
+
+      return { success: true };
+    } catch (error: any) {
+      if (__DEV__) {
+        console.warn('[BarberRepository updateBarberService Error]', error?.code, error?.message || error);
+      }
+      return {
+        success: false,
+        error: { message: error?.message || 'Failed to update service' },
+      };
+    }
+  },
+
+  /**
+   * Toggle active state of barber service
+   */
+  async toggleBarberService(
+    serviceId: string,
+    isActive: boolean,
+  ): Promise<{ success: boolean; error?: { message: string } }> {
+    try {
+      if (!serviceId) {
+        return { success: false, error: { message: 'Missing service ID' } };
+      }
+
+      await updateDoc(doc(firestore, 'barberServices', serviceId), {
+        active: isActive,
+        updatedAt: Timestamp.now(),
+      });
+
+      return { success: true };
+    } catch (error: any) {
+      if (__DEV__) {
+        console.warn('[BarberRepository toggleBarberService Error]', error?.code, error?.message || error);
+      }
+      return {
+        success: false,
+        error: { message: error?.message || 'Failed to toggle service status' },
+      };
+    }
+  },
+
+  /**
+   * Soft delete barber service
+   */
+  async deleteBarberService(
+    serviceId: string,
+  ): Promise<{ success: boolean; error?: { message: string } }> {
+    return this.toggleBarberService(serviceId, false);
   },
 
   /**
@@ -359,10 +427,15 @@ export const barberRepository = {
         return { success: false, error: { message: 'Missing parameters' } };
       }
 
-      await updateDoc(doc(firestore, 'barberSchedules', barberId), {
-        schedule: data.schedule,
-        updatedAt: Timestamp.now(),
-      });
+      await setDoc(
+        doc(firestore, 'barberSchedules', barberId),
+        {
+          schedule: data.schedule,
+          ...(data.unavailableDates ? { unavailableDates: data.unavailableDates } : {}),
+          updatedAt: Timestamp.now(),
+        },
+        { merge: true }
+      );
 
       return { success: true };
     } catch (error: any) {

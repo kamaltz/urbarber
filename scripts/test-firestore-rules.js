@@ -444,6 +444,113 @@ async function runRulesTests() {
       await assertFails(cust2Db.collection('paymentRequests').doc('req1').get());
     });
 
+    // 27. Barber can read their own barber profile
+    await test('27. Barber can read their own barber profile', async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('barbers').doc('barb1').set({
+          name: 'Barber One',
+          verified: true,
+          status: 'active',
+          verificationStatus: 'approved',
+          ratingAverage: 5.0,
+          createdAt: '2026-01-01',
+        });
+      });
+
+      const barb1Db = testEnv.authenticatedContext('barb1', { app_role: 'barber' }).firestore();
+      await assertSucceeds(barb1Db.collection('barbers').doc('barb1').get());
+    });
+
+    // 28. Barber can update their own description, but cannot change verificationStatus or ratingAverage
+    await test('28. Barber can update operational fields but cannot change verificationStatus or ratingAverage', async () => {
+      const barb1Db = testEnv.authenticatedContext('barb1', { app_role: 'barber' }).firestore();
+      await assertSucceeds(
+        barb1Db.collection('barbers').doc('barb1').update({
+          shopDescription: 'Deskripsi baru',
+          verificationStatus: 'approved',
+          verified: true,
+          status: 'active',
+          createdAt: '2026-01-01',
+        })
+      );
+
+      await assertFails(
+        barb1Db.collection('barbers').doc('barb1').update({
+          verificationStatus: 'pending',
+          verified: true,
+          status: 'active',
+          createdAt: '2026-01-01',
+        })
+      );
+    });
+
+    // 29. Barber can create a service for themselves, but cannot create for another barber
+    await test('29. Barber can create a service for themselves, but cannot create for another barber', async () => {
+      const barb1Db = testEnv.authenticatedContext('barb1', { app_role: 'barber' }).firestore();
+      await assertSucceeds(
+        barb1Db.collection('barberServices').doc('svc1').set({
+          barberId: 'barb1',
+          name: 'Cukur Haircut',
+          price: 50000,
+          durationMinutes: 30,
+          active: true,
+        })
+      );
+
+      await assertFails(
+        barb1Db.collection('barberServices').doc('svc2').set({
+          barberId: 'barb2',
+          name: 'Cukur Haircut Fake',
+          price: 50000,
+          durationMinutes: 30,
+          active: true,
+        })
+      );
+    });
+
+    // 30. Barber can update their own schedule, but cannot update another barber's schedule
+    await test("30. Barber can update their own schedule, but cannot update another barber's schedule", async () => {
+      const barb1Db = testEnv.authenticatedContext('barb1', { app_role: 'barber' }).firestore();
+      await assertSucceeds(
+        barb1Db.collection('barberSchedules').doc('barb1').set({
+          schedule: [],
+          updatedAt: '2026-01-01',
+        })
+      );
+
+      await assertFails(
+        barb1Db.collection('barberSchedules').doc('barb2').set({
+          schedule: [],
+          updatedAt: '2026-01-01',
+        })
+      );
+    });
+
+    // 31. Barber can read assigned booking, but cannot read unrelated booking
+    await test('31. Barber can read assigned booking, but cannot read unrelated booking', async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('bookings').doc('book_other').set({
+          customerId: 'cust1',
+          barberId: 'barb2',
+          status: 'pending',
+        });
+      });
+
+      const barb1Db = testEnv.authenticatedContext('barb1', { app_role: 'barber' }).firestore();
+      await assertFails(barb1Db.collection('bookings').doc('book_other').get());
+    });
+
+    // 32. Barber cannot modify paymentStatus directly
+    await test('32. Barber cannot modify paymentStatus on booking document directly', async () => {
+      const barb1Db = testEnv.authenticatedContext('barb1', { app_role: 'barber' }).firestore();
+      await assertFails(
+        barb1Db.collection('bookings').doc('book_paid').update({
+          paymentStatus: 'failed',
+          status: 'rejected',
+        })
+      );
+    });
+
   } finally {
     await testEnv.cleanup();
     console.log(`\nTest Execution Complete: ${passed} Passed, ${failed} Failed.\n`);

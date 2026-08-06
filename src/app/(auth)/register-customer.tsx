@@ -1,15 +1,3 @@
-import { router } from 'expo-router';
-import { useState } from 'react';
-import {
-    KeyboardAvoidingView,
-    Platform,
-    Pressable,
-    SafeAreaView,
-    ScrollView,
-    Text,
-    View,
-} from 'react-native';
-
 import { AppButton } from '@/components/ui/AppButton';
 import { AppInput } from '@/components/ui/AppInput';
 import { AuthHeaderBlock } from '@/features/auth/components/AuthHeaderBlock';
@@ -17,15 +5,35 @@ import { SocialLoginButton } from '@/features/auth/components/SocialLoginButton'
 import { TermsAgreement } from '@/features/auth/components/TermsAgreement';
 import { authService } from '@/features/auth/services/auth.service';
 import { validateRegisterForm } from '@/features/auth/validation/auth.validation';
+import { router } from 'expo-router';
+import { useState } from 'react';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  SafeAreaView,
+  ScrollView,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 
 export default function RegisterCustomerScreen() {
+  const [selectedRole, setSelectedRole] = useState<'customer' | 'barber'>('customer');
+
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [acceptedTerms, setAcceptedTerms] = useState(false);
-    const [isLoading, setIsLoading] = useState(false);
+
+  // Barber specific fields
+  const [shopName, setShopName] = useState('');
+  const [shopAddress, setShopAddress] = useState('');
+  const [autoApprove, setAutoApprove] = useState(false);
+
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
   const handleRegister = async () => {
@@ -44,24 +52,52 @@ export default function RegisterCustomerScreen() {
       return;
     }
 
+    if (selectedRole === 'barber' && !shopName.trim()) {
+      setError('Nama Barbershop / Outlet wajib diisi.');
+      return;
+    }
+
     setIsLoading(true);
 
     try {
-      const response = await authService.registerCustomer({
-        fullName,
-        email,
-        phoneNumber,
-        password,
-        acceptedTerms,
-      });
+      if (selectedRole === 'customer') {
+        const response = await authService.registerCustomer({
+          fullName,
+          email,
+          phoneNumber,
+          password,
+          acceptedTerms,
+        });
 
-            if (response.success) {
-        router.push('/(auth)/authentication' as any);
+        if (response.success) {
+          router.push('/(auth)/authentication' as any);
+        } else {
+          setError(response.error?.message || 'Gagal mendaftar');
+        }
       } else {
-        setError(response.error?.message || 'Gagal mendaftar');
+        const response = await authService.registerBarber({
+          fullName,
+          email,
+          phoneNumber,
+          password,
+          shopName: shopName.trim(),
+          shopAddress: shopAddress.trim(),
+          acceptedTerms,
+          autoApprove,
+        });
+
+        if (response.success) {
+          if (autoApprove) {
+            router.replace('/(barber)/home' as any);
+          } else {
+            router.push('/(auth)/authentication' as any);
+          }
+        } else {
+          setError(response.error?.message || 'Gagal mendaftar sebagai mitra barber.');
+        }
       }
     } catch (err) {
-      setError('Terjadi kesalahan. Coba lagi.');
+      setError('Terjadi kesalahan saat pendaftaran. Coba lagi.');
     } finally {
       setIsLoading(false);
     }
@@ -79,13 +115,14 @@ export default function RegisterCustomerScreen() {
     router.push('/(customer)/terms-condition');
   };
 
-    const isFormValid =
+  const isFormValid =
     fullName.trim().length > 0 &&
     email.includes('@') &&
     phoneNumber.trim().length > 0 &&
     password.length >= 6 &&
     password === confirmPassword &&
-    acceptedTerms;
+    acceptedTerms &&
+    (selectedRole === 'customer' || shopName.trim().length > 0);
 
   return (
     <SafeAreaView className="flex-1 bg-white">
@@ -94,14 +131,45 @@ export default function RegisterCustomerScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 16 : 0}>
         <ScrollView className="flex-1" contentContainerStyle={{ flexGrow: 1 }}>
-          <View className="flex-1 px-[18px] pt-14 pb-6">
+          <View className="flex-1 px-[18px] pt-10 pb-6">
             <View>
               <AuthHeaderBlock
-                title="Daftar"
-                description="Buat akun pelanggan Anda"
+                title="Daftar Akun Baru"
+                description="Pilih peran akun Anda untuk bergabung dengan URBarber"
               />
 
-              <View className="mt-12 gap-4">
+              {/* Segmented Control for Role Selection */}
+              <View className="flex-row mt-6 bg-slate-100 p-1 rounded-xl border border-slate-200">
+                <TouchableOpacity
+                  className={`flex-1 py-2.5 rounded-lg items-center ${
+                    selectedRole === 'customer' ? 'bg-white shadow-sm' : ''
+                  }`}
+                  onPress={() => setSelectedRole('customer')}
+                  disabled={isLoading}>
+                  <Text
+                    className={`text-xs font-bold ${
+                      selectedRole === 'customer' ? 'text-slate-900' : 'text-slate-500'
+                    }`}>
+                    👤 Pelanggan (Customer)
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  className={`flex-1 py-2.5 rounded-lg items-center ${
+                    selectedRole === 'barber' ? 'bg-[#D2691E] shadow-sm' : ''
+                  }`}
+                  onPress={() => setSelectedRole('barber')}
+                  disabled={isLoading}>
+                  <Text
+                    className={`text-xs font-bold ${
+                      selectedRole === 'barber' ? 'text-white' : 'text-slate-500'
+                    }`}>
+                    💈 Mitra Barber
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <View className="mt-6 gap-4">
                 <AppInput
                   label="Nama Lengkap"
                   placeholder="Nama Anda"
@@ -129,6 +197,45 @@ export default function RegisterCustomerScreen() {
                   keyboardType="phone-pad"
                   editable={!isLoading}
                 />
+
+                {/* Barber Specific Inputs */}
+                {selectedRole === 'barber' ? (
+                  <View className="gap-4 bg-amber-50 p-4 rounded-xl border border-amber-200">
+                    <Text className="font-bold text-amber-900 text-xs uppercase tracking-wider">
+                      Informasi Barbershop / Outlet
+                    </Text>
+
+                    <AppInput
+                      label="Nama Barbershop / Outlet *"
+                      placeholder="Contoh: Crown Barbershop Utama"
+                      value={shopName}
+                      onChangeText={setShopName}
+                      editable={!isLoading}
+                    />
+
+                    <AppInput
+                      label="Alamat Barbershop"
+                      placeholder="Contoh: Jl. Sudirman No. 12, Jakarta"
+                      value={shopAddress}
+                      onChangeText={setShopAddress}
+                      editable={!isLoading}
+                    />
+
+                    <TouchableOpacity
+                      className="flex-row items-center gap-2 mt-1"
+                      onPress={() => setAutoApprove(!autoApprove)}>
+                      <View
+                        className={`w-5 h-5 rounded border items-center justify-center ${
+                          autoApprove ? 'bg-amber-600 border-amber-600' : 'border-slate-400 bg-white'
+                        }`}>
+                        {autoApprove ? <Text className="text-white text-xs font-bold">✓</Text> : null}
+                      </View>
+                      <Text className="text-xs font-semibold text-amber-900">
+                        ⚡ Verifikasi Instan (Demo Mode)
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
 
                 <AppInput
                   label="Password"
@@ -162,11 +269,17 @@ export default function RegisterCustomerScreen() {
                 ) : null}
 
                 <AppButton
-                  label="Daftar"
+                  label={
+                    selectedRole === 'customer'
+                      ? 'Daftar Sebagai Pelanggan'
+                      : 'Daftar Sebagai Mitra Barber'
+                  }
                   loading={isLoading}
                   disabled={!isFormValid}
                   onPress={handleRegister}
-                  className="h-[54px] rounded-lg"
+                  className={`h-[54px] rounded-lg ${
+                    selectedRole === 'barber' ? 'bg-[#D2691E]' : 'bg-slate-900'
+                  }`}
                 />
 
                 {/* Divider */}
@@ -176,7 +289,7 @@ export default function RegisterCustomerScreen() {
                   <View className="flex-1 h-px bg-slate-300" />
                 </View>
 
-                {/* Social SignUp (Disabled until native configuration) */}
+                {/* Social SignUp */}
                 <View className="gap-3">
                   <SocialLoginButton
                     provider="google"

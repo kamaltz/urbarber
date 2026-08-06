@@ -2,23 +2,25 @@
 
 ## 1. Executive Summary
 
-This report presents an empirical code audit of the URBarber repository on branch `feat/batch-04-midtrans-vercel`.
+This report presents an empirical code audit of the URBarber repository on branch `feat/batch-05-barber-operations`.
 
-**Batch 01 (Foundation Stabilization)**, **Batch 02 (Data Model Harmonization & Security Rules)**, **Batch 03 (Customer Discovery & Profile Sub-System)**, and **Batch 04 (Midtrans Sandbox Integration via Standalone Vercel Node.js Backend)** are fully stabilized and verified:
-- **Firebase Authentication** is the sole authentication provider.
+**Batch 01 (Foundation Stabilization)**, **Batch 02 (Data Model Harmonization & Security Rules)**, **Batch 03 (Customer Discovery & Profile Sub-System)**, **Batch 04 (Midtrans Sandbox Integration via Standalone Vercel Node.js Backend)**, and **Batch 05 (Barber Operations and Management Flow)** are fully stabilized and verified:
+- **Firebase Authentication** is the sole authentication provider with `app_role` custom claims.
 - **Standalone Vercel Node.js Backend (`backend/vercel/`)**:
   - `POST /api/payments/create`: Authenticated payment creation, idempotency via `paymentRequests/{customerId_requestId}`, atomic Firestore transactions.
   - `POST /api/payments/webhook`: Public webhook endpoint with SHA-512 signature validation and Midtrans status queries.
   - `POST /api/payments/sync`: Authenticated payment status synchronization.
   - `GET /api/payments/return`: Safe HTML redirect landing page with app deep link.
   - `POST /api/bookings/cancel`: Customer booking cancellation endpoint.
+  - `POST /api/barber/bookings/respond`: Authenticated barber endpoint to accept/reject pending bookings (Accept allowed only when `paymentStatus == 'paid'`; Reject on paid returns `PAYMENT_REFUND_REQUIRED`).
+  - `POST /api/barber/bookings/status`: Authenticated barber status transition endpoint (`accepted` ➔ `in_progress` ➔ `completed`).
   - `GET /api/health`: Healthcheck endpoint.
 - **No Firebase Blaze Plan Required**: Serverless Node 22.x execution on Vercel.
 - **Security Rules**: `payments` and `paymentRequests` collections are read-only for customer/barber/admin with zero client write access. Barber can process/accept a booking ONLY when `paymentStatus == 'paid'`.
 - **Automated Test Suites**:
-  - 5 Vitest unit tests in `backend/vercel/tests/backend.test.ts`.
+  - 10 Vitest unit tests in `backend/vercel/tests/` (5 payment backend tests + 5 barber operations transition tests).
   - 6 payment unit tests in `scripts/test-midtrans-payment.js` (`npm run test`).
-  - 26 automated security rules integration tests in `scripts/test-firestore-rules.js` (`npm run test:rules`).
+  - 32 automated security rules integration tests in `scripts/test-firestore-rules.js` (`npm run test:rules`).
   - Root project typecheck (`npm run typecheck`) and backend typecheck (`npm --prefix backend/vercel run typecheck`).
 
 ---
@@ -52,23 +54,6 @@ This report presents an empirical code audit of the URBarber repository on branc
 > [!IMPORTANT]
 > **MANUAL ACTION REQUIRED**:
 > 1. Set environment variables in Vercel Project Settings.
-> 2. Deploy `backend/vercel` to Vercel (`cd backend/vercel && vercel`).
+> 2. Deploy `backend/vercel` to Vercel (`cd backend/vercel && vercel --prod`).
 > 3. Set Payment Notification URL in Midtrans Dashboard: `https://<your-vercel-app>.vercel.app/api/payments/webhook`.
 > 4. Deploy `firestore.rules` (`firebase deploy --only firestore:rules`).
-
----
-
-## 4. Test Specifications & Verification Baseline
-
-1. **Backend Vitest Unit Tests**: Run `npm --prefix backend/vercel run test` (5 passed).
-2. **Backend Typecheck**: Run `npm --prefix backend/vercel run typecheck` (0 errors).
-3. **Automated Midtrans Unit Tests**: Run `npm run test` (6 passed).
-4. **Automated Security Rules Unit Tests**: Run `firebase emulators:exec --only firestore "npm run test:rules"` (26 passed).
-5. **Expo App Typecheck**: Run `npm run typecheck` (0 errors).
-6. **Git Diff Audit**: Run `git diff --check` (0 errors).
-
----
-
-## 5. Known Remaining Blockers & Next Batches
-
-- **Next Batches**: Barber operational dashboard, admin moderation dashboard.

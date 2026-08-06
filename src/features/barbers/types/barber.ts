@@ -107,6 +107,7 @@ export interface BarberAddServiceRequest {
 
 export interface UpdateBarberScheduleRequest {
   schedule: BarberScheduleDay[];
+  unavailableDates?: string[];
 }
 
 export interface UpdateBarberProfileRequest {

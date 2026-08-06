@@ -53,12 +53,14 @@ service cloud.firestore {
         && request.resource.data.role == 'customer'
         && (request.resource.data.status == 'active' || request.resource.data.status == 'pending_verification');
 
-      // User profile updates for own document: cannot change uid, role, status, or createdAt
+      // User profile updates for own document: cannot change uid or createdAt; role can transition customer -> barber if status becomes pending_verification
       allow update: if (
         isOwner(userId)
         && request.resource.data.uid == resource.data.uid
-        && request.resource.data.role == resource.data.role
-        && request.resource.data.status == resource.data.status
+        && (
+          (request.resource.data.role == resource.data.role && request.resource.data.status == resource.data.status)
+          || (resource.data.role == 'customer' && request.resource.data.role == 'barber' && request.resource.data.status == 'pending_verification')
+        )
         && request.resource.data.createdAt == resource.data.createdAt
       ) || isAdmin();
 

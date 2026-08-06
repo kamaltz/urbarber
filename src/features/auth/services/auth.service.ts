@@ -27,8 +27,11 @@ export interface RegisterPayload {
 }
 
 export interface RegisterBarberPayload extends RegisterPayload {
+  shopName?: string;
+  shopAddress?: string;
   address?: string;
   description?: string;
+  autoApprove?: boolean;
 }
 
 export interface AuthError {
@@ -206,6 +209,7 @@ class FirebaseAuthService {
         payload.password,
       );
 
+      const isApproved = Boolean(payload.autoApprove);
       const now = new Date().toISOString();
       const postRegistrationTasks = [
         updateProfile(userCredential.user, {
@@ -218,23 +222,28 @@ class FirebaseAuthService {
           name: payload.fullName,
           phoneNumber: payload.phoneNumber,
           role: 'barber',
-          status: 'pending_verification',
+          status: isApproved ? 'active' : 'pending_verification',
           createdAt: now,
           updatedAt: now,
         }),
         setDoc(doc(firestore, 'barbers', userCredential.user.uid), {
+          barberId: userCredential.user.uid,
           id: userCredential.user.uid,
           userId: userCredential.user.uid,
+          name: payload.fullName,
+          shopName: payload.shopName || payload.fullName,
           displayName: payload.fullName,
-          description: payload.description || '',
-          address: payload.address || '',
-          ratingAverage: 0,
+          description: payload.description || 'Barbershop profesional & terpercaya.',
+          shopAddress: payload.shopAddress || payload.address || '',
+          address: payload.shopAddress || payload.address || '',
+          phone: payload.phoneNumber,
+          ratingAverage: isApproved ? 5.0 : 0,
           reviewCount: 0,
-          verified: false,
-          verificationStatus: 'pending',
+          verified: isApproved,
+          verificationStatus: isApproved ? 'approved' : 'pending',
           imageUrl: null,
           serviceTypes: [],
-          status: 'pending_verification',
+          status: 'active',
           createdAt: now,
           updatedAt: now,
         }),
