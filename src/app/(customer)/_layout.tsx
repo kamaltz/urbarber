@@ -1,25 +1,41 @@
 import { Loading } from '@/components/ui/Loading';
 import { useAuth } from '@/features/auth/hooks/use-auth';
-import { Redirect, Stack } from 'expo-router';
+import { router, Stack } from 'expo-router';
+import { useEffect } from 'react';
 
 export default function CustomerLayout() {
   const { isAuthenticated, emailVerified, user, role, loading } = useAuth();
 
-  if (loading) return <Loading />;
-  if (!isAuthenticated) return <Redirect href="/(auth)/login" />;
-  if (user?.isUninitialized) return <Redirect href={"/(auth)/complete-account-setup" as any} />;
-  if (!emailVerified) return <Redirect href={"/(auth)/verification-email" as any} />;
-  if (user?.status === 'suspended') return <Redirect href="/(auth)/login" />;
+  const isValidCustomer =
+    !loading &&
+    isAuthenticated &&
+    !user?.isUninitialized &&
+    emailVerified &&
+    user?.status !== 'suspended' &&
+    role === 'customer';
 
-  if (role === 'barber') {
-    if (user?.status === 'pending_verification') {
-      return <Redirect href={"/(barber-onboarding)/status" as any} />;
-    }
-    return <Redirect href="/(barber)/home" />;
-  }
-  if (role === 'admin') {
-    return <Redirect href="/(admin)/dashboard" />;
-  }
+  useEffect(() => {
+    if (loading) return;
+
+    let dest: string | undefined;
+
+    if (!isAuthenticated) dest = '/(auth)/login';
+    else if (user?.isUninitialized) dest = '/(auth)/complete-account-setup';
+    else if (!emailVerified) dest = '/(auth)/verification-email';
+    else if (user?.status === 'suspended') dest = '/(auth)/login';
+    else if (role === 'barber') {
+      dest = user?.status === 'pending_verification'
+        ? '/(barber-onboarding)/status'
+        : '/(barber)/home';
+    } else if (role === 'admin') dest = '/(admin)/dashboard';
+
+    if (!dest) return; // valid customer — no redirect needed
+
+    const tid = setTimeout(() => router.replace(dest as any), 0);
+    return () => clearTimeout(tid);
+  }, [loading, isAuthenticated, emailVerified, user?.isUninitialized, user?.status, role]);
+
+  if (!isValidCustomer) return <Loading />;
 
   return (
     <Stack

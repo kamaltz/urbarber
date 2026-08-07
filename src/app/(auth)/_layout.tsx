@@ -1,35 +1,28 @@
 import { Loading } from '@/components/ui/Loading';
 import { useAuth } from '@/features/auth/hooks/use-auth';
-import { Redirect, Stack } from 'expo-router';
+import { router, Stack } from 'expo-router';
+import { useEffect } from 'react';
 
 export default function AuthLayout() {
   const { isAuthenticated, emailVerified, user, role, loading } = useAuth();
 
-  if (loading) return <Loading />;
+  const isSuspended = isAuthenticated && user?.status === 'suspended';
+  const isUninitialized = user?.isUninitialized;
+  const shouldRedirectAway = isAuthenticated && !isSuspended && !isUninitialized && emailVerified;
 
-  if (isAuthenticated && user?.status === 'suspended') {
-    // Keep user on auth screens with suspended block rather than advancing to app routes
-    return (
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          animation: 'slide_from_right',
-          presentation: 'card',
-        }}>
-        <Stack.Screen name="login" />
-      </Stack>
-    );
-  }
+  useEffect(() => {
+    if (loading || !shouldRedirectAway) return;
 
-  if (isAuthenticated && emailVerified) {
-    if (role === 'barber') {
-      return <Redirect href="/(barber)/home" />;
-    }
-    if (role === 'admin') {
-      return <Redirect href="/(admin)/dashboard" />;
-    }
-    return <Redirect href="/(customer)/home" />;
-  }
+    let dest: string;
+    if (role === 'barber') dest = '/(barber)/home';
+    else if (role === 'admin') dest = '/(admin)/dashboard';
+    else dest = '/(customer)/home';
+
+    const tid = setTimeout(() => router.replace(dest as any), 0);
+    return () => clearTimeout(tid);
+  }, [loading, shouldRedirectAway, role]);
+
+  if (loading || shouldRedirectAway) return <Loading />;
 
   return (
     <Stack
@@ -43,6 +36,8 @@ export default function AuthLayout() {
       <Stack.Screen name="otp-verification" />
       <Stack.Screen name="register-customer" />
       <Stack.Screen name="forgot-password" />
+      <Stack.Screen name="verification-email" />
+      <Stack.Screen name="complete-account-setup" />
       <Stack.Screen name="onboarding/[step]" options={{ animation: 'fade' }} />
     </Stack>
   );

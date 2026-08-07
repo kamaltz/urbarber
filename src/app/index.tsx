@@ -1,26 +1,34 @@
 import { Loading } from '@/components/ui/Loading';
 import { routes } from '@/constants/routes';
 import { useAuth } from '@/features/auth/hooks/use-auth';
-import { Redirect } from 'expo-router';
+import { router } from 'expo-router';
+import { useEffect } from 'react';
 
 export default function IndexScreen() {
   const { isAuthenticated, emailVerified, user, role, loading } = useAuth();
 
-  if (loading) return <Loading />;
+  useEffect(() => {
+    if (loading) return;
 
-  if (isAuthenticated && user?.status === 'suspended') {
-    return <Redirect href="/(auth)/login" />;
-  }
+    let dest: any;
 
-  if (isAuthenticated && !emailVerified) {
-    return <Redirect href="/(auth)/authentication" />;
-  }
+    if (isAuthenticated && user?.status === 'suspended') {
+      dest = routes.auth.login;
+    } else if (isAuthenticated && !emailVerified) {
+      dest = routes.auth.verificationEmail;
+    } else if (isAuthenticated && user?.isUninitialized) {
+      dest = routes.auth.completeAccountSetup;
+    } else if (isAuthenticated) {
+      if (role === 'barber') dest = '/(barber)/home';
+      else if (role === 'admin') dest = '/(admin)/dashboard';
+      else dest = '/(customer)/home';
+    } else {
+      dest = routes.auth.onboarding(0);
+    }
 
-  if (isAuthenticated) {
-    if (role === 'barber') return <Redirect href="/(barber)/home" />;
-    if (role === 'admin') return <Redirect href="/(admin)/dashboard" />;
-    return <Redirect href="/(customer)/home" />;
-  }
+    const tid = setTimeout(() => router.replace(dest as any), 0);
+    return () => clearTimeout(tid);
+  }, [loading, isAuthenticated, emailVerified, user?.status, user?.isUninitialized, role]);
 
-  return <Redirect href={routes.auth.onboarding(0)} />;
+  return <Loading />;
 }

@@ -1,16 +1,31 @@
 import { Loading } from '@/components/ui/Loading';
 import { useAuth } from '@/features/auth/hooks/use-auth';
-import { Redirect, Stack } from 'expo-router';
+import { router, Stack } from 'expo-router';
+import { useEffect } from 'react';
 
 export default function BarberOnboardingLayout() {
   const { isAuthenticated, emailVerified, role, loading } = useAuth();
 
-  if (loading) return <Loading />;
-  if (!isAuthenticated) return <Redirect href="/(auth)/login" />;
-  if (!emailVerified) return <Redirect href={"/(auth)/verification-email" as any} />;
+  const isValidBarber =
+    !loading && isAuthenticated && emailVerified && role === 'barber';
 
-  if (role === 'customer') return <Redirect href="/(customer)/home" />;
-  if (role === 'admin') return <Redirect href="/(admin)/dashboard" />;
+  useEffect(() => {
+    if (loading) return;
+
+    let dest: string | undefined;
+
+    if (!isAuthenticated) dest = '/(auth)/login';
+    else if (!emailVerified) dest = '/(auth)/verification-email';
+    else if (role === 'customer') dest = '/(customer)/home';
+    else if (role === 'admin') dest = '/(admin)/dashboard';
+
+    if (!dest) return; // valid barber — no redirect needed
+
+    const tid = setTimeout(() => router.replace(dest as any), 0);
+    return () => clearTimeout(tid);
+  }, [loading, isAuthenticated, emailVerified, role]);
+
+  if (!isValidBarber) return <Loading />;
 
   return (
     <Stack

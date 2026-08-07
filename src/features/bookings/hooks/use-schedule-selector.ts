@@ -11,46 +11,41 @@ export function useScheduleSelector(barberId: string) {
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
   const [selectedTime, setSelectedTime] = useState<string>('');
   const [availableSlots, setAvailableSlots] = useState<TimeSlotAvailability | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [loading, setLoading] = useState<boolean>(Boolean(barberId));
+  const [error, setError] = useState<string>('');
 
-  const fetchAvailableSlots = useCallback(
-    async (date: string) => {
-      setLoading(true);
-      setError('');
-      setSelectedTime('');
-
-      try {
-        const slots = await bookingRepository.getAvailableSlots(barberId, date);
-        setAvailableSlots(slots);
-      } catch (err) {
-        setError('Gagal mengambil slot yang tersedia');
-        setAvailableSlots(null);
-      } finally {
-        setLoading(false);
-      }
-    },
-    [barberId],
-  );
-
-  // Automatically fetch slots for initial selectedDate (today)
   useEffect(() => {
-    let timer: NodeJS.Timeout;
-    if (barberId && selectedDate && !availableSlots && !loading) {
-      timer = setTimeout(() => {
-        fetchAvailableSlots(selectedDate);
-      }, 0);
+    let isMounted = true;
+    if (barberId && selectedDate) {
+      bookingRepository
+        .getAvailableSlots(barberId, selectedDate)
+        .then((slots) => {
+          if (isMounted) {
+            setAvailableSlots(slots);
+            setError('');
+          }
+        })
+        .catch(() => {
+          if (isMounted) {
+            setError('Gagal mengambil slot yang tersedia');
+            setAvailableSlots(null);
+          }
+        })
+        .finally(() => {
+          if (isMounted) {
+            setLoading(false);
+          }
+        });
     }
-    return () => clearTimeout(timer);
-  }, [barberId, selectedDate, availableSlots, loading, fetchAvailableSlots]);
+    return () => {
+      isMounted = false;
+    };
+  }, [barberId, selectedDate]);
 
-  const handleDateSelect = useCallback(
-    (date: string) => {
-      setSelectedDate(date);
-      fetchAvailableSlots(date);
-    },
-    [fetchAvailableSlots],
-  );
+  const handleDateSelect = useCallback((date: string) => {
+    setSelectedDate(date);
+    setSelectedTime('');
+  }, []);
 
   const handleTimeSelect = useCallback((time: string) => {
     setSelectedTime(time);

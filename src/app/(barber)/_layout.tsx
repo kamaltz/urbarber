@@ -3,7 +3,7 @@ import { Loading } from '@/components/ui/Loading';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { barberRepository } from '@/features/barbers/repository/barber.repository';
 import type { BarberProfile } from '@/features/barbers/types/barber';
-import { Redirect, Stack } from 'expo-router';
+import { router, Stack } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { SafeAreaView, Text, View } from 'react-native';
 
@@ -14,9 +14,9 @@ export default function BarberLayout() {
   const isBarberUser = isAuthenticated && role === 'barber' && Boolean(userId);
 
   const [barberProfile, setBarberProfile] = useState<BarberProfile | null>(null);
-  const [profileLoading, setProfileLoading] = useState<boolean>(isBarberUser);
-  const [profileError, setProfileError] = useState<string | null>(null);
+  const [profileFetched, setProfileFetched] = useState<boolean>(false);
 
+  // Fetch barber profile once the user is confirmed to be a barber
   useEffect(() => {
     let isMounted = true;
     if (isBarberUser && userId) {
@@ -25,14 +25,15 @@ export default function BarberLayout() {
         .then((profile) => {
           if (!isMounted) return;
           setBarberProfile(profile);
-          setProfileError(null);
         })
         .catch((err) => {
           if (!isMounted) return;
-          setProfileError(err?.message || 'Gagal memuat profil barber.');
+          console.warn('[BarberLayout fetch profile error]', err);
         })
         .finally(() => {
-          if (isMounted) setProfileLoading(false);
+          if (isMounted) {
+            setProfileFetched(true);
+          }
         });
     }
     return () => {
@@ -40,14 +41,41 @@ export default function BarberLayout() {
     };
   }, [isBarberUser, userId]);
 
-  if (authLoading || profileLoading) return <Loading />;
+  // Auth-gated redirects via setTimeout to avoid Expo Router commit-phase cascade
+  const verificationStatus = barberProfile?.verificationStatus;
+  useEffect(() => {
+    if (authLoading) return;
+    if (isBarberUser && !profileFetched) return;
 
-  if (!isAuthenticated) return <Redirect href="/(auth)/login" />;
-  if (user?.isUninitialized) return <Redirect href={"/(auth)/complete-account-setup" as any} />;
-  if (!emailVerified) return <Redirect href={"/(auth)/verification-email" as any} />;
+    let dest: string | undefined;
 
-  if (role === 'customer') return <Redirect href="/(customer)/home" />;
-  if (role === 'admin') return <Redirect href="/(admin)/dashboard" />;
+    if (!isAuthenticated) dest = '/(auth)/login';
+    else if (user?.isUninitialized) dest = '/(auth)/complete-account-setup';
+    else if (!emailVerified) dest = '/(auth)/verification-email';
+    else if (role === 'customer') dest = '/(customer)/home';
+    else if (role === 'admin') dest = '/(admin)/dashboard';
+    else if (user?.status === 'suspended') return; // handled in render
+    else if (!barberProfile || verificationStatus === 'draft') dest = '/(barber-onboarding)/profile';
+    else if (verificationStatus === 'pending' || verificationStatus === 'rejected') dest = '/(barber-onboarding)/status';
+
+    if (!dest) return; // approved barber — no redirect needed
+
+    const tid = setTimeout(() => router.replace(dest as any), 0);
+    return () => clearTimeout(tid);
+  }, [authLoading, isAuthenticated, emailVerified, user?.isUninitialized, user?.status, role, isBarberUser, profileFetched, verificationStatus]);
+
+  // Loading states
+  if (authLoading || (isBarberUser && !profileFetched)) return <Loading />;
+
+  if (
+    !isAuthenticated ||
+    user?.isUninitialized ||
+    !emailVerified ||
+    role === 'customer' ||
+    role === 'admin'
+  ) {
+    return <Loading />;
+  }
 
   if (user?.status === 'suspended') {
     return (
@@ -63,13 +91,8 @@ export default function BarberLayout() {
     );
   }
 
-  // Check verification status: non-approved barbers must be routed to onboarding status
-  if (!barberProfile || barberProfile.verificationStatus === 'draft') {
-    return <Redirect href={"/(barber-onboarding)/profile" as any} />;
-  }
-
-  if (barberProfile.verificationStatus === 'pending' || barberProfile.verificationStatus === 'rejected') {
-    return <Redirect href={"/(barber-onboarding)/status" as any} />;
+  if (!barberProfile || verificationStatus !== 'approved') {
+    return <Loading />;
   }
 
   return (

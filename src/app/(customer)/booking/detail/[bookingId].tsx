@@ -27,6 +27,14 @@ export default function BookingDetailScreen() {
 
   const { booking, loading, error, cancelBooking } = useBookingDetail(bookingId || '');
 
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(customer)/home');
+    }
+  };
+
   if (loading) {
     return (
       <SafeAreaView className="flex-1 bg-white">
@@ -44,7 +52,7 @@ export default function BookingDetailScreen() {
           </Text>
           <AppButton
             label="Kembali"
-            onPress={() => router.back()}
+            onPress={handleBack}
             className="mt-6 h-12 rounded-lg px-8"
           />
         </View>
@@ -56,7 +64,7 @@ export default function BookingDetailScreen() {
     const result = await cancelBooking();
     if (result.success) {
       alert('Booking berhasil dibatalkan');
-      router.back();
+      handleBack();
     }
   };
 
@@ -68,7 +76,7 @@ export default function BookingDetailScreen() {
         <ScrollView className="flex-1" contentContainerStyle={{ flexGrow: 1 }}>
           {/* Header */}
           <View className="border-b border-slate-200 px-4 py-4">
-            <Pressable onPress={() => router.back()} className="flex-row items-center gap-2">
+            <Pressable onPress={handleBack} className="flex-row items-center gap-2">
               <Text className="text-2xl">←</Text>
               <Text className="text-xl font-bold text-slate-900">Detail Pemesanan</Text>
             </Pressable>
@@ -76,7 +84,7 @@ export default function BookingDetailScreen() {
 
           <View className="gap-6 px-4 py-6">
             {/* Booking Header */}
-            <BookingHeader shop={booking.shop} />
+            <BookingHeader shop={booking.shop ?? { name: 'URBarber Shop', address: '' }} />
 
             {/* Progress Tracker */}
             <View className="rounded-lg bg-slate-50 p-4">
@@ -103,15 +111,15 @@ export default function BookingDetailScreen() {
             <View className="gap-2">
               <Text className="text-lg font-bold text-slate-900">✂️ Master Barber</Text>
               <View className="rounded-lg bg-slate-50 p-4">
-                <Text className="font-semibold text-slate-900">{booking.barber.name}</Text>
-                <Text className="mt-1 text-sm text-slate-600">{booking.barber.specialization}</Text>
+                <Text className="font-semibold text-slate-900">{booking.barber?.name || 'Master Barber'}</Text>
+                <Text className="mt-1 text-sm text-slate-600">{booking.barber?.specialization || 'Barber Profesional'}</Text>
               </View>
             </View>
 
             {/* Services */}
             <View className="gap-2">
               <Text className="text-lg font-bold text-slate-900">💇 Layanan yang Dipilih</Text>
-              <ServiceList services={booking.services} />
+              <ServiceList services={booking.services ?? []} />
             </View>
 
             {/* Payment Summary */}
@@ -161,7 +169,10 @@ export default function BookingDetailScreen() {
                   <Text className="text-xs font-semibold text-slate-900">Peta</Text>
                 </Pressable>
 
-                <Pressable className="flex-1 items-center gap-2 rounded-lg bg-slate-100 py-3">
+                <Pressable
+                  onPress={() => router.push(`/(customer)/chat/${booking.id}` as any)}
+                  className="flex-1 items-center gap-2 rounded-lg bg-slate-100 py-3"
+                >
                   <Text className="text-2xl">💬</Text>
                   <Text className="text-xs font-semibold text-slate-900">Chat</Text>
                 </Pressable>
