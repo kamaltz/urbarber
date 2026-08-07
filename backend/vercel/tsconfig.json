@@ -9,8 +9,14 @@
     "forceConsistentCasingInFileNames": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": [
+        "src/*"
+      ]
     }
   },
-  "include": ["api/**/*", "src/**/*", "tests/**/*"]
+  "include": [
+    "api/**/*",
+    "src/**/*",
+    "tests/**/*"
+  ]
 }

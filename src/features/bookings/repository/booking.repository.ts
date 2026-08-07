@@ -109,34 +109,84 @@ class BookingRepository {
 
   /**
    * Get available time slots for a specific date and barber
+   * Generates standard operational slots if custom schedule is unconfigured,
+   * and cross-references active bookings to disable already booked slots.
    */
   async getAvailableSlots(barberId: string, date: string): Promise<TimeSlotAvailability> {
     try {
       if (!barberId || !date) return { date, slots: [] };
 
-      const q = query(
+      // 1. Default operational slots (09:00 - 20:00)
+      const defaultTimeStrings = [
+        '09:00',
+        '10:00',
+        '11:00',
+        '12:00',
+        '13:00',
+        '14:00',
+        '15:00',
+        '16:00',
+        '17:00',
+        '18:00',
+        '19:00',
+        '20:00',
+      ];
+
+      let baseSlots = defaultTimeStrings.map((t, idx) => ({
+        id: `slot-${idx + 1}`,
+        time: t,
+        available: true,
+      }));
+
+      // 2. Fetch custom barber schedule if configured in Firestore
+      const qSchedule = query(
         collection(firestore, 'barberSchedules'),
         where('barberId', '==', barberId),
         where('date', '==', date),
       );
 
-      const snapshot = await getDocs(q);
-      const scheduleDoc = snapshot.docs[0];
-
-      if (!scheduleDoc) {
-        return { date, slots: [] };
+      const scheduleSnap = await getDocs(qSchedule);
+      if (!scheduleSnap.empty && scheduleSnap.docs[0].data()?.availableSlots?.length > 0) {
+        const customSlots = scheduleSnap.docs[0].data().availableSlots;
+        baseSlots = customSlots.map((s: any, idx: number) => ({
+          id: s.id || `slot-${idx + 1}`,
+          time: s.time || s,
+          available: s.available !== undefined ? s.available : true,
+        }));
       }
 
-      const scheduleData = scheduleDoc.data();
+      // 3. Query existing active bookings for this barber & date to disable taken slots
+      const qBookings = query(
+        collection(firestore, 'bookings'),
+        where('barberId', '==', barberId),
+        where('bookingDate', '==', date),
+        where('status', 'in', ['pending', 'accepted', 'in_progress']),
+      );
+
+      const bookingsSnap = await getDocs(qBookings);
+      const bookedTimes = new Set(
+        bookingsSnap.docs.map((d) => d.data().bookingTime).filter(Boolean)
+      );
+
+      const finalSlots = baseSlots.map((slot) => ({
+        ...slot,
+        available: slot.available && !bookedTimes.has(slot.time),
+      }));
+
       return {
         date,
-        slots: scheduleData.availableSlots || [],
+        slots: finalSlots,
       };
     } catch (error: any) {
       if (__DEV__) {
         console.warn('[BookingRepository getAvailableSlots Error]', error?.code, error?.message || error);
       }
-      return { date, slots: [] };
+      // Return default slots as resilient fallback on network error
+      const defaultFallbackSlots = [
+        '09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00'
+      ].map((t, idx) => ({ id: `fallback-${idx}`, time: t, available: true }));
+
+      return { date, slots: defaultFallbackSlots };
     }
   }
 

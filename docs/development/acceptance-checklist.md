@@ -39,10 +39,10 @@ This matrix tracks all 54 screens documented in `docs/figma/screen-index.md` aga
 | 13 | Barber | SCHEDULE MANAGEMENT | 8096:4939 | `src/app/(barber)/(tabs)/schedule.tsx` | Core | Implemented | route audit | Weekly schedule & unavailable dates editor |
 | 14 | Barber | [POP UP] ADD SERVICES | 8120:8662 | `src/features/services/components/ServiceFormModal.tsx` | Core | Implemented | route audit | Service creation & editing modal |
 | 15 | Barber | BARBER - SERVICES | 8116:8322 | `src/app/(barber)/(tabs)/services.tsx` | Core | Implemented | route audit | Barber service catalog management |
-| 16 | Barber | PROFILE BARBER - SUBMISSION | 8187:4758 | `src/app/(barber)/verification/identity.tsx` | Core | Not Started | route audit | Identity document upload step (Batch 03) |
-| 17 | Barber | PROFILE BARBER - LOADING | 8120:8865 | `src/app/(barber)/verification/status.tsx` | Core | Not Started | route audit | Verification pending status state |
-| 18 | Barber | PROFILE BARBER - SUBMISSION | 8116:8153 | `src/app/(barber)/verification/submission.tsx` | Core | Not Started | route audit | Verification submission wizard |
-| 19 | Barber | Terms & Conditions - Barber | 8208:3251 | `src/app/(barber)/verification/terms.tsx` | Core | Not Started | route audit | Barber terms acceptance screen |
+| 16 | Barber | PROFILE BARBER - SUBMISSION | 8187:4758 | `src/app/(barber-onboarding)/documents.tsx` | Core | Implemented | route audit | Identity document upload step (Batch 03) |
+| 17 | Barber | PROFILE BARBER - LOADING | 8120:8865 | `src/app/(barber-onboarding)/status.tsx` | Core | Implemented | route audit | Verification pending status state |
+| 18 | Barber | PROFILE BARBER - SUBMISSION | 8116:8153 | `src/app/(barber-onboarding)/review.tsx` | Core | Implemented | route audit | Verification submission wizard |
+| 19 | Barber | Terms & Conditions - Barber | 8208:3251 | `src/app/(barber-onboarding)/profile.tsx` | Core | Implemented | route audit | Barber terms acceptance & profile step |
 | 20 | Customer | DETAIL BARBER | 8067:5235 | `src/app/(customer)/barber/[barberId].tsx` | Core | Implemented | route audit | Live Firestore barber profile fetch |
 | 21 | Customer | BOOKING - ACTIVE [PENDING] | 8063:5888 | `src/app/(customer)/booking/detail/[bookingId].tsx` | Core | Implemented | route audit | Pending booking detail status state |
 | 22 | Customer | BOOKING OTH - ACTIVE [COMPLETED] OTH | 8242:20768 | `src/app/(customer)/booking/history/[bookingId].tsx` | Core | Implemented | route audit | Completed booking history detail screen |

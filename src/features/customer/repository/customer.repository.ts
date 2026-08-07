@@ -51,11 +51,10 @@ export const customerRepository = {
     try {
       const q = firestoreQuery(
         collection(firestore, 'categories'),
-        where('active', '==', true),
-        orderBy('order', 'asc')
+        where('active', '==', true)
       );
       const snapshot = await withTimeout(getDocs(q), 5000, 'Categories fetch timed out');
-      return snapshot.docs.map((docSnap) => {
+      const categories = snapshot.docs.map((docSnap) => {
         const data = docSnap.data();
         return {
           id: docSnap.id,
@@ -64,6 +63,7 @@ export const customerRepository = {
           order: data.order ?? 0,
         };
       });
+      return categories.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
     } catch (error: any) {
       if (__DEV__ && !isOfflineError(error)) {
         console.warn('[CustomerRepository getCategories Error]', error?.code, error?.message || error);

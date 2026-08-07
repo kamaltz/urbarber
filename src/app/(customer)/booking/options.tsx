@@ -40,9 +40,11 @@ export default function BookingOptionsScreen() {
       params: {
         barberId,
         barberName,
+        serviceId: selectedService.id || 'srv-haircut-standard',
         serviceName: selectedService.name,
         servicePrice: selectedService.price.toString(),
         bookingType: type,
+        date: selectedDate,
       },
     });
   };

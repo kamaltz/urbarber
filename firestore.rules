@@ -47,20 +47,16 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdmin();
 
-      // Customer registration allows creation of own user document with role customer
-      allow create: if isOwner(userId)
-        && request.resource.data.uid == userId
-        && request.resource.data.role == 'customer'
-        && (request.resource.data.status == 'active' || request.resource.data.status == 'pending_verification');
+      // Account initialization writes role/status strictly via trusted backend (Firebase Admin SDK).
+      // Client creation/update denies direct modification of role or status.
+      allow create: if isAdmin();
 
-      // User profile updates for own document: cannot change uid or createdAt; role can transition customer -> barber if status becomes pending_verification
+      // User profile updates for own document: cannot change uid, role, status, or createdAt
       allow update: if (
         isOwner(userId)
         && request.resource.data.uid == resource.data.uid
-        && (
-          (request.resource.data.role == resource.data.role && request.resource.data.status == resource.data.status)
-          || (resource.data.role == 'customer' && request.resource.data.role == 'barber' && request.resource.data.status == 'pending_verification')
-        )
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.status == resource.data.status
         && request.resource.data.createdAt == resource.data.createdAt
       ) || isAdmin();
 
@@ -89,10 +85,8 @@ service cloud.firestore {
     // 3. COLLECTION: barbers
     // =========================================================================
     match /barbers/{barberId} {
-      // Public read for verified & active barbers; owner or admin can read pending profile
-      allow read: if (resource.data.verified == true && resource.data.status == 'active')
-        || isOwner(barberId)
-        || isAdmin();
+      // Public read for barbers so customers can browse & book
+      allow read: if true;
 
       allow create: if isOwner(barberId) || isAdmin();
 
@@ -109,11 +103,33 @@ service cloud.firestore {
     }
 
     // =========================================================================
+    // 3b. COLLECTION: barberRegistrations
+    // =========================================================================
+    match /barberRegistrations/{uid} {
+      allow read: if isOwner(uid) || isAdmin();
+
+      // Barber can create draft onboarding registration
+      allow create: if isOwner(uid)
+        && request.resource.data.verificationStatus == 'draft';
+
+      // Barber can update draft onboarding data before submission; status transitions happen via Vercel Admin SDK
+      allow update: if (
+        isOwner(uid)
+        && resource.data.verificationStatus == 'draft'
+        && request.resource.data.verificationStatus == 'draft'
+        && (!('reviewedAt' in request.resource.data) || request.resource.data.reviewedAt == resource.data.reviewedAt)
+        && (!('reviewedBy' in request.resource.data) || request.resource.data.reviewedBy == resource.data.reviewedBy)
+      ) || isAdmin();
+
+      allow delete: if isAdmin();
+    }
+
+    // =========================================================================
     // 4. COLLECTION: barberServices
     // =========================================================================
     match /barberServices/{serviceId} {
       // Public read active services belonging to barbers
-      allow read: if resource.data.active == true || isOwner(resource.data.barberId) || isAdmin();
+      allow read: if true;
 
       allow create: if isSignedIn()
         && request.resource.data.barberId == uid()
@@ -136,7 +152,7 @@ service cloud.firestore {
     // 6. COLLECTION: barberSchedules
     // =========================================================================
     match /barberSchedules/{barberId} {
-      allow read: if isSignedIn();
+      allow read: if true;
       allow create, update: if isOwner(barberId) || isAdmin();
       allow delete: if isAdmin();
     }

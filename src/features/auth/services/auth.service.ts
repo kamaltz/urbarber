@@ -5,6 +5,7 @@
 
 import { firebaseAuth, firestore } from '@/lib/firebase';
 import { withTimeout } from '@/lib/promise';
+import { accountBootstrapService } from './account-bootstrap.service';
 import {
     createUserWithEmailAndPassword,
     AuthError as FirebaseAuthError,
@@ -90,7 +91,7 @@ export interface SocialAuthResponse {
 
 class FirebaseAuthService {
   /**
-   * Register new customer with Firebase Auth and Firestore users/{uid}
+   * Register new customer account via Firebase Auth + trusted Vercel backend bootstrap
    */
   async registerCustomer(payload: RegisterPayload): Promise<AuthResponse> {
     try {
@@ -115,54 +116,47 @@ class FirebaseAuthService {
         };
       }
 
-      // Create Firebase user
+      // 1. Create Firebase user credential
       const userCredential = await createUserWithEmailAndPassword(
         firebaseAuth,
-        payload.email,
+        payload.email.trim(),
         payload.password,
       );
 
-      const now = new Date().toISOString();
-      const postRegistrationTasks = [
-        updateProfile(userCredential.user, {
-          displayName: payload.fullName,
-        }),
-        sendEmailVerification(userCredential.user),
-        setDoc(doc(firestore, 'users', userCredential.user.uid), {
-          uid: userCredential.user.uid,
-          email: payload.email,
-          name: payload.fullName,
-          phoneNumber: payload.phoneNumber,
-          role: 'customer',
-          status: 'active',
-          createdAt: now,
-          updatedAt: now,
-        }),
-        setDoc(doc(firestore, 'customers', userCredential.user.uid), {
-          userId: userCredential.user.uid,
-          email: payload.email,
-          fullName: payload.fullName,
-          phoneNumber: payload.phoneNumber,
-          profileImage: null,
-          role: 'customer',
-          createdAt: now,
-          updatedAt: now,
-        }),
-      ];
+      // 2. Set Firebase Auth display name & send email verification
+      await updateProfile(userCredential.user, { displayName: payload.fullName.trim() });
+      try {
+        await sendEmailVerification(userCredential.user);
+      } catch (emailErr) {
+        console.warn('Failed to send verification email during customer registration:', emailErr);
+      }
 
-      const results = await Promise.allSettled(
-        postRegistrationTasks.map((task) =>
-          withTimeout(task, 8_000, 'Post-registration sync timed out'),
-        ),
-      );
-
-      results.forEach((result) => {
-        if (result.status === 'rejected') {
-          console.warn('Account created, but post-registration sync failed:', result.reason);
-        }
+      // 3. Invoke trusted Vercel account initialization endpoint
+      const initResult = await accountBootstrapService.initializeAccount({
+        requestedRole: 'customer',
+        name: payload.fullName.trim(),
+        phoneNumber: payload.phoneNumber ? payload.phoneNumber.trim() : undefined,
       });
 
-      return { success: true };
+      if (!initResult.success) {
+        return {
+          success: false,
+          error: initResult.error || { code: 'INIT_FAILED', message: 'Gagal inisialisasi akun backend.' },
+        };
+      }
+
+      // 4. Force refresh ID token & verify claims
+      await userCredential.user.getIdToken(true);
+      const tokenResult = await userCredential.user.getIdTokenResult(false);
+
+      if (tokenResult.claims.app_role !== 'customer') {
+        return {
+          success: false,
+          error: { code: 'CLAIM_VERIFICATION_FAILED', message: 'Verifikasi klaim peran akun gagal.' },
+        };
+      }
+
+      return { success: true, emailVerified: userCredential.user.emailVerified };
     } catch (error: any) {
       const firebaseError = error as FirebaseAuthError;
       const message =
@@ -172,13 +166,13 @@ class FirebaseAuthService {
 
       return {
         success: false,
-        error: { code: firebaseError.code, message },
+        error: { code: firebaseError.code || 'REGISTRATION_FAILED', message },
       };
     }
   }
 
   /**
-   * Register new barber with Firebase Auth and Firestore users/{uid}
+   * Register new barber account via Firebase Auth + trusted Vercel backend bootstrap
    */
   async registerBarber(payload: RegisterBarberPayload): Promise<AuthResponse> {
     try {
@@ -203,65 +197,47 @@ class FirebaseAuthService {
         };
       }
 
+      // 1. Create Firebase user credential
       const userCredential = await createUserWithEmailAndPassword(
         firebaseAuth,
-        payload.email,
+        payload.email.trim(),
         payload.password,
       );
 
-      const isApproved = Boolean(payload.autoApprove);
-      const now = new Date().toISOString();
-      const postRegistrationTasks = [
-        updateProfile(userCredential.user, {
-          displayName: payload.fullName,
-        }),
-        sendEmailVerification(userCredential.user),
-        setDoc(doc(firestore, 'users', userCredential.user.uid), {
-          uid: userCredential.user.uid,
-          email: payload.email,
-          name: payload.fullName,
-          phoneNumber: payload.phoneNumber,
-          role: 'barber',
-          status: isApproved ? 'active' : 'pending_verification',
-          createdAt: now,
-          updatedAt: now,
-        }),
-        setDoc(doc(firestore, 'barbers', userCredential.user.uid), {
-          barberId: userCredential.user.uid,
-          id: userCredential.user.uid,
-          userId: userCredential.user.uid,
-          name: payload.fullName,
-          shopName: payload.shopName || payload.fullName,
-          displayName: payload.fullName,
-          description: payload.description || 'Barbershop profesional & terpercaya.',
-          shopAddress: payload.shopAddress || payload.address || '',
-          address: payload.shopAddress || payload.address || '',
-          phone: payload.phoneNumber,
-          ratingAverage: isApproved ? 5.0 : 0,
-          reviewCount: 0,
-          verified: isApproved,
-          verificationStatus: isApproved ? 'approved' : 'pending',
-          imageUrl: null,
-          serviceTypes: [],
-          status: 'active',
-          createdAt: now,
-          updatedAt: now,
-        }),
-      ];
+      // 2. Set Firebase Auth display name & send email verification
+      await updateProfile(userCredential.user, { displayName: payload.fullName.trim() });
+      try {
+        await sendEmailVerification(userCredential.user);
+      } catch (emailErr) {
+        console.warn('Failed to send verification email during barber registration:', emailErr);
+      }
 
-      const results = await Promise.allSettled(
-        postRegistrationTasks.map((task) =>
-          withTimeout(task, 8_000, 'Post-registration sync timed out'),
-        ),
-      );
-
-      results.forEach((result) => {
-        if (result.status === 'rejected') {
-          console.warn('Barber account created, but post-registration sync failed:', result.reason);
-        }
+      // 3. Invoke trusted Vercel account initialization endpoint
+      const initResult = await accountBootstrapService.initializeAccount({
+        requestedRole: 'barber',
+        name: payload.fullName.trim(),
+        phoneNumber: payload.phoneNumber ? payload.phoneNumber.trim() : undefined,
       });
 
-      return { success: true };
+      if (!initResult.success) {
+        return {
+          success: false,
+          error: initResult.error || { code: 'INIT_FAILED', message: 'Gagal inisialisasi akun backend.' },
+        };
+      }
+
+      // 4. Force refresh ID token & verify claims
+      await userCredential.user.getIdToken(true);
+      const tokenResult = await userCredential.user.getIdTokenResult(false);
+
+      if (tokenResult.claims.app_role !== 'barber') {
+        return {
+          success: false,
+          error: { code: 'CLAIM_VERIFICATION_FAILED', message: 'Verifikasi klaim peran akun gagal.' },
+        };
+      }
+
+      return { success: true, emailVerified: userCredential.user.emailVerified };
     } catch (error: any) {
       const firebaseError = error as FirebaseAuthError;
       const message =
@@ -271,7 +247,7 @@ class FirebaseAuthService {
 
       return {
         success: false,
-        error: { code: firebaseError.code, message },
+        error: { code: firebaseError.code || 'REGISTRATION_FAILED', message },
       };
     }
   }

@@ -2,12 +2,13 @@
  * Hook for managing booking schedule selection state
  */
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { bookingRepository } from '../repository/booking.repository';
 import { TimeSlotAvailability } from '../types/booking';
 
 export function useScheduleSelector(barberId: string) {
-  const [selectedDate, setSelectedDate] = useState<string>('');
+  const todayStr = new Date().toISOString().split('T')[0];
+  const [selectedDate, setSelectedDate] = useState<string>(todayStr);
   const [selectedTime, setSelectedTime] = useState<string>('');
   const [availableSlots, setAvailableSlots] = useState<TimeSlotAvailability | null>(null);
   const [loading, setLoading] = useState(false);
@@ -31,6 +32,17 @@ export function useScheduleSelector(barberId: string) {
     },
     [barberId],
   );
+
+  // Automatically fetch slots for initial selectedDate (today)
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (barberId && selectedDate && !availableSlots && !loading) {
+      timer = setTimeout(() => {
+        fetchAvailableSlots(selectedDate);
+      }, 0);
+    }
+    return () => clearTimeout(timer);
+  }, [barberId, selectedDate, availableSlots, loading, fetchAvailableSlots]);
 
   const handleDateSelect = useCallback(
     (date: string) => {

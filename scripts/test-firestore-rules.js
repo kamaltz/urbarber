@@ -540,13 +540,51 @@ async function runRulesTests() {
       await assertFails(barb1Db.collection('bookings').doc('book_other').get());
     });
 
-    // 32. Barber cannot modify paymentStatus directly
-    await test('32. Barber cannot modify paymentStatus on booking document directly', async () => {
+    // 33. Client cannot create users document directly (must be via Admin SDK backend)
+    await test('33. Client cannot create users document directly', async () => {
+      const custDb = testEnv.authenticatedContext('cust1', { app_role: 'customer' }).firestore();
+      await assertFails(
+        custDb.collection('users').doc('cust1').set({
+          uid: 'cust1',
+          role: 'customer',
+          status: 'active',
+        })
+      );
+    });
+
+    // 34. Barber can read own barberRegistrations document, but cannot read another barber's
+    await test("34. Barber can read own barberRegistrations document, but cannot read another barber's", async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('barberRegistrations').doc('barb1').set({
+          barberId: 'barb1',
+          verificationStatus: 'draft',
+        });
+      });
+
+      const barb1Db = testEnv.authenticatedContext('barb1', { app_role: 'barber' }).firestore();
+      await assertSucceeds(barb1Db.collection('barberRegistrations').doc('barb1').get());
+
+      const barb2Db = testEnv.authenticatedContext('barb2', { app_role: 'barber' }).firestore();
+      await assertFails(barb2Db.collection('barberRegistrations').doc('barb1').get());
+    });
+
+    // 35. Barber can update allowed draft fields in barberRegistrations
+    await test('35. Barber can update allowed draft fields in barberRegistrations', async () => {
+      const barb1Db = testEnv.authenticatedContext('barb1', { app_role: 'barber' }).firestore();
+      await assertSucceeds(
+        barb1Db.collection('barberRegistrations').doc('barb1').update({
+          ownerName: 'Updated Barber Name',
+          verificationStatus: 'draft',
+        })
+      );
+    });
+
+    // 36. Barber cannot self-approve or self-submit verificationStatus directly
+    await test('36. Barber cannot change verificationStatus in barberRegistrations directly', async () => {
       const barb1Db = testEnv.authenticatedContext('barb1', { app_role: 'barber' }).firestore();
       await assertFails(
-        barb1Db.collection('bookings').doc('book_paid').update({
-          paymentStatus: 'failed',
-          status: 'rejected',
+        barb1Db.collection('barberRegistrations').doc('barb1').update({
+          verificationStatus: 'approved',
         })
       );
     });

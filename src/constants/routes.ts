@@ -7,6 +7,15 @@ export const routes = {
     forgotPassword: '/(auth)/forgot-password',
     authentication: '/(auth)/authentication',
     otp: '/(auth)/otp-verification',
+    verificationEmail: '/(auth)/verification-email',
+    completeAccountSetup: '/(auth)/complete-account-setup',
+  },
+  barberOnboarding: {
+    profile: '/(barber-onboarding)/profile',
+    business: '/(barber-onboarding)/business',
+    documents: '/(barber-onboarding)/documents',
+    review: '/(barber-onboarding)/review',
+    status: '/(barber-onboarding)/status',
   },
   barber: {
     home: '/(barber)/home',

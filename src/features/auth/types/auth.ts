@@ -48,6 +48,7 @@ export interface AuthUser {
   role: UserRole;
   status: UserStatus;
   emailVerified: boolean;
+  isUninitialized?: boolean;
 }
 
 export interface AuthContextType {

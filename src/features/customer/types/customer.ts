@@ -94,6 +94,14 @@ export interface CustomerHomeData {
   featuredServices: FeaturedService[];
   barberSuggestions: BarberSuggestion[];
   notificationCount: number;
+  activeBooking?: {
+    id: string;
+    serviceName?: string;
+    barberName?: string;
+    bookingDate?: string;
+    bookingTime?: string;
+    status?: string;
+  } | null;
 }
 
 export interface CustomerExploreData {

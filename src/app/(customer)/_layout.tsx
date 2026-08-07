@@ -7,10 +7,14 @@ export default function CustomerLayout() {
 
   if (loading) return <Loading />;
   if (!isAuthenticated) return <Redirect href="/(auth)/login" />;
-  if (!emailVerified) return <Redirect href="/(auth)/authentication" />;
+  if (user?.isUninitialized) return <Redirect href={"/(auth)/complete-account-setup" as any} />;
+  if (!emailVerified) return <Redirect href={"/(auth)/verification-email" as any} />;
   if (user?.status === 'suspended') return <Redirect href="/(auth)/login" />;
 
   if (role === 'barber') {
+    if (user?.status === 'pending_verification') {
+      return <Redirect href={"/(barber-onboarding)/status" as any} />;
+    }
     return <Redirect href="/(barber)/home" />;
   }
   if (role === 'admin') {

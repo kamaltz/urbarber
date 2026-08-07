@@ -43,7 +43,8 @@ export default function BarberLayout() {
   if (authLoading || profileLoading) return <Loading />;
 
   if (!isAuthenticated) return <Redirect href="/(auth)/login" />;
-  if (!emailVerified) return <Redirect href="/(auth)/authentication" />;
+  if (user?.isUninitialized) return <Redirect href={"/(auth)/complete-account-setup" as any} />;
+  if (!emailVerified) return <Redirect href={"/(auth)/verification-email" as any} />;
 
   if (role === 'customer') return <Redirect href="/(customer)/home" />;
   if (role === 'admin') return <Redirect href="/(admin)/dashboard" />;
@@ -62,48 +63,13 @@ export default function BarberLayout() {
     );
   }
 
-  // Check verification status
-  if (!barberProfile) {
-    return (
-      <SafeAreaView className="flex-1 bg-slate-50 items-center justify-center p-6">
-        <View className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 w-full items-center gap-3">
-          <Text className="text-xl font-bold text-slate-900">Profil Barber Tidak Ditemukan</Text>
-          <Text className="text-slate-600 text-center text-sm">
-            Profil operational barber Anda belum dikonfigurasi secara lengkap.
-          </Text>
-          {profileError ? <Text className="text-red-500 text-xs">{profileError}</Text> : null}
-          <AppButton label="Keluar" onPress={logout} variant="secondary" className="w-full mt-4" />
-        </View>
-      </SafeAreaView>
-    );
+  // Check verification status: non-approved barbers must be routed to onboarding status
+  if (!barberProfile || barberProfile.verificationStatus === 'draft') {
+    return <Redirect href={"/(barber-onboarding)/profile" as any} />;
   }
 
-  if (barberProfile.verificationStatus === 'pending') {
-    return (
-      <SafeAreaView className="flex-1 bg-slate-50 items-center justify-center p-6">
-        <View className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 w-full items-center gap-3">
-          <Text className="text-xl font-bold text-amber-600">Verifikasi Berkas Diproses</Text>
-          <Text className="text-slate-600 text-center text-sm">
-            Pendaftaran akun Master Barber Anda sedang ditinjau oleh tim verifikasi. Anda akan menerima pemberitahuan setelah akun disetujui.
-          </Text>
-          <AppButton label="Keluar" onPress={logout} variant="secondary" className="w-full mt-4" />
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  if (barberProfile.verificationStatus === 'rejected') {
-    return (
-      <SafeAreaView className="flex-1 bg-slate-50 items-center justify-center p-6">
-        <View className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 w-full items-center gap-3">
-          <Text className="text-xl font-bold text-red-600">Verifikasi Ditolak</Text>
-          <Text className="text-slate-600 text-center text-sm">
-            Maaf, permohonan verifikasi akun Master Barber Anda ditolak. Silakan hubungi admin untuk informasi lebih lanjut.
-          </Text>
-          <AppButton label="Keluar" onPress={logout} variant="secondary" className="w-full mt-4" />
-        </View>
-      </SafeAreaView>
-    );
+  if (barberProfile.verificationStatus === 'pending' || barberProfile.verificationStatus === 'rejected') {
+    return <Redirect href={"/(barber-onboarding)/status" as any} />;
   }
 
   return (

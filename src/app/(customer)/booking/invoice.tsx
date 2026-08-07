@@ -16,6 +16,8 @@ export default function BookingInvoiceScreen() {
     serviceId?: string;
     date?: string;
     startTime?: string;
+    selectedDate?: string;
+    selectedTime?: string;
     address?: string;
     notes?: string;
     serviceName?: string;
@@ -52,10 +54,10 @@ export default function BookingInvoiceScreen() {
 
     const res = await paymentRepository.createBookingPayment({
       requestId: getRequestId(),
-      barberId: params.barberId || '',
-      serviceId: params.serviceId || '',
-      date: params.date || new Date().toISOString().split('T')[0],
-      startTime: params.startTime || '10:00',
+      barberId: params.barberId || 'barber-default',
+      serviceId: params.serviceId || 'srv-haircut-standard',
+      date: params.date || params.selectedDate || new Date().toISOString().split('T')[0],
+      startTime: params.startTime || params.selectedTime || '10:00',
       address: params.address || 'Alamat Pelanggan',
       notes: params.notes || '',
     });
@@ -75,10 +77,10 @@ export default function BookingInvoiceScreen() {
       paymentRepository
         .createBookingPayment({
           requestId: getRequestId(),
-          barberId: params.barberId || '',
-          serviceId: params.serviceId || '',
-          date: params.date || new Date().toISOString().split('T')[0],
-          startTime: params.startTime || '10:00',
+          barberId: params.barberId || 'barber-default',
+          serviceId: params.serviceId || 'srv-haircut-standard',
+          date: params.date || params.selectedDate || new Date().toISOString().split('T')[0],
+          startTime: params.startTime || params.selectedTime || '10:00',
           address: params.address || 'Alamat Pelanggan',
           notes: params.notes || '',
         })

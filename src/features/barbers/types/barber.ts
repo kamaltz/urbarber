@@ -3,7 +3,12 @@
  * Defines interfaces for barber operations, services, bookings, and analytics
  */
 
-import type { BookingStatus } from '@/types/domain';
+import type {
+  BarberListingStatus,
+  BarberOnboardingStatus,
+  BarberVerificationStatus,
+  BookingStatus,
+} from '@/types/domain';
 
 export interface BarberProfile {
   barberId: string;
@@ -17,7 +22,10 @@ export interface BarberProfile {
   shopAddress: string;
   shopImageUrl?: string;
   isVerified: boolean;
-  verificationStatus: 'pending' | 'approved' | 'rejected';
+  verificationStatus: BarberVerificationStatus;
+  listingStatus?: BarberListingStatus;
+  onboardingStatus?: BarberOnboardingStatus;
+  status?: string;
   createdAt: string;
   updatedAt: string;
 }

@@ -27,7 +27,7 @@ All features across the application are categorized according to their explicit 
 | **Booking & Slot-Lock** | Core (F-10..F-12) | `code implemented` | `automated test passed` | `deployment pending` | `live test pending` | `firestore.rules` pending Firebase deployment |
 | **Real-Time Text Chat** | Core (F-31) | `code implemented` (UI shell only) | N/A | N/A | `planned` | Firestore `onSnapshot` listeners & rules missing |
 | **Barber Operations** | Core (F-14..F-23) | `code implemented` | `automated test passed` | `deployment pending` | `live test pending` | Status transitions (`accepted`->`in_progress`->`completed`) verified via tests |
-| **Barber Verification** | Core (F-14, F-25) | `planned` | N/A | N/A | `planned` | ID document upload wizard scheduled for Batch 03 |
+| **Barber Verification** | Core (F-14, F-25) | `code implemented` | `automated test passed` | `deployment pending` | `live test pending` | Direct barber registration & onboarding wizard implemented (Batch 03) |
 | **Admin Operations** | Core (F-24..F-30) | `planned` | N/A | N/A | `planned` | Admin queue & management scheduled for Batch 04 |
 | **Location Map Picker** | Preferred Enhancement (E-01) | `code implemented` (Text fallback only) | N/A | N/A | `blocked` | MapLibre picker requires Expo dev build |
 | **Midtrans Sandbox Payment** | Additional Feature (A-01) | `code implemented` (Vercel backend) | `automated test passed` | `deployment pending` | `live test pending` | Vercel deployment & Midtrans webhook setup required |

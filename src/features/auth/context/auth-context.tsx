@@ -2,7 +2,7 @@ import { firebaseAuth, firestore } from '@/lib/firebase';
 import { withTimeout } from '@/lib/promise';
 import { UserRole, UserStatus } from '@/types/domain';
 import { onAuthStateChanged, signOut, User } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import React, { createContext, useCallback, useEffect, useState } from 'react';
 import { AuthContextType, AuthUser } from '../types/auth';
 
@@ -18,8 +18,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let phoneNumber: string | undefined = currentUser.phoneNumber || undefined;
     let photoURL: string | undefined = currentUser.photoURL || undefined;
     let profileImagePath: string | undefined = undefined;
+    let isUninitialized = false;
 
     try {
+      // 1. Read token custom claims
+      const tokenResult = await currentUser.getIdTokenResult(false);
+      if (tokenResult.claims.app_role) {
+        role = tokenResult.claims.app_role as UserRole;
+      }
+
+      // 2. Fetch users/{uid} document from Firestore
       const userDocRef = doc(firestore, 'users', currentUser.uid);
       const userDocSnap = await withTimeout(
         getDoc(userDocRef),
@@ -39,23 +47,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           profileImagePath = data.profileImagePath;
         }
       } else {
-        await withTimeout(
-          setDoc(
-            userDocRef,
-            {
-              uid: currentUser.uid,
-              email: currentUser.email,
-              name: currentUser.displayName || currentUser.email?.split('@')[0] || 'Customer',
-              role: 'customer',
-              status: 'active',
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-            },
-            { merge: true },
-          ),
-          10_000,
-          'Creating the user profile timed out',
-        );
+        // Document does not exist: mark as uninitialized for recovery flow (no silent fallback!)
+        isUninitialized = true;
       }
     } catch (error: any) {
       if (__DEV__) {
@@ -73,6 +66,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       role,
       status,
       emailVerified: currentUser.emailVerified,
+      isUninitialized,
     };
   }, []);
 

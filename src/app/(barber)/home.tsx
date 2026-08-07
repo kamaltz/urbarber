@@ -1,3 +1,4 @@
+import { BarberBottomNavigation } from '@/components/navigation/BarberBottomNavigation';
 import { AppButton } from '@/components/ui/AppButton';
 import { AppCard } from '@/components/ui/AppCard';
 import { Header } from '@/components/ui/Header';
@@ -9,7 +10,7 @@ import type { BarberBooking, BarberProfile } from '@/features/barbers/types/barb
 import { formatCurrency } from '@/utils/formatters';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { RefreshControl, SafeAreaView, ScrollView, Switch, Text, TouchableOpacity, View } from 'react-native';
 
 export default function BarberHomeScreen() {
   const { user, logout } = useAuth();
@@ -95,16 +96,29 @@ export default function BarberHomeScreen() {
     .filter((b) => b.status === 'accepted' || b.status === 'in_progress')
     .slice(0, 5);
 
+  const handleToggleStoreStatus = async (value: boolean) => {
+    if (!barberId || !profile) return;
+    const newStatus = value ? 'active' : 'inactive';
+    setProfile((prev) => (prev ? { ...prev, listingStatus: newStatus as any } : null));
+    try {
+      await barberRepository.updateBarberProfile(barberId, { listingStatus: newStatus } as any);
+    } catch (err) {
+      console.warn('Failed to update listing status:', err);
+    }
+  };
+
   if (loading && !refreshing) return <Loading />;
 
+  const isStoreOpen = profile?.listingStatus === 'active' || (profile?.status as string) === 'active';
+
   return (
-    <View className="flex-1 bg-slate-50">
+    <SafeAreaView className="flex-1 bg-slate-50">
       <Header title="Dashboard Master Barber" showBackButton={false} />
 
       <ScrollView
         className="flex-1 px-4 py-4"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}>
-        {/* Barber Info Header */}
+        {/* Barber Info Header & Store Status Toggle */}
         <AppCard className="mb-4 bg-slate-900 border-0 p-5">
           <View className="flex-row items-center gap-4">
             <View className="w-14 h-14 rounded-full bg-amber-500 items-center justify-center">
@@ -116,13 +130,24 @@ export default function BarberHomeScreen() {
               <Text className="text-white font-bold text-lg">
                 {profile?.shopName || profile?.name || user?.displayName || 'Master Barber'}
               </Text>
-              <Text className="text-slate-400 text-xs mt-0.5">
+              <Text className="text-slate-400 text-xs mt-0.5" numberOfLines={1}>
                 {profile?.shopAddress || user?.email}
               </Text>
               <View className="flex-row items-center gap-1.5 mt-2">
-                <View className="w-2 h-2 rounded-full bg-emerald-400" />
-                <Text className="text-emerald-400 text-xs font-medium">Akun Terverifikasi</Text>
+                <View className={`w-2 h-2 rounded-full ${isStoreOpen ? 'bg-emerald-400' : 'bg-slate-500'}`} />
+                <Text className={`text-xs font-medium ${isStoreOpen ? 'text-emerald-400' : 'text-slate-400'}`}>
+                  {isStoreOpen ? 'Toko Buka • Menerima Booking' : 'Toko Tutup • Offline'}
+                </Text>
               </View>
+            </View>
+            <View className="items-center">
+              <Text className="text-[10px] text-slate-400 font-semibold mb-1">Status Toko</Text>
+              <Switch
+                value={isStoreOpen}
+                onValueChange={handleToggleStoreStatus}
+                trackColor={{ false: '#64748b', true: '#10b981' }}
+                thumbColor="#ffffff"
+              />
             </View>
           </View>
         </AppCard>
@@ -300,6 +325,7 @@ export default function BarberHomeScreen() {
 
         <AppButton label="Keluar Akun" onPress={logout} variant="secondary" className="mb-8 w-full" />
       </ScrollView>
-    </View>
+      <BarberBottomNavigation />
+    </SafeAreaView>
   );
 }

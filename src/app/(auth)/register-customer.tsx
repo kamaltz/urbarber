@@ -5,6 +5,7 @@ import { SocialLoginButton } from '@/features/auth/components/SocialLoginButton'
 import { TermsAgreement } from '@/features/auth/components/TermsAgreement';
 import { authService } from '@/features/auth/services/auth.service';
 import { validateRegisterForm } from '@/features/auth/validation/auth.validation';
+import type { PublicRegistrationRole } from '@/types/domain';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import {
@@ -19,7 +20,7 @@ import {
 } from 'react-native';
 
 export default function RegisterCustomerScreen() {
-  const [selectedRole, setSelectedRole] = useState<'customer' | 'barber'>('customer');
+  const [selectedRole, setSelectedRole] = useState<PublicRegistrationRole>('customer');
 
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -27,11 +28,6 @@ export default function RegisterCustomerScreen() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [acceptedTerms, setAcceptedTerms] = useState(false);
-
-  // Barber specific fields
-  const [shopName, setShopName] = useState('');
-  const [shopAddress, setShopAddress] = useState('');
-  const [autoApprove, setAutoApprove] = useState(false);
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -52,51 +48,39 @@ export default function RegisterCustomerScreen() {
       return;
     }
 
-    if (selectedRole === 'barber' && !shopName.trim()) {
-      setError('Nama Barbershop / Outlet wajib diisi.');
-      return;
-    }
-
     setIsLoading(true);
 
     try {
       if (selectedRole === 'customer') {
         const response = await authService.registerCustomer({
-          fullName,
-          email,
-          phoneNumber,
+          fullName: fullName.trim(),
+          email: email.trim(),
+          phoneNumber: phoneNumber.trim(),
           password,
           acceptedTerms,
         });
 
         if (response.success) {
-          router.push('/(auth)/authentication' as any);
+          router.replace('/(auth)/verification-email' as any);
         } else {
-          setError(response.error?.message || 'Gagal mendaftar');
+          setError(response.error?.message || 'Gagal mendaftar sebagai pelanggan');
         }
       } else {
         const response = await authService.registerBarber({
-          fullName,
-          email,
-          phoneNumber,
+          fullName: fullName.trim(),
+          email: email.trim(),
+          phoneNumber: phoneNumber.trim(),
           password,
-          shopName: shopName.trim(),
-          shopAddress: shopAddress.trim(),
           acceptedTerms,
-          autoApprove,
         });
 
         if (response.success) {
-          if (autoApprove) {
-            router.replace('/(barber)/home' as any);
-          } else {
-            router.push('/(auth)/authentication' as any);
-          }
+          router.replace('/(auth)/verification-email' as any);
         } else {
           setError(response.error?.message || 'Gagal mendaftar sebagai mitra barber.');
         }
       }
-    } catch (err) {
+    } catch (err: any) {
       setError('Terjadi kesalahan saat pendaftaran. Coba lagi.');
     } finally {
       setIsLoading(false);
@@ -121,8 +105,7 @@ export default function RegisterCustomerScreen() {
     phoneNumber.trim().length > 0 &&
     password.length >= 6 &&
     password === confirmPassword &&
-    acceptedTerms &&
-    (selectedRole === 'customer' || shopName.trim().length > 0);
+    acceptedTerms;
 
   return (
     <SafeAreaView className="flex-1 bg-white">
@@ -138,7 +121,7 @@ export default function RegisterCustomerScreen() {
                 description="Pilih peran akun Anda untuk bergabung dengan URBarber"
               />
 
-              {/* Segmented Control for Role Selection */}
+              {/* Role Selection Segmented Control */}
               <View className="flex-row mt-6 bg-slate-100 p-1 rounded-xl border border-slate-200">
                 <TouchableOpacity
                   className={`flex-1 py-2.5 rounded-lg items-center ${
@@ -197,45 +180,6 @@ export default function RegisterCustomerScreen() {
                   keyboardType="phone-pad"
                   editable={!isLoading}
                 />
-
-                {/* Barber Specific Inputs */}
-                {selectedRole === 'barber' ? (
-                  <View className="gap-4 bg-amber-50 p-4 rounded-xl border border-amber-200">
-                    <Text className="font-bold text-amber-900 text-xs uppercase tracking-wider">
-                      Informasi Barbershop / Outlet
-                    </Text>
-
-                    <AppInput
-                      label="Nama Barbershop / Outlet *"
-                      placeholder="Contoh: Crown Barbershop Utama"
-                      value={shopName}
-                      onChangeText={setShopName}
-                      editable={!isLoading}
-                    />
-
-                    <AppInput
-                      label="Alamat Barbershop"
-                      placeholder="Contoh: Jl. Sudirman No. 12, Jakarta"
-                      value={shopAddress}
-                      onChangeText={setShopAddress}
-                      editable={!isLoading}
-                    />
-
-                    <TouchableOpacity
-                      className="flex-row items-center gap-2 mt-1"
-                      onPress={() => setAutoApprove(!autoApprove)}>
-                      <View
-                        className={`w-5 h-5 rounded border items-center justify-center ${
-                          autoApprove ? 'bg-amber-600 border-amber-600' : 'border-slate-400 bg-white'
-                        }`}>
-                        {autoApprove ? <Text className="text-white text-xs font-bold">✓</Text> : null}
-                      </View>
-                      <Text className="text-xs font-semibold text-amber-900">
-                        ⚡ Verifikasi Instan (Demo Mode)
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                ) : null}
 
                 <AppInput
                   label="Password"

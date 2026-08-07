@@ -69,7 +69,7 @@ export default function HomeScreen() {
         contentContainerStyle={{ flexGrow: 1 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={['#D2691E']} />}
       >
-        {/* User Greeting Section */}
+        {/* User Greeting Section with Role Badge */}
         <View className="px-4 pt-6 pb-4">
           <View className="flex-row items-center gap-3">
             <Avatar
@@ -78,15 +78,61 @@ export default function HomeScreen() {
               source={avatarUrl ? { uri: avatarUrl } : undefined}
             />
             <View className="flex-1">
-              <Text className="text-2xl font-bold text-slate-900">
-                Halo, {displayName.split(' ')[0]}! 👋
-              </Text>
-              <Text className="text-sm text-slate-600 mt-1">
-                Siap untuk tampil rapi hari ini?
-              </Text>
+              <View className="flex-row items-center gap-2">
+                <Text className="text-2xl font-bold text-slate-900">
+                  Halo, {displayName.split(' ')[0]}! 👋
+                </Text>
+              </View>
+              <View className="flex-row items-center gap-2 mt-1">
+                <View className="rounded-full bg-amber-100 px-2.5 py-0.5 border border-amber-300">
+                  <Text className="text-[10px] font-bold text-amber-800 uppercase tracking-wider">
+                    👤 Pelanggan
+                  </Text>
+                </View>
+                <Text className="text-xs text-slate-500">Siap tampil rapi?</Text>
+              </View>
             </View>
           </View>
         </View>
+
+        {/* Active Booking Banner (if ongoing appointment exists) */}
+        {homeData?.activeBooking ? (
+          <View className="px-4 pb-4">
+            <Pressable
+              onPress={() =>
+                router.push({
+                  pathname: '/(customer)/booking/detail/[bookingId]',
+                  params: { bookingId: homeData.activeBooking!.id },
+                })
+              }
+              className="rounded-2xl bg-amber-500 p-4 border border-amber-600 shadow-sm"
+            >
+              <View className="flex-row items-center justify-between border-b border-amber-400 pb-2 mb-2">
+                <Text className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                  💈 Pesanan Aktif Anda
+                </Text>
+                <View className="rounded-full bg-slate-900 px-2.5 py-0.5">
+                  <Text className="text-[10px] font-bold text-amber-400 capitalize">
+                    {homeData.activeBooking.status === 'in_progress'
+                      ? 'Sedang Dilayani'
+                      : homeData.activeBooking.status === 'accepted'
+                      ? 'Disetujui'
+                      : 'Menunggu Barber'}
+                  </Text>
+                </View>
+              </View>
+              <Text className="text-base font-extrabold text-slate-900">
+                {homeData.activeBooking.serviceName || 'Layanan Cukur'}
+              </Text>
+              <Text className="text-xs font-semibold text-slate-900 mt-0.5">
+                Barber: {homeData.activeBooking.barberName || 'Master Barber'} • {homeData.activeBooking.bookingDate} {homeData.activeBooking.bookingTime}
+              </Text>
+              <Text className="text-[11px] text-slate-900 underline mt-2 font-bold">
+                Lihat Detail Pesanan & Lokasi ›
+              </Text>
+            </Pressable>
+          </View>
+        ) : null}
 
         {/* Quick Actions */}
         <View className="px-4 pb-4">

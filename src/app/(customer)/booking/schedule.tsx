@@ -3,33 +3,33 @@
  * Customer selects appointment date and time
  */
 
-import { router, useLocalSearchParams } from 'expo-router';
-import {
-    KeyboardAvoidingView,
-    Platform,
-    Pressable,
-    SafeAreaView,
-    ScrollView,
-    Text,
-    View,
-} from 'react-native';
-
 import { AppButton } from '@/components/ui/AppButton';
 import { DatePicker } from '@/features/bookings/components/DatePicker';
 import { PaymentSummary } from '@/features/bookings/components/PaymentSummary';
 import { TimeSlots } from '@/features/bookings/components/TimeSlots';
 import { useScheduleSelector } from '@/features/bookings/hooks/use-schedule-selector';
+import { router, useLocalSearchParams } from 'expo-router';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  SafeAreaView,
+  ScrollView,
+  Text,
+  View,
+} from 'react-native';
 
 export default function BookingScheduleScreen() {
-  const { barberId, barberName, serviceName, servicePrice, bookingType } = useLocalSearchParams<{
+  const { barberId, barberName, serviceId, serviceName, servicePrice, bookingType } = useLocalSearchParams<{
     barberId: string;
     barberName: string;
+    serviceId: string;
     serviceName: string;
     servicePrice: string;
     bookingType: 'home' | 'onsite';
   }>();
 
-  const price = parseInt(servicePrice || '0', 10);
+  const price = parseInt(servicePrice || '50000', 10);
 
   const {
     selectedDate,
@@ -49,13 +49,14 @@ export default function BookingScheduleScreen() {
     router.push({
       pathname: bookingType === 'home' ? '/(customer)/booking/location' : '/(customer)/booking/invoice',
       params: {
-        selectedDate,
-        selectedTime,
         barberId,
         barberName,
+        serviceId: serviceId || 'srv-haircut-standard',
         serviceName,
-        servicePrice,
+        servicePrice: price.toString(),
         bookingType,
+        date: selectedDate,
+        startTime: selectedTime,
       },
     });
   };

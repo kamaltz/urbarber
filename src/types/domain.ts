@@ -1,9 +1,31 @@
-export type UserRole = "customer" | "barber" | "admin";
+export type AppRole = "customer" | "barber" | "admin";
+export type UserRole = AppRole;
+
+export type PublicRegistrationRole = "customer" | "barber";
 
 export type UserStatus =
   | "active"
   | "pending_verification"
   | "suspended";
+
+export type BarberVerificationStatus =
+  | "draft"
+  | "pending"
+  | "approved"
+  | "rejected";
+
+export type BarberListingStatus =
+  | "inactive"
+  | "active"
+  | "suspended";
+
+export type BarberOnboardingStatus =
+  | "account_created"
+  | "profile_incomplete"
+  | "documents_incomplete"
+  | "ready_to_submit"
+  | "submitted"
+  | "completed";
 
 export type BookingStatus =
   | "pending"

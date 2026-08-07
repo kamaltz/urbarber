@@ -54,7 +54,7 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
-    "doctor": "npx expo-doctor",
+    "doctor": "expo-doctor",
     "test": "node ./scripts/test-midtrans-payment.js",
     "check:secrets": "powershell -ExecutionPolicy Bypass ./scripts/check-secrets.ps1",
     "test:rules": "node ./scripts/test-firestore-rules.js",
