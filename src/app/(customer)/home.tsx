@@ -127,9 +127,25 @@ export default function HomeScreen() {
               <Text className="text-xs font-semibold text-slate-900 mt-0.5">
                 Barber: {homeData.activeBooking.barberName || 'Master Barber'} • {homeData.activeBooking.bookingDate} {homeData.activeBooking.bookingTime}
               </Text>
-              <Text className="text-[11px] text-slate-900 underline mt-2 font-bold">
-                Lihat Detail Pesanan & Lokasi ›
-              </Text>
+              <View className="flex-row items-center justify-between mt-3">
+                <Text className="text-[11px] text-slate-900 underline font-bold">
+                  Lihat Detail Pesanan ›
+                </Text>
+                {['accepted', 'in_progress'].includes(homeData.activeBooking.status || '') && (
+                  <Pressable
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      router.push({
+                        pathname: '/(customer)/booking/tracking/[bookingId]',
+                        params: { bookingId: String(homeData.activeBooking?.id || '') },
+                      });
+                    }}
+                    className="rounded-lg bg-slate-900 px-3 py-1.5 border border-slate-800"
+                  >
+                    <Text className="text-xs font-bold text-amber-400">📍 Lacak Barber</Text>
+                  </Pressable>
+                )}
+              </View>
             </Pressable>
           </View>
         ) : null}

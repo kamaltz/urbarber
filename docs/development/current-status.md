@@ -21,15 +21,16 @@ All features across the application are categorized according to their explicit 
 | Subsystem | Scope Classification | Implementation Status | Automated Test | Deployment Status | Live Test Status | Blockers / Notes |
 |---|---|---|---|---|---|---|
 | **Batch 00 Consolidation** | Infrastructure | `code implemented` | `automated test passed` | N/A | `live test pending` | Consolidated in history (Commit `ea3e50a`) |
-| **Auth & Claims** | Core (F-01, F-02) | `code implemented` | N/A | N/A | `live test pending` | Web persistence fallbacks added (`cdfd3bc`) |
+| **Auth & Claims** | Core (F-01, F-02) | `code implemented` | `automated test passed` | N/A | `live test pending` | Web persistence fallbacks & claims set |
 | **Storage RLS & Avatars** | Core (F-03) | `code implemented` | N/A | `deployment pending` | `live test pending` | `storage-policies.sql` pending Supabase deployment |
-| **Customer Discovery** | Core (F-04..F-09) | `code implemented` | N/A | N/A | `live test pending` | Text address input active |
-| **Booking & Slot-Lock** | Core (F-10..F-12) | `code implemented` | `automated test passed` | `deployment pending` | `live test pending` | `firestore.rules` pending Firebase deployment |
-| **Real-Time Text Chat** | Core (F-31) | `code implemented` (UI shell only) | N/A | N/A | `planned` | Firestore `onSnapshot` listeners & rules missing |
-| **Barber Operations** | Core (F-14..F-23) | `code implemented` | `automated test passed` | `deployment pending` | `live test pending` | Status transitions (`accepted`->`in_progress`->`completed`) verified via tests |
+| **Geospatial Customer Discovery** | Core (F-04..F-09) | `code implemented` | `automated test passed` | N/A | `live test pending` | Geohash bounds, radius filter & OpenFreeMap integrated (Batch 04) |
+| **Booking & Slot-Lock** | Core (F-10..F-12) | `code implemented` | `automated test passed` | `deployment pending` | `live test pending` | Pure slot engine & transaction guard implemented (Batch 04) |
+| **Foreground Order Tracking** | Core (F-32) | `code implemented` | `automated test passed` | `deployment pending` | `live test pending` | `bookingTracking` Firestore rules & Vercel lifecycle API ready (Batch 04) |
+| **Real-Time Text Chat** | Core (F-31) | `code implemented` (UI shell only) | N/A | N/A | `planned` | Firestore `onSnapshot` listeners & rules scheduled for Batch 05 |
+| **Barber Operations & Schedule** | Core (F-14..F-23) | `code implemented` | `automated test passed` | `deployment pending` | `live test pending` | Explicit schedule confirmation required (`SCHEDULE_NOT_CONFIGURED` guard) |
 | **Barber Verification** | Core (F-14, F-25) | `code implemented` | `automated test passed` | `deployment pending` | `live test pending` | Direct barber registration & onboarding wizard implemented (Batch 03) |
-| **Admin Operations** | Core (F-24..F-30) | `planned` | N/A | N/A | `planned` | Admin queue & management scheduled for Batch 04 |
-| **Location Map Picker** | Preferred Enhancement (E-01) | `code implemented` (Text fallback only) | N/A | N/A | `blocked` | MapLibre picker requires Expo dev build |
+| **Admin Operations** | Core (F-24..F-30) | `planned` | N/A | N/A | `planned` | Admin queue & management scheduled for Batch 05 |
+| **Location Map Picker** | Preferred Enhancement (E-01) | `code implemented` | `automated test passed` | N/A | `live test pending` | MapLibre + OpenFreeMap tiles configured with text fallback |
 | **Midtrans Sandbox Payment** | Additional Feature (A-01) | `code implemented` (Vercel backend) | `automated test passed` | `deployment pending` | `live test pending` | Vercel deployment & Midtrans webhook setup required |
 
 ---

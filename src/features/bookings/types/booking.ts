@@ -51,6 +51,14 @@ export interface Booking {
   status: BookingStatus;
   paymentStatus?: DomainPaymentStatus;
   bookingType: BookingType;
+  serviceLocationType?: 'barbershop' | 'customer_home';
+  serviceAddress?: string;
+  serviceLocation?: {
+    latitude: number;
+    longitude: number;
+  };
+  locationSource?: 'manual' | 'current_location' | 'map_pin';
+  distanceKm?: number;
   scheduledAt: string; // ISO date
   scheduledTime: string; // HH:MM format
   totalPrice: number;
@@ -62,6 +70,25 @@ export interface Booking {
   paymentMethod?: PaymentMethod;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface BookingTracking {
+  bookingId: string;
+  customerId: string;
+  barberId: string;
+  trackingStatus: 'inactive' | 'en_route' | 'arrived' | 'stopped';
+  isActive: boolean;
+  location?: {
+    latitude: number;
+    longitude: number;
+  };
+  accuracy?: number;
+  heading?: number;
+  speed?: number;
+  startedAt?: string;
+  updatedAt?: string;
+  stoppedAt?: string;
+  expiresAt?: string;
 }
 
 export interface BookingReview {

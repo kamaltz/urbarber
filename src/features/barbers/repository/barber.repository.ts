@@ -18,17 +18,18 @@ import {
     where,
 } from 'firebase/firestore';
 import type {
-    BarberAddServiceRequest,
-    BarberAnalytics,
-    BarberBooking,
-    BarberBookingStatusSummary,
-    BarberDashboardData,
-    BarberProfile,
-    BarberReview,
-    BarberService,
-    BarberWeeklySchedule,
-    UpdateBarberProfileRequest,
-    UpdateBarberScheduleRequest,
+  BarberAddServiceRequest,
+  BarberAnalytics,
+  BarberBooking,
+  BarberBookingStatusSummary,
+  BarberDashboardData,
+  BarberProfile,
+  BarberReview,
+  BarberScheduleDay,
+  BarberService,
+  BarberWeeklySchedule,
+  UpdateBarberProfileRequest,
+  UpdateBarberScheduleRequest,
 } from '../types/barber';
 
 export const barberRepository = {
@@ -393,7 +394,7 @@ export const barberRepository = {
   },
 
   /**
-   * Get weekly schedule
+   * Get weekly schedule with explicit confirmation check
    */
   async getWeeklySchedule(barberId: string): Promise<BarberWeeklySchedule | null> {
     try {
@@ -403,10 +404,26 @@ export const barberRepository = {
       const snapshot = await getDoc(docRef);
 
       if (!snapshot.exists()) {
-        return null;
+        return {
+          barberId,
+          schedule: [],
+          isConfigured: false,
+          isConfirmed: false,
+          scheduleSource: 'custom',
+          lastUpdated: new Date().toISOString(),
+        };
       }
 
-      return snapshot.data() as BarberWeeklySchedule;
+      const data = snapshot.data();
+      return {
+        barberId,
+        schedule: data.schedule || [],
+        isConfigured: !!data.isConfigured,
+        isConfirmed: !!data.isConfirmed,
+        scheduleSource: data.scheduleSource || 'custom',
+        unavailableDates: data.unavailableDates || [],
+        lastUpdated: data.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+      };
     } catch (error: any) {
       if (__DEV__) {
         console.warn('[BarberRepository getWeeklySchedule Error]', error?.code, error?.message || error);
@@ -416,7 +433,7 @@ export const barberRepository = {
   },
 
   /**
-   * Update weekly schedule
+   * Update and explicitly confirm weekly schedule
    */
   async updateWeeklySchedule(
     barberId: string,
@@ -430,7 +447,11 @@ export const barberRepository = {
       await setDoc(
         doc(firestore, 'barberSchedules', barberId),
         {
+          barberId,
           schedule: data.schedule,
+          isConfigured: true,
+          isConfirmed: true,
+          scheduleSource: 'custom',
           ...(data.unavailableDates ? { unavailableDates: data.unavailableDates } : {}),
           updatedAt: Timestamp.now(),
         },
@@ -604,7 +625,7 @@ export const barberRepository = {
         return { success: false, error: { message: 'Missing barber ID' } };
       }
 
-      const analytics = await this.getBarberAnalytics(barberId);
+      const _analytics = await this.getBarberAnalytics(barberId);
 
       const reportUrl = `gs://your-bucket/reports/barber-${barberId}-${Date.now()}.${format}`;
 
@@ -616,6 +637,108 @@ export const barberRepository = {
       return {
         success: false,
         error: { message: error?.message || 'Failed to export analytics report' },
+      };
+    }
+  },
+
+  /**
+   * Alias for getWeeklySchedule
+   */
+  async getBarberSchedule(barberId: string): Promise<BarberWeeklySchedule | null> {
+    return this.getWeeklySchedule(barberId);
+  },
+
+  /**
+   * Alias for updateWeeklySchedule
+   */
+  async saveBarberSchedule(
+    barberId: string,
+    schedule: BarberScheduleDay[],
+    unavailableDates: string[] = [],
+    scheduleSource: 'custom' | 'confirmed_default' = 'custom'
+  ): Promise<{ success: boolean; error?: { message: string } }> {
+    return this.updateWeeklySchedule(barberId, { schedule, unavailableDates });
+  },
+
+  /**
+   * Update barber location configuration & compute geohash
+   */
+  async updateBarberLocation(
+    barberId: string,
+    locationData: {
+      latitude: number;
+      longitude: number;
+      shopAddress: string;
+      serviceRadiusKm?: number;
+      acceptsAtBarbershop?: boolean;
+      acceptsHomeService?: boolean;
+      homeServiceTravelBufferMinutes?: number;
+      acceptingNewBookings?: boolean;
+    }
+  ): Promise<{ success: boolean; error?: { message: string } }> {
+    try {
+      if (!barberId || !locationData) {
+        return { success: false, error: { message: 'Missing location data' } };
+      }
+
+      const { getGeohash } = await import('@/features/location/utils/geo.utils');
+      const geohash = getGeohash(locationData.latitude, locationData.longitude);
+
+      const updatePayload: any = {
+        location: {
+          latitude: locationData.latitude,
+          longitude: locationData.longitude,
+        },
+        geohash,
+        shopAddress: locationData.shopAddress,
+        updatedAt: Timestamp.now(),
+      };
+
+      if (locationData.serviceRadiusKm !== undefined) updatePayload.serviceRadiusKm = locationData.serviceRadiusKm;
+      if (locationData.acceptsAtBarbershop !== undefined) updatePayload.acceptsAtBarbershop = locationData.acceptsAtBarbershop;
+      if (locationData.acceptsHomeService !== undefined) updatePayload.acceptsHomeService = locationData.acceptsHomeService;
+      if (locationData.homeServiceTravelBufferMinutes !== undefined) updatePayload.homeServiceTravelBufferMinutes = locationData.homeServiceTravelBufferMinutes;
+      if (locationData.acceptingNewBookings !== undefined) updatePayload.acceptingNewBookings = locationData.acceptingNewBookings;
+
+      await updateDoc(doc(firestore, 'barbers', barberId), updatePayload);
+
+      return { success: true };
+    } catch (error: any) {
+      if (__DEV__) {
+        console.warn('[BarberRepository updateBarberLocation Error]', error?.code, error?.message || error);
+      }
+      return {
+        success: false,
+        error: { message: error?.message || 'Gagal mengupdate lokasi barber' },
+      };
+    }
+  },
+
+  /**
+   * Toggle barber accepting new bookings status
+   */
+  async toggleAcceptingNewBookings(
+    barberId: string,
+    accepting: boolean
+  ): Promise<{ success: boolean; error?: { message: string } }> {
+    try {
+      if (!barberId) {
+        return { success: false, error: { message: 'Missing barber ID' } };
+      }
+
+      await updateDoc(doc(firestore, 'barbers', barberId), {
+        acceptingNewBookings: accepting,
+        updatedAt: Timestamp.now(),
+      });
+
+      return { success: true };
+    } catch (error: any) {
+      if (__DEV__) {
+        console.warn('[BarberRepository toggleAcceptingNewBookings Error]', error?.code, error?.message || error);
+      }
+      return {
+        success: false,
+        error: { message: error?.message || 'Gagal mengupdate status menerima pesanan' },
       };
     }
   },

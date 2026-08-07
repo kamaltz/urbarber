@@ -21,6 +21,16 @@ export interface BarberProfile {
   shopDescription: string;
   shopAddress: string;
   shopImageUrl?: string;
+  location?: {
+    latitude: number;
+    longitude: number;
+  };
+  geohash?: string;
+  serviceRadiusKm?: number;
+  acceptsAtBarbershop?: boolean;
+  acceptsHomeService?: boolean;
+  homeServiceTravelBufferMinutes?: number;
+  acceptingNewBookings?: boolean;
   isVerified: boolean;
   verificationStatus: BarberVerificationStatus;
   listingStatus?: BarberListingStatus;
@@ -57,15 +67,21 @@ export interface BarberBooking {
 }
 
 export interface BarberScheduleDay {
-  dayOfWeek: 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday';
+  dayOfWeek: 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday' | string;
   isOpen: boolean;
   startTime?: string; // HH:MM format
   endTime?: string; // HH:MM format
+  openTime?: string;
+  closeTime?: string;
 }
 
 export interface BarberWeeklySchedule {
   barberId: string;
   schedule: BarberScheduleDay[];
+  isConfigured: boolean;
+  isConfirmed: boolean;
+  scheduleSource: 'custom' | 'confirmed_default';
+  unavailableDates?: string[];
   lastUpdated: string;
 }
 

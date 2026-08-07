@@ -233,6 +233,27 @@ service cloud.firestore {
     }
 
     // =========================================================================
+    // 7d. COLLECTION: bookingTracking
+    // =========================================================================
+    match /bookingTracking/{bookingId} {
+      // Assigned customer, assigned barber, or admin can read tracking data
+      allow read: if isOwner(resource.data.customerId)
+        || isOwner(resource.data.barberId)
+        || isAdmin();
+
+      // Only the assigned Barber can write foreground location updates for home-service bookings
+      allow create, update: if isSignedIn()
+        && isOwner(request.resource.data.barberId)
+        && request.resource.data.bookingId == bookingId
+        && request.resource.data.location.latitude >= -90.0
+        && request.resource.data.location.latitude <= 90.0
+        && request.resource.data.location.longitude >= -180.0
+        && request.resource.data.location.longitude <= 180.0;
+
+      allow delete: if isAdmin();
+    }
+
+    // =========================================================================
     // 8. COLLECTION: reviews
     // =========================================================================
     match /reviews/{reviewId} {

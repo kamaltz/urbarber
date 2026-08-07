@@ -295,31 +295,56 @@ export default function BarberHomeScreen() {
           </AppCard>
         ) : (
           <View className="gap-2 mb-6">
-            {upcomingBookings.map((b) => (
-              <TouchableOpacity
-                key={b.bookingId}
-                className="bg-white p-4 rounded-xl border border-slate-200 flex-row items-center justify-between"
-                onPress={() => router.push(`/(barber)/booking/${b.bookingId}` as any)}>
-                <View className="flex-1">
-                  <Text className="font-bold text-slate-900 text-sm">
-                    {b.customerName || 'Pelanggan'}
-                  </Text>
-                  <Text className="text-slate-500 text-xs mt-0.5">
-                    {b.bookingDate} • Jam {b.bookingTime}
-                  </Text>
-                </View>
-                <View className="items-end">
-                  <Text className="font-bold text-slate-900 text-sm">
-                    {formatCurrency(b.totalAmount || (b as any).totalPrice || 0)}
-                  </Text>
-                  <View className="bg-sky-100 px-2 py-0.5 rounded-full mt-1">
-                    <Text className="text-sky-700 font-semibold text-[10px]">
-                      {b.status === 'in_progress' ? 'Dalam Proses' : 'Disetujui'}
-                    </Text>
+            {upcomingBookings.map((b) => {
+              const isHome = (b as any).serviceLocationType === 'customer_home' || (b as any).bookingType === 'home';
+              return (
+                <TouchableOpacity
+                  key={b.bookingId}
+                  className="bg-white p-4 rounded-xl border border-slate-200"
+                  onPress={() => router.push(`/(barber)/booking/${b.bookingId}` as any)}>
+                  <View className="flex-row items-center justify-between">
+                    <View className="flex-1">
+                      <Text className="font-bold text-slate-900 text-sm">
+                        {b.customerName || 'Pelanggan'}
+                      </Text>
+                      <Text className="text-slate-500 text-xs mt-0.5">
+                        {b.bookingDate} • Jam {b.bookingTime} {isHome ? '• 🏠 Cukur di Rumah' : '• 💈 Barber Shop'}
+                      </Text>
+                    </View>
+                    <View className="items-end">
+                      <Text className="font-bold text-slate-900 text-sm">
+                        {formatCurrency(b.totalAmount || (b as any).totalPrice || 0)}
+                      </Text>
+                      <View className="bg-sky-100 px-2 py-0.5 rounded-full mt-1">
+                        <Text className="text-sky-700 font-semibold text-[10px]">
+                          {b.status === 'in_progress' ? 'Dalam Proses' : 'Disetujui'}
+                        </Text>
+                      </View>
+                    </View>
                   </View>
-                </View>
-              </TouchableOpacity>
-            ))}
+
+                  {isHome && b.status === 'accepted' && (
+                    <View className="mt-3 pt-3 border-t border-slate-100 flex-row justify-end gap-2">
+                      <TouchableOpacity
+                        onPress={async (e) => {
+                          e.stopPropagation();
+                          const { trackingService } = await import('@/features/location/services/tracking.service');
+                          const res = await trackingService.startBarberTracking(b.bookingId, b.customerId, barberId);
+                          if (res.success) {
+                            alert('Berhasil memulai pelacakan lokasi keberangkatan.');
+                          } else {
+                            alert(res.error || 'Gagal memulai pelacakan.');
+                          }
+                        }}
+                        className="rounded-lg bg-emerald-600 px-3 py-1.5"
+                      >
+                        <Text className="text-xs font-bold text-white">🛵 Berangkat ke Lokasi</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
           </View>
         )}
 

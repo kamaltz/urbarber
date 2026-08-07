@@ -4,17 +4,20 @@
  */
 
 import {
-    addDoc,
-    collection,
-    doc,
-    getDoc,
-    getDocs,
-    query,
-    Timestamp,
-    updateDoc,
-    where,
+  addDoc,
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  runTransaction,
+  Timestamp,
+  updateDoc,
+  where,
 } from 'firebase/firestore';
 import { firestore } from '@/lib/firebase';
+import { barberRepository } from '@/features/barbers/repository/barber.repository';
+import { generateTimeSlots } from '@/features/barbers/utils/slot-generator';
 import { mapLegacyBookingStatus, BookingStatus } from '@/types/domain';
 import { Booking, BookingReview, CouponCode, TimeSlotAvailability } from '../types/booking';
 
@@ -109,89 +112,107 @@ class BookingRepository {
 
   /**
    * Get available time slots for a specific date and barber
-   * Generates standard operational slots if custom schedule is unconfigured,
-   * and cross-references active bookings to disable already booked slots.
+  /**
+   * Get available time slots for a specific date and barber.
+   * Enforces explicit schedule confirmation rules (Section B) and pure slot generation (Section C).
    */
-  async getAvailableSlots(barberId: string, date: string): Promise<TimeSlotAvailability> {
+  async getAvailableSlots(
+    barberId: string,
+    date: string,
+    options?: { serviceDurationMinutes?: number; isHomeService?: boolean }
+  ): Promise<TimeSlotAvailability & { error?: string }> {
     try {
       if (!barberId || !date) return { date, slots: [] };
 
-      // 1. Default operational slots (09:00 - 20:00)
-      const defaultTimeStrings = [
-        '09:00',
-        '10:00',
-        '11:00',
-        '12:00',
-        '13:00',
-        '14:00',
-        '15:00',
-        '16:00',
-        '17:00',
-        '18:00',
-        '19:00',
-        '20:00',
-      ];
+      // 1. Fetch barber schedule document
+      const scheduleDoc = await barberRepository.getBarberSchedule(barberId);
 
-      let baseSlots = defaultTimeStrings.map((t, idx) => ({
-        id: `slot-${idx + 1}`,
-        time: t,
-        available: true,
-      }));
-
-      // 2. Fetch custom barber schedule if configured in Firestore
-      const qSchedule = query(
-        collection(firestore, 'barberSchedules'),
-        where('barberId', '==', barberId),
-        where('date', '==', date),
-      );
-
-      const scheduleSnap = await getDocs(qSchedule);
-      if (!scheduleSnap.empty && scheduleSnap.docs[0].data()?.availableSlots?.length > 0) {
-        const customSlots = scheduleSnap.docs[0].data().availableSlots;
-        baseSlots = customSlots.map((s: any, idx: number) => ({
-          id: s.id || `slot-${idx + 1}`,
-          time: s.time || s,
-          available: s.available !== undefined ? s.available : true,
-        }));
+      // Section B: A missing or unconfirmed schedule MUST return SCHEDULE_NOT_CONFIGURED
+      if (!scheduleDoc || !scheduleDoc.isConfirmed || !scheduleDoc.isConfigured) {
+        return {
+          date,
+          slots: [],
+          error: 'SCHEDULE_NOT_CONFIGURED',
+        };
       }
 
-      // 3. Query existing active bookings for this barber & date to disable taken slots
+      // 2. Fetch barber profile for acceptingNewBookings & homeServiceTravelBufferMinutes
+      const profile = await barberRepository.getBarberProfile(barberId);
+      const acceptingNewBookings = profile?.acceptingNewBookings ?? true;
+      const travelBufferMinutes = profile?.homeServiceTravelBufferMinutes || 15;
+
+      // 3. Map date string (YYYY-MM-DD) to day of week in English
+      const [year, month, day] = date.split('-').map(Number);
+      const d = new Date(year, month - 1, day);
+      const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      const dayOfWeek = dayNames[d.getDay()];
+
+      const dayConfig = scheduleDoc.schedule.find(
+        (s) => s.dayOfWeek.toLowerCase() === dayOfWeek.toLowerCase()
+      );
+
+      const workingHours = dayConfig
+        ? {
+            isOpen: dayConfig.isOpen,
+            openTime: dayConfig.startTime || dayConfig.openTime || '09:00',
+            closeTime: dayConfig.endTime || dayConfig.closeTime || '18:00',
+          }
+        : { isOpen: false, openTime: '09:00', closeTime: '18:00' };
+
+      // 4. Query existing active bookings for this barber & date
       const qBookings = query(
         collection(firestore, 'bookings'),
         where('barberId', '==', barberId),
-        where('bookingDate', '==', date),
-        where('status', 'in', ['pending', 'accepted', 'in_progress']),
+        where('status', 'in', ['pending', 'accepted', 'in_progress'])
       );
 
       const bookingsSnap = await getDocs(qBookings);
-      const bookedTimes = new Set(
-        bookingsSnap.docs.map((d) => d.data().bookingTime).filter(Boolean)
-      );
+      const existingBookings = bookingsSnap.docs
+        .map((docSnap) => {
+          const bData = docSnap.data();
+          const bDate = bData.date || bData.bookingDate || bData.scheduledAt?.split('T')?.[0];
+          if (bDate !== date) return null;
+          return {
+            startTime: bData.startTime || bData.scheduledTime || '00:00',
+            durationMinutes: bData.durationMinutes || options?.serviceDurationMinutes || 45,
+            status: bData.status,
+          };
+        })
+        .filter(Boolean) as any[];
 
-      const finalSlots = baseSlots.map((slot) => ({
-        ...slot,
-        available: slot.available && !bookedTimes.has(slot.time),
-      }));
+      // 5. Generate slots using pure slot generator engine
+      const generatedSlots = generateTimeSlots({
+        date,
+        workingHours,
+        serviceDurationMinutes: options?.serviceDurationMinutes || 45,
+        slotIntervalMinutes: 30,
+        unavailableDates: scheduleDoc.unavailableDates || [],
+        existingBookings,
+        homeServiceTravelBufferMinutes: travelBufferMinutes,
+        acceptingNewBookings,
+        isHomeService: options?.isHomeService || false,
+        timeZone: 'Asia/Jakarta',
+      });
 
       return {
         date,
-        slots: finalSlots,
+        slots: generatedSlots.map((s) => ({
+          id: s.id,
+          time: s.time,
+          available: s.available,
+        })),
       };
     } catch (error: any) {
       if (__DEV__) {
         console.warn('[BookingRepository getAvailableSlots Error]', error?.code, error?.message || error);
       }
-      // Return default slots as resilient fallback on network error
-      const defaultFallbackSlots = [
-        '09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00'
-      ].map((t, idx) => ({ id: `fallback-${idx}`, time: t, available: true }));
-
-      return { date, slots: defaultFallbackSlots };
+      return { date, slots: [] };
     }
   }
 
   /**
    * Create a new booking (initial status strictly 'pending')
+   * Uses Firestore transaction to enforce slot-lock availability concurrently (Section D).
    */
   async createBooking(bookingData: any): Promise<{ success: boolean; bookingId?: string; error?: any }> {
     try {
@@ -202,20 +223,60 @@ class BookingRepository {
         };
       }
 
-      const booking = {
-        ...bookingData,
-        status: 'pending',
-        createdAt: Timestamp.now(),
-        updatedAt: Timestamp.now(),
-      };
+      const targetDate = bookingData.date || bookingData.bookingDate || bookingData.scheduledAt?.split('T')?.[0];
+      const targetTime = bookingData.startTime || bookingData.scheduledTime;
 
-      const docRef = await addDoc(collection(firestore, 'bookings'), booking);
+      // Execute atomic transaction check for concurrent slot locking
+      let newBookingId = '';
+
+      await runTransaction(firestore, async (transaction) => {
+        // Query existing active bookings for the same barber & date
+        const qBookings = query(
+          collection(firestore, 'bookings'),
+          where('barberId', '==', bookingData.barberId),
+          where('status', 'in', ['pending', 'accepted', 'in_progress'])
+        );
+
+        const snapshot = await getDocs(qBookings);
+        const conflictingDoc = snapshot.docs.find((docSnap) => {
+          const data = docSnap.data();
+          const bDate = data.date || data.bookingDate || data.scheduledAt?.split('T')?.[0];
+          const bTime = data.startTime || data.scheduledTime;
+          return bDate === targetDate && bTime === targetTime;
+        });
+
+        if (conflictingDoc) {
+          throw new Error('SLOT_ALREADY_BOOKED');
+        }
+
+        const newDocRef = doc(collection(firestore, 'bookings'));
+        newBookingId = newDocRef.id;
+
+        const bookingPayload = {
+          ...bookingData,
+          id: newBookingId,
+          status: 'pending',
+          createdAt: Timestamp.now(),
+          updatedAt: Timestamp.now(),
+        };
+
+        transaction.set(newDocRef, bookingPayload);
+      });
 
       return {
         success: true,
-        bookingId: docRef.id,
+        bookingId: newBookingId,
       };
     } catch (error: any) {
+      if (error?.message === 'SLOT_ALREADY_BOOKED') {
+        return {
+          success: false,
+          error: {
+            code: 'SLOT_ALREADY_BOOKED',
+            message: 'Slot waktu ini baru saja dibooking oleh pelanggan lain. Silakan pilih waktu lain.',
+          },
+        };
+      }
       if (__DEV__) {
         console.warn('[BookingRepository createBooking Error]', error?.code, error?.message || error);
       }

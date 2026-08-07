@@ -191,6 +191,9 @@ export const MOCK_BARBER_BOOKING_SUMMARY: BarberBookingStatusSummary = {
 
 export const MOCK_BARBER_WEEKLY_SCHEDULE: BarberWeeklySchedule = {
   barberId: MOCK_BARBER_ID,
+  isConfigured: true,
+  isConfirmed: true,
+  scheduleSource: 'custom',
   schedule: [
     { dayOfWeek: 'Monday', isOpen: true, startTime: '08:00', endTime: '17:00' },
     { dayOfWeek: 'Tuesday', isOpen: true, startTime: '08:00', endTime: '17:00' },

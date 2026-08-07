@@ -34,7 +34,14 @@
           "imageWidth": 76
         }
       ],
-      "expo-image"
+      "expo-image",
+      "@maplibre/maplibre-react-native",
+      [
+        "expo-location",
+        {
+          "locationForegroundPermission": "Aplikasi URBarber memerlukan akses lokasi untuk menemukan Barber terdekat dan melacak layanan cukur di rumah."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
