@@ -21,7 +21,7 @@ export const routes = {
     home: '/(barber)/home',
   },
   admin: {
-    dashboard: '/(admin)/dashboard',
+    webOnly: '/(auth)/admin-web-only',
   },
   customer: {
     home: '/(customer)/home',

@@ -5,7 +5,8 @@ import { barberRepository } from '@/features/barbers/repository/barber.repositor
 import type { BarberProfile } from '@/features/barbers/types/barber';
 import { router, Stack } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { SafeAreaView, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function BarberLayout() {
   const { isAuthenticated, emailVerified, user, role, loading: authLoading, logout } = useAuth();
@@ -53,7 +54,7 @@ export default function BarberLayout() {
     else if (user?.isUninitialized) dest = '/(auth)/complete-account-setup';
     else if (!emailVerified) dest = '/(auth)/verification-email';
     else if (role === 'customer') dest = '/(customer)/home';
-    else if (role === 'admin') dest = '/(admin)/dashboard';
+    else if (role === 'admin') dest = '/(auth)/admin-web-only';
     else if (user?.status === 'suspended') return; // handled in render
     else if (!barberProfile || verificationStatus === 'draft') dest = '/(barber-onboarding)/profile';
     else if (verificationStatus === 'pending' || verificationStatus === 'rejected') dest = '/(barber-onboarding)/status';

@@ -26,7 +26,7 @@ export default function AuthenticationStatusScreen() {
     role === 'barber'
       ? '/(barber)/home'
       : role === 'admin'
-        ? '/(admin)/dashboard'
+        ? '/(auth)/admin-web-only'
         : '/(customer)/home';
 
   const handleCheckStatus = async () => {

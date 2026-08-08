@@ -15,7 +15,7 @@ export default function AuthLayout() {
 
     let dest: string;
     if (role === 'barber') dest = '/(barber)/home';
-    else if (role === 'admin') dest = '/(admin)/dashboard';
+    else if (role === 'admin') dest = '/(auth)/admin-web-only';
     else dest = '/(customer)/home';
 
     const tid = setTimeout(() => router.replace(dest as any), 0);
@@ -39,6 +39,14 @@ export default function AuthLayout() {
       <Stack.Screen name="verification-email" />
       <Stack.Screen name="complete-account-setup" />
       <Stack.Screen name="onboarding/[step]" options={{ animation: 'fade' }} />
+      <Stack.Screen
+        name="admin-web-only"
+        options={{
+          headerShown: false,
+          animation: 'fade',
+          presentation: 'modal',
+        }}
+      />
     </Stack>
   );
 }
