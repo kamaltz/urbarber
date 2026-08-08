@@ -248,6 +248,47 @@ service cloud.firestore {
       allow delete: if isOwner(resource.data.customerId) || isAdmin();
     }
 
+
+    // =========================================================================
+    // 9. COLLECTION: conversations (Real-Time Chat)
+    // =========================================================================
+    match /conversations/{conversationId} {
+      // Only participants (customer or barber) can read conversation
+      allow read: if (
+        isOwner(resource.data.customerId) 
+        || isOwner(resource.data.barberId) 
+        || isAdmin()
+      );
+
+      // Backend SDK only can create/update conversations
+      allow create, update, delete: if false;
+    }
+
+    // =========================================================================
+    // 9a. COLLECTION: messages (append-only, participant-only)
+    // =========================================================================
+    match /conversations/{conversationId}/messages/{messageId} {
+      // Only participants can read messages
+      allow read: if (
+        isOwner(get(/databases/$(database)/documents/conversations/$(conversationId)).data.customerId)
+        || isOwner(get(/databases/$(database)/documents/conversations/$(conversationId)).data.barberId)
+        || isAdmin()
+      );
+
+      // Only the sender can create messages
+      allow create: if (
+        isSignedIn()
+        && request.resource.data.senderId == uid()
+        && request.resource.data.type == 'text'
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 1000
+      );
+
+      // No updates or deletes allowed (append-only)
+      allow update, delete: if false;
+    }
+
     // =========================================================================
     // 10. COLLECTION: supportTickets
     // =========================================================================

@@ -1,47 +1,45 @@
-import { CustomerBottomNavigation } from '@/components/navigation/CustomerBottomNavigation';
 import { Avatar } from '@/components/ui/Avatar';
 import { SearchInput } from '@/components/ui/SearchInput';
-import { routes } from '@/constants/routes';
-import { barberRepository } from '@/features/barbers/repository/barber.repository';
 import { useChatConversations } from '@/features/chat/hooks/use-chat-conversations';
 import type { Conversation } from '@/features/chat/types';
+import { customerRepository } from '@/features/customer/repository/customer.repository';
 import { firebaseAuth } from '@/lib/firebase';
 import { router } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-interface ConversationWithBarber extends Conversation {
-  barberName?: string;
-  barberImage?: string;
+interface ConversationWithCustomer extends Conversation {
+  customerName?: string;
+  customerImage?: string;
 }
 
-export default function ChatListScreen() {
-  const { conversations, loading, error } = useChatConversations('customer');
-  const [conversationsWithBarbers, setConversationsWithBarbers] = useState<ConversationWithBarber[]>([]);
+export default function BarberMessagesScreen() {
+  const { conversations, loading, error } = useChatConversations('barber');
+  const [conversationsWithCustomers, setConversationsWithCustomers] = useState<ConversationWithCustomer[]>([]);
   const [query, setQuery] = useState('');
 
-  // Enrich conversations with barber names
+  // Enrich conversations with customer names
   useEffect(() => {
     const enrichConversations = async () => {
       const enriched = await Promise.all(
         conversations.map(async (conv) => {
           try {
-            const barber = await barberRepository.getBarberProfile(conv.barberId);
+            const customer = await customerRepository.getCustomerProfile(conv.customerId);
             return {
               ...conv,
-              barberName: barber?.name || 'Unknown Barber',
-              barberImage: barber?.profileImageUrl,
+              customerName: customer?.name || 'Unknown Customer',
+              customerImage: customer?.profileImageUrl,
             };
           } catch (err) {
             return {
               ...conv,
-              barberName: 'Unknown Barber',
+              customerName: 'Unknown Customer',
             };
           }
         })
       );
-      setConversationsWithBarbers(enriched);
+      setConversationsWithCustomers(enriched);
     };
 
     if (conversations.length > 0) {
@@ -51,11 +49,11 @@ export default function ChatListScreen() {
 
   const filtered = useMemo(
     () =>
-      conversationsWithBarbers.filter(
+      conversationsWithCustomers.filter(
         (item) =>
-          `${item.barberName} ${item.lastMessage}`.toLowerCase().includes(query.toLowerCase())
+          `${item.customerName} ${item.lastMessage}`.toLowerCase().includes(query.toLowerCase())
       ),
-    [conversationsWithBarbers, query]
+    [conversationsWithCustomers, query]
   );
 
   const formatTime = (date?: Date | any) => {
@@ -84,12 +82,11 @@ export default function ChatListScreen() {
     return (
       <SafeAreaView className="flex-1 bg-white">
         <View className="border-b border-slate-100 px-4 py-4">
-          <Text className="text-center text-xl font-bold text-slate-900">Chat</Text>
+          <Text className="text-center text-xl font-bold text-slate-900">Messages</Text>
         </View>
         <View className="flex-1 items-center justify-center">
           <Text className="text-red-600">{error}</Text>
         </View>
-        <CustomerBottomNavigation />
       </SafeAreaView>
     );
   }
@@ -97,10 +94,10 @@ export default function ChatListScreen() {
   return (
     <SafeAreaView className="flex-1 bg-white">
       <View className="border-b border-slate-100 px-4 py-4">
-        <Text className="text-center text-xl font-bold text-slate-900">Chat</Text>
+        <Text className="text-center text-xl font-bold text-slate-900">Messages</Text>
       </View>
       <View className="px-4 py-4">
-        <SearchInput value={query} onChangeText={setQuery} placeholder="Cari obrolan" />
+        <SearchInput value={query} onChangeText={setQuery} placeholder="Cari pesan" />
       </View>
       {loading ? (
         <View className="flex-1 items-center justify-center">
@@ -111,13 +108,13 @@ export default function ChatListScreen() {
           {filtered.map((item) => (
             <Pressable
               key={item.id}
-              onPress={() => router.push(routes.customer.chat(item.id))}
+              onPress={() => router.push(`/(barber)/messages/${item.id}` as any)}
               className="flex-row items-center gap-3 border-b border-slate-100 py-4"
             >
-              <Avatar name={item.barberName || 'B'} size="lg" status="online" />
+              <Avatar name={item.customerName || 'C'} size="lg" status="online" />
               <View className="flex-1">
                 <View className="flex-row items-center justify-between">
-                  <Text className="text-base font-semibold text-slate-900">{item.barberName || 'Barber'}</Text>
+                  <Text className="text-base font-semibold text-slate-900">{item.customerName || 'Customer'}</Text>
                   <Text className="text-xs text-slate-400">{formatTime(item.lastMessageAt)}</Text>
                 </View>
                 <View className="mt-1 flex-row items-center gap-2">
@@ -125,9 +122,9 @@ export default function ChatListScreen() {
                     {item.lastSenderId === firebaseAuth.currentUser?.uid ? '✓✓ ' : ''}
                     {item.lastMessage || '(No messages yet)'}
                   </Text>
-                  {item.customerUnreadCount > 0 ? (
+                  {item.barberUnreadCount > 0 ? (
                     <View className="h-5 min-w-5 items-center justify-center rounded-full bg-[#D2691E] px-1">
-                      <Text className="text-xs font-bold text-white">{item.customerUnreadCount}</Text>
+                      <Text className="text-xs font-bold text-white">{item.barberUnreadCount}</Text>
                     </View>
                   ) : null}
                 </View>
@@ -135,11 +132,10 @@ export default function ChatListScreen() {
             </Pressable>
           ))}
           {filtered.length === 0 && !loading ? (
-            <Text className="py-12 text-center text-slate-500">Obrolan tidak ditemukan</Text>
+            <Text className="py-12 text-center text-slate-500">Pesan tidak ditemukan</Text>
           ) : null}
         </ScrollView>
       )}
-      <CustomerBottomNavigation />
     </SafeAreaView>
   );
 }

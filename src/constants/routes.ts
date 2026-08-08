@@ -19,6 +19,8 @@ export const routes = {
   },
   barber: {
     home: '/(barber)/home',
+    messages: '/(barber)/messages',
+    chat: (conversationId: string) => ({ pathname: '/(barber)/messages/[conversationId]' as const, params: { conversationId } }),
   },
   admin: {
     webOnly: '/(auth)/admin-web-only',

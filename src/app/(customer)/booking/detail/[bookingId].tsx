@@ -5,6 +5,7 @@
 
 import { router, useLocalSearchParams } from 'expo-router';
 import {
+    Alert,
     KeyboardAvoidingView,
     Platform,
     Pressable,
@@ -170,11 +171,22 @@ export default function BookingDetailScreen() {
                 </Pressable>
 
                 <Pressable
-                  onPress={() => router.push(`/(customer)/chat/${booking.id}` as any)}
-                  className="flex-1 items-center gap-2 rounded-lg bg-slate-100 py-3"
+                  onPress={() => {
+                    if (booking.paymentStatus !== 'paid') {
+                      Alert.alert('Chat tidak tersedia', 'Selesaikan pembayaran untuk membuka chat.');
+                      return;
+                    }
+                    router.push(`/(customer)/chat/${booking.id}` as any);
+                  }}
+                  disabled={booking.paymentStatus !== 'paid'}
+                  className={`flex-1 items-center gap-2 rounded-lg py-3 ${
+                    booking.paymentStatus === 'paid' ? 'bg-slate-100' : 'bg-slate-300'
+                  }`}
                 >
                   <Text className="text-2xl">💬</Text>
-                  <Text className="text-xs font-semibold text-slate-900">Chat</Text>
+                  <Text className={`text-xs font-semibold ${
+                    booking.paymentStatus === 'paid' ? 'text-slate-900' : 'text-slate-500'
+                  }`}>Chat</Text>
                 </Pressable>
 
                 {['pending', 'accepted'].includes(booking.status) && (

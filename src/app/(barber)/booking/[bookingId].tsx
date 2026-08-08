@@ -8,9 +8,9 @@ import { barberRepository } from '@/features/barbers/repository/barber.repositor
 import { barberApiService } from '@/features/barbers/services/barber-api.service';
 import type { BarberBooking } from '@/features/barbers/types/barber';
 import { formatCurrency } from '@/utils/formatters';
-import { useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, RefreshControl, ScrollView, Text, View } from 'react-native';
+import { Alert, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 
 export default function BarberBookingDetailScreen() {
   const { bookingId } = useLocalSearchParams<{ bookingId: string }>();
@@ -225,6 +225,26 @@ export default function BarberBookingDetailScreen() {
                 </Text>
               ) : null}
             </AppCard>
+
+            {/* Chat Button */}
+            <Pressable
+              onPress={() => {
+                if (isPaid) {
+                  router.push(`/(barber)/messages/${bookingId}` as any);
+                } else {
+                  Alert.alert('Chat tidak tersedia', 'Chat dapat dibuka setelah pelanggan menyelesaikan pembayaran.');
+                }
+              }}
+              disabled={!isPaid}
+              className={`mx-0 px-4 py-3 rounded-lg flex-row items-center justify-center gap-2 ${
+                isPaid ? 'bg-[#D2691E]' : 'bg-slate-300'
+              }`}
+            >
+              <Text className="text-xl">💬</Text>
+              <Text className={`font-semibold ${isPaid ? 'text-white' : 'text-slate-500'}`}>
+                Chat dengan Pelanggan
+              </Text>
+            </Pressable>
 
             {/* Service & Time Details */}
             <AppCard className="p-4 gap-2">

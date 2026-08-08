@@ -14,6 +14,7 @@
  * - POST /api/barber/bookings/tracking/start
  * - POST /api/barber/bookings/tracking/stop
  * - POST /api/bookings/cancel
+ * - POST /api/bookings/:bookingId/chat
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
@@ -832,6 +833,124 @@ async function handleCancelBooking(ctx: RouteContext): Promise<void> {
 }
 
 // ============================================================================
+// Route Handlers: Chat
+// ============================================================================
+
+/**
+ * POST /api/bookings/:bookingId/chat
+ *
+ * Initialize or get a conversation for a booking.
+ * Validates payment status and participant authorization.
+ * Idempotent: uses bookingId as conversation document ID.
+ */
+async function handleInitializeChat(ctx: RouteContext, bookingId: string): Promise<void> {
+  const { req, res } = ctx;
+
+  if (!handleCors(req, res, ['POST', 'OPTIONS'])) return;
+
+  const authUser = await authenticateRequest(req, res);
+  if (!authUser) return;
+
+  if (authUser.appRole !== 'customer' && authUser.appRole !== 'barber' && authUser.appRole !== 'admin') {
+    res.status(403).json({
+      error: { code: 'FORBIDDEN', message: 'Chat tidak tersedia untuk role Anda.' },
+    });
+    return;
+  }
+
+  try {
+    const bookingRef = db.collection('bookings').doc(bookingId);
+    const bookingSnap = await bookingRef.get();
+
+    if (!bookingSnap.exists) {
+      res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Pemesanan tidak ditemukan.' } });
+      return;
+    }
+
+    const bookingData = bookingSnap.data() || {};
+
+    // Verify user is a participant in this booking
+    const isCustomer = bookingData.customerId === authUser.uid;
+    const isBarber = bookingData.barberId === authUser.uid;
+    const isAdmin = authUser.appRole === 'admin';
+
+    if (!isCustomer && !isBarber && !isAdmin) {
+      res.status(403).json({
+        error: { code: 'FORBIDDEN', message: 'Anda bukan peserta booking ini.' },
+      });
+      return;
+    }
+
+    // Validate payment status
+    const paymentStatus = bookingData.paymentStatus || 'not_required';
+    if (paymentStatus !== 'paid') {
+      res.status(402).json({
+        error: {
+          code: 'PAYMENT_REQUIRED',
+          message: `Chat hanya tersedia untuk booking yang sudah dibayar. Status pembayaran saat ini: ${paymentStatus}`,
+        },
+      });
+      return;
+    }
+
+    // Validate booking status (cannot chat if cancelled)
+    if (bookingData.status === 'cancelled') {
+      res.status(400).json({
+        error: {
+          code: 'INVALID_STATE',
+          message: 'Chat tidak tersedia untuk booking yang dibatalkan.',
+        },
+      });
+      return;
+    }
+
+    // Get or create conversation (idempotent)
+    const conversationRef = db.collection('conversations').doc(bookingId);
+    const conversationSnap = await conversationRef.get();
+    const timestamp = new Date().toISOString();
+
+    if (conversationSnap.exists) {
+      // Conversation already exists, return it
+      const conversation = conversationSnap.data();
+      res.status(200).json({
+        success: true,
+        conversationId: bookingId,
+        conversation,
+        message: 'Conversation retrieved',
+      });
+    } else {
+      // Create new conversation
+      const conversationData = {
+        id: bookingId,
+        bookingId,
+        customerId: bookingData.customerId,
+        barberId: bookingData.barberId,
+        participants: [bookingData.customerId, bookingData.barberId],
+        status: 'active',
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        customerUnreadCount: 0,
+        barberUnreadCount: 0,
+      };
+
+      await conversationRef.set(conversationData);
+
+      res.status(201).json({
+        success: true,
+        conversationId: bookingId,
+        conversation: conversationData,
+        message: 'Conversation created',
+      });
+    }
+  } catch (err: any) {
+    console.error('[Bookings/chat] Error:', err.message);
+    res.status(500).json({
+      error: { code: 'INTERNAL_SERVER_ERROR', message: 'Terjadi kesalahan internal.' },
+    });
+  }
+}
+
+// ============================================================================
 // Router
 // ============================================================================
 
@@ -850,6 +969,16 @@ const routes: Record<string, Record<string, RouteHandler>> = {
 
 async function router(ctx: RouteContext): Promise<void> {
   const { res, method, pathname } = ctx;
+  
+  // Check for dynamic routes first
+  // /api/bookings/:bookingId/chat
+  const chatMatch = pathname.match(/^\/api\/bookings\/([^\/]+)\/chat$/);
+  if (chatMatch && method === 'POST') {
+    const bookingId = chatMatch[1];
+    await handleInitializeChat(ctx, bookingId);
+    return;
+  }
+
   const handler = routes[method]?.[pathname];
 
   if (!handler) {

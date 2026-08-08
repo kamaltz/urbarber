@@ -2,8 +2,7 @@ import { Avatar } from '@/components/ui/Avatar';
 import { useChatMessages } from '@/features/chat/hooks/use-chat-messages';
 import { chatRepository } from '@/features/chat/repository/chat.repository';
 import { firebaseAuth } from '@/lib/firebase';
-import { backOrReplace } from '@/lib/navigation';
-import { useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
@@ -18,36 +17,35 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-export default function ChatRoomScreen() {
+export default function BarberChatRoomScreen() {
   const { conversationId } = useLocalSearchParams<{ conversationId: string }>();
   const bookingId = conversationId || '';
   const { messages, loading, error, send, loadOlder, hasOlder } = useChatMessages(bookingId);
   
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
-  const [barberName, setBarberName] = useState('Barber');
-  const [barberImage, setBarberImage] = useState<string | undefined>();
+  const [customerName, setCustomerName] = useState('Customer');
+  const [customerImage, setCustomerImage] = useState<string | undefined>();
 
-  // Load barber info
+  // Load customer info
   useEffect(() => {
-    const loadBarber = async () => {
+    const loadCustomer = async () => {
       try {
         if (!bookingId) return;
-        // In a full implementation, we'd fetch the booking to get barberId
+        // In a full implementation, we'd fetch the booking to get customerId
         // For now, we'll show a placeholder
-        // This will be enhanced when we integrate with booking data
       } catch (err) {
-        console.error('Error loading barber:', err);
+        console.error('Error loading customer:', err);
       }
     };
-    loadBarber();
+    loadCustomer();
   }, [bookingId]);
 
   // Reset unread on mount
   useEffect(() => {
     const resetUnread = async () => {
       try {
-        await chatRepository.resetUnreadCount(bookingId, 'customer');
+        await chatRepository.resetUnreadCount(bookingId, 'barber');
       } catch (err) {
         console.error('Error resetting unread:', err);
       }
@@ -95,12 +93,12 @@ export default function ChatRoomScreen() {
     <SafeAreaView className="flex-1 bg-white">
       <KeyboardAvoidingView className="flex-1" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View className="flex-row items-center gap-3 border-b border-slate-200 px-4 py-3">
-          <Pressable onPress={() => backOrReplace('/(customer)/chat')} hitSlop={10}>
+          <Pressable onPress={() => router.back()} hitSlop={10}>
             <Text className="text-3xl text-slate-900">‹</Text>
           </Pressable>
-          <Avatar name={barberName} size="sm" status="online" />
+          <Avatar name={customerName} size="sm" status="online" />
           <View>
-            <Text className="font-bold text-slate-900">{barberName}</Text>
+            <Text className="font-bold text-slate-900">{customerName}</Text>
             <Text className="text-xs text-emerald-600">Online</Text>
           </View>
         </View>
