@@ -3,7 +3,7 @@ import { useAuth } from '@/features/auth/hooks/use-auth';
 import { authService } from '@/features/auth/services/auth.service';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, SafeAreaView, Text, View } from 'react-native';
+import { SafeAreaView, Text, View } from 'react-native';
 
 export default function VerificationEmailScreen() {
   const { user, reloadUser, logout } = useAuth();
@@ -14,7 +14,7 @@ export default function VerificationEmailScreen() {
   const [isError, setIsError] = useState(false);
 
   useEffect(() => {
-    let timer: NodeJS.Timeout;
+    let timer: ReturnType<typeof setTimeout>;
     if (cooldown > 0) {
       timer = setTimeout(() => setCooldown((c) => c - 1), 1000);
     }
