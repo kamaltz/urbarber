@@ -18,7 +18,24 @@
     "afterFiles": [],
     "fallback": []
   },
-  "dynamicRoutes": [],
+  "dynamicRoutes": [
+    {
+      "page": "/barber-verification/[barberId]",
+      "regex": "^/barber\\-verification/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPbarberId": "nxtPbarberId"
+      },
+      "namedRegex": "^/barber\\-verification/(?<nxtPbarberId>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/barbers/[barberId]",
+      "regex": "^/barbers/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPbarberId": "nxtPbarberId"
+      },
+      "namedRegex": "^/barbers/(?<nxtPbarberId>[^/]+?)(?:/)?$"
+    }
+  ],
   "staticRoutes": [
     {
       "page": "/",
@@ -37,6 +54,18 @@
       "regex": "^/barber\\-verification(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/barber\\-verification(?:/)?$"
+    },
+    {
+      "page": "/barbers",
+      "regex": "^/barbers(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/barbers(?:/)?$"
+    },
+    {
+      "page": "/categories",
+      "regex": "^/categories(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/categories(?:/)?$"
     },
     {
       "page": "/login",

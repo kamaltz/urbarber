@@ -1,8 +1,12 @@
 {
   "/_not-found/page": "/_not-found",
-  "/unauthorized/page": "/unauthorized",
   "/login/page": "/login",
+  "/unauthorized/page": "/unauthorized",
+  "/(dashboard)/barber-verification/[barberId]/page": "/barber-verification/[barberId]",
+  "/(dashboard)/barbers/page": "/barbers",
+  "/(dashboard)/barbers/[barberId]/page": "/barbers/[barberId]",
   "/(dashboard)/barber-verification/page": "/barber-verification",
   "/(dashboard)/page": "/",
-  "/(dashboard)/users/page": "/users"
+  "/(dashboard)/users/page": "/users",
+  "/(dashboard)/categories/page": "/categories"
 }
