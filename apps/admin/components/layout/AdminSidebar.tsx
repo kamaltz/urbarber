@@ -1,13 +1,13 @@
 'use client';
 
-import Link from 'next/link';
 import type { AdminIdentity } from '@/lib/api-client';
+import Link from 'next/link';
 
 export function AdminSidebar({ admin }: { admin: AdminIdentity | null }) {
   const menuItems = [
     { label: 'Dashboard', href: '/', icon: '📊' },
-    { label: 'Verifikasi Barber', href: '#', icon: '✅', disabled: true },
-    { label: 'Pengguna', href: '#', icon: '👥', disabled: true },
+    { label: 'Verifikasi Barber', href: '/barber-verification', icon: '✅' },
+    { label: 'Pengguna', href: '/users', icon: '👥' },
     { label: 'Booking', href: '#', icon: '📅', disabled: true },
     { label: 'Kategori', href: '#', icon: '📂', disabled: true },
     { label: 'Transaksi', href: '#', icon: '💰', disabled: true },
@@ -79,10 +79,10 @@ export function AdminSidebar({ admin }: { admin: AdminIdentity | null }) {
         paddingRight: '1.5rem',
       }}>
         <p style={{ fontSize: '0.75rem', color: '#9ca3af', marginBottom: '0.5rem' }}>
-          Batch 05 - Admin Web Foundation
+          Batch 06 - Phase 1 (Admin Operations)
         </p>
         <p style={{ fontSize: '0.75rem', color: '#6b7280' }}>
-          Full Admin Operations di Batch 06
+          Dashboard, Verifikasi Barber, Manajemen Pengguna
         </p>
       </div>
     </aside>

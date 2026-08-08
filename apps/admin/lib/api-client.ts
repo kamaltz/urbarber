@@ -19,6 +19,69 @@ export interface AdminIdentity {
   displayName?: string;
 }
 
+// Dashboard
+export interface DashboardMetrics {
+  totalActiveCustomers: number;
+  totalApprovedBarbers: number;
+  pendingBarberRegistrations: number;
+  suspendedAccounts: number;
+  activeBookings: number;
+  completedBookings: number;
+  cancelledBookings: number;
+  currentMonthServiceValue: number;
+  recentBarberRegistrations: AdminBarberRegistration[];
+  recentBookings: AdminBookingRecord[];
+}
+
+// Barber Registration
+export interface AdminBarberRegistration {
+  barberId: string;
+  ownerName: string;
+  businessName: string;
+  phoneNumber: string;
+  businessAddress: string;
+  serviceArea: string;
+  verificationStatus: 'pending' | 'approved' | 'rejected';
+  submittedAt: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+  rejectionReason?: string;
+  documents: Record<string, { url: string; uploadedAt: string }>;
+}
+
+// User Management
+export interface AdminUserRecord {
+  uid: string;
+  email: string;
+  displayName?: string;
+  role: 'customer' | 'barber' | 'admin';
+  status: 'active' | 'pending_verification' | 'suspended';
+  phoneNumber?: string;
+  createdAt: string;
+}
+
+// Bookings
+export interface AdminBookingRecord {
+  bookingId: string;
+  customerId: string;
+  barberId: string;
+  serviceId: string;
+  status: 'pending' | 'accepted' | 'rejected' | 'in_progress' | 'completed' | 'cancelled';
+  date: string;
+  startTime: string;
+  price: number;
+  paymentMethod: 'cash_on_service' | 'midtrans';
+  paymentStatus: 'unpaid' | 'paid' | 'failed';
+  createdAt: string;
+}
+
+// Pagination
+export interface PaginationResult<T> {
+  items: T[];
+  nextPageStartAfter?: string;
+  hasMore: boolean;
+}
+
 export class AdminApiClient {
   private static async getAuthToken(): Promise<string> {
     const user = firebaseAuth.currentUser;
@@ -65,6 +128,134 @@ export class AdminApiClient {
     const response = await this.request<ApiResponse<AdminIdentity>>('/api/admin/me', {
       method: 'GET',
     });
+    return response.data!;
+  }
+
+  /**
+   * GET /api/admin/dashboard
+   * Get platform metrics for dashboard
+   */
+  static async getDashboardMetrics(): Promise<DashboardMetrics> {
+    const response = await this.request<ApiResponse<DashboardMetrics>>('/api/admin/dashboard', {
+      method: 'GET',
+    });
+    return response.data!;
+  }
+
+  /**
+   * GET /api/admin/barber-registrations
+   * Get list of barber registrations with pagination
+   */
+  static async getBarberRegistrations(
+    filter?: 'all' | 'pending' | 'approved' | 'rejected',
+    pageSize?: number,
+    startAfter?: string
+  ): Promise<PaginationResult<AdminBarberRegistration>> {
+    const params = new URLSearchParams();
+    if (filter) params.append('filter', filter);
+    if (pageSize) params.append('pageSize', String(pageSize));
+    if (startAfter) params.append('startAfter', startAfter);
+
+    const response = await this.request<ApiResponse<PaginationResult<AdminBarberRegistration>>>(
+      `/api/admin/barber-registrations?${params}`,
+      { method: 'GET' }
+    );
+    return response.data!;
+  }
+
+  /**
+   * GET /api/admin/barber-registrations/:barberId
+   * Get single barber registration detail
+   */
+  static async getBarberRegistrationDetail(barberId: string): Promise<AdminBarberRegistration> {
+    const response = await this.request<ApiResponse<AdminBarberRegistration>>(
+      `/api/admin/barber-registrations/${barberId}`,
+      { method: 'GET' }
+    );
+    return response.data!;
+  }
+
+  /**
+   * POST /api/admin/barber-registrations/:barberId/approve
+   * Approve a barber registration
+   */
+  static async approveBarber(barberId: string): Promise<{ alreadyApproved: boolean; message: string }> {
+    const response = await this.request<ApiResponse<{ alreadyApproved: boolean; message: string }>>(
+      `/api/admin/barber-registrations/${barberId}/approve`,
+      { method: 'POST' }
+    );
+    return response.data!;
+  }
+
+  /**
+   * POST /api/admin/barber-registrations/:barberId/reject
+   * Reject a barber registration with reason
+   */
+  static async rejectBarber(barberId: string, reason: string): Promise<{ alreadyRejected: boolean; message: string }> {
+    const response = await this.request<ApiResponse<{ alreadyRejected: boolean; message: string }>>(
+      `/api/admin/barber-registrations/${barberId}/reject`,
+      { method: 'POST', body: JSON.stringify({ reason }) }
+    );
+    return response.data!;
+  }
+
+  /**
+   * POST /api/admin/barber-registrations/document-url
+   * Get signed URL for verification document
+   */
+  static async getDocumentUrl(barberId: string, documentType: string): Promise<{ url: string; expiresAt: string }> {
+    const response = await this.request<ApiResponse<{ url: string; expiresAt: string }>>(
+      `/api/admin/barber-registrations/document-url`,
+      { method: 'POST', body: JSON.stringify({ barberId, documentType }) }
+    );
+    return response.data!;
+  }
+
+  /**
+   * GET /api/admin/users
+   * Get list of users with pagination and role filter
+   */
+  static async getUsers(
+    role?: 'all' | 'customer' | 'barber',
+    pageSize?: number,
+    startAfter?: string
+  ): Promise<PaginationResult<AdminUserRecord>> {
+    const params = new URLSearchParams();
+    if (role) params.append('role', role);
+    if (pageSize) params.append('pageSize', String(pageSize));
+    if (startAfter) params.append('startAfter', startAfter);
+
+    const response = await this.request<ApiResponse<PaginationResult<AdminUserRecord>>>(
+      `/api/admin/users?${params}`,
+      { method: 'GET' }
+    );
+    return response.data!;
+  }
+
+  /**
+   * GET /api/admin/users/:userId
+   * Get single user detail
+   */
+  static async getUserDetail(userId: string): Promise<AdminUserRecord> {
+    const response = await this.request<ApiResponse<AdminUserRecord>>(`/api/admin/users/${userId}`, {
+      method: 'GET',
+    });
+    return response.data!;
+  }
+
+  /**
+   * POST /api/admin/users/:userId/status
+   * Update user status (active/suspended)
+   */
+  static async updateUserStatus(
+    userId: string,
+    targetStatus: 'active' | 'suspended',
+    reason?: string
+  ): Promise<{ idempotent: boolean; message: string }> {
+    const response = await this.request<ApiResponse<{ idempotent: boolean; message: string }>>(
+      `/api/admin/users/${userId}/status`,
+      { method: 'POST', body: JSON.stringify({ targetStatus, reason }) }
+    );
     return response.data!;
   }
 }

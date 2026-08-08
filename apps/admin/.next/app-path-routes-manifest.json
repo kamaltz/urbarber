@@ -2,5 +2,7 @@
   "/_not-found/page": "/_not-found",
   "/unauthorized/page": "/unauthorized",
   "/login/page": "/login",
-  "/(dashboard)/page": "/"
+  "/(dashboard)/barber-verification/page": "/barber-verification",
+  "/(dashboard)/page": "/",
+  "/(dashboard)/users/page": "/users"
 }

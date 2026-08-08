@@ -33,6 +33,12 @@
       "namedRegex": "^/_not\\-found(?:/)?$"
     },
     {
+      "page": "/barber-verification",
+      "regex": "^/barber\\-verification(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/barber\\-verification(?:/)?$"
+    },
+    {
       "page": "/login",
       "regex": "^/login(?:/)?$",
       "routeKeys": {},
@@ -43,6 +49,12 @@
       "regex": "^/unauthorized(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/unauthorized(?:/)?$"
+    },
+    {
+      "page": "/users",
+      "regex": "^/users(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/users(?:/)?$"
     }
   ],
   "dataRoutes": [],
