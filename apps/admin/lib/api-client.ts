@@ -82,6 +82,41 @@ export interface PaginationResult<T> {
   hasMore: boolean;
 }
 
+// Phase 2: Barber Management
+export interface AdminBarberSummary {
+  uid: string;
+  displayName: string;
+  businessName?: string;
+  verificationStatus: 'pending' | 'approved' | 'rejected';
+  listingStatus?: 'active' | 'inactive';
+  accountStatus: 'active' | 'pending_verification' | 'suspended';
+  ratingAverage?: number;
+  reviewCount?: number;
+  approvedAt?: string;
+}
+
+export interface AdminBarberDetail extends AdminBarberSummary {
+  email?: string;
+  phoneNumber?: string;
+  businessAddress?: string;
+  serviceArea?: string;
+  acceptingNewBookings?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+// Phase 2: Category Management
+export interface AdminCategory {
+  id: string;
+  name: string;
+  description?: string;
+  icon?: string;
+  active: boolean;
+  order: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export class AdminApiClient {
   private static async getAuthToken(): Promise<string> {
     const user = firebaseAuth.currentUser;
@@ -257,5 +292,111 @@ export class AdminApiClient {
       { method: 'POST', body: JSON.stringify({ targetStatus, reason }) }
     );
     return response.data!;
+  }
+
+  // ============================================================================
+  // Phase 2: Barber Management
+  // ============================================================================
+
+  /**
+   * GET /api/admin/barbers
+   * Get list of barbers with pagination and filtering
+   */
+  static async getBarbers(
+    filter?: 'all' | 'active' | 'suspended' | 'approved' | 'pending' | 'rejected',
+    pageSize?: number,
+    startAfter?: string
+  ): Promise<PaginationResult<AdminBarberSummary>> {
+    const params = new URLSearchParams();
+    if (filter) params.append('filter', filter);
+    if (pageSize) params.append('pageSize', String(pageSize));
+    if (startAfter) params.append('startAfter', startAfter);
+
+    const response = await this.request<ApiResponse<PaginationResult<AdminBarberSummary>>>(
+      `/api/admin/barbers?${params}`,
+      { method: 'GET' }
+    );
+    return response.data!;
+  }
+
+  /**
+   * GET /api/admin/barbers/:barberId
+   * Get single barber detail
+   */
+  static async getBarberDetail(barberId: string): Promise<AdminBarberDetail> {
+    const response = await this.request<ApiResponse<AdminBarberDetail>>(
+      `/api/admin/barbers/${barberId}`,
+      { method: 'GET' }
+    );
+    return response.data!;
+  }
+
+  // ============================================================================
+  // Phase 2: Category Management
+  // ============================================================================
+
+  /**
+   * GET /api/admin/categories
+   * Get list of all categories
+   */
+  static async getCategories(): Promise<AdminCategory[]> {
+    const response = await this.request<ApiResponse<AdminCategory[]>>(
+      `/api/admin/categories`,
+      { method: 'GET' }
+    );
+    return response.data!;
+  }
+
+  /**
+   * POST /api/admin/categories
+   * Create new category
+   */
+  static async createCategory(
+    name: string,
+    description?: string,
+    icon?: string,
+    active?: boolean,
+    order?: number
+  ): Promise<AdminCategory> {
+    const response = await this.request<ApiResponse<AdminCategory>>(
+      `/api/admin/categories`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ name, description, icon, active, order }),
+      }
+    );
+    return response.data!;
+  }
+
+  /**
+   * PATCH /api/admin/categories/:categoryId
+   * Update category
+   */
+  static async updateCategory(
+    categoryId: string,
+    updates: {
+      name?: string;
+      description?: string;
+      icon?: string;
+      active?: boolean;
+      order?: number;
+    }
+  ): Promise<AdminCategory> {
+    const response = await this.request<ApiResponse<AdminCategory>>(
+      `/api/admin/categories/${categoryId}`,
+      { method: 'PATCH', body: JSON.stringify(updates) }
+    );
+    return response.data!;
+  }
+
+  /**
+   * DELETE /api/admin/categories/:categoryId
+   * Deactivate category
+   */
+  static async deactivateCategory(categoryId: string): Promise<void> {
+    await this.request<ApiResponse<void>>(
+      `/api/admin/categories/${categoryId}`,
+      { method: 'DELETE' }
+    );
   }
 }

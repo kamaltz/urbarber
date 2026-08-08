@@ -15,12 +15,41 @@
  * - GET /api/admin/users
  * - GET /api/admin/users/:userId
  * - POST /api/admin/users/:userId/status
+ *
+ * Routes (Phase 2):
+ * - GET /api/admin/barbers
+ * - GET /api/admin/barbers/:barberId
+ * - POST /api/admin/barbers/:barberId/suspend
+ * - GET /api/admin/categories
+ * - POST /api/admin/categories
+ * - PATCH /api/admin/categories/:categoryId
  */
 
-import { approveBarber, getBarberRegistrationDetail, getBarberRegistrations, getDashboardMetrics, getSignedDocumentUrl, getUsers, rejectBarber, updateUserStatus } from '@/admin/admin.service.js';
-import { validateDocumentType, validatePageSize, validateRejectionReason, validateTargetStatus } from '@/admin/admin.validation.js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { requireAdmin } from '../src/admin/admin-auth.js';
+import {
+    approveBarber,
+    createCategory,
+    deactivateCategory,
+    getBarberDetail,
+    getBarberList,
+    getBarberRegistrationDetail,
+    getBarberRegistrations,
+    getCategoriesList,
+    getDashboardMetrics,
+    getSignedDocumentUrl,
+    getUsers,
+    rejectBarber,
+    updateCategory,
+    updateUserStatus,
+} from '../src/admin/admin.service.js';
+import {
+    validateCategoryName,
+    validateDocumentType,
+    validatePageSize,
+    validateRejectionReason,
+    validateTargetStatus,
+} from '../src/admin/admin.validation.js';
 import { handleCors } from '../src/lib/cors.js';
 import { db } from '../src/lib/firebase-admin.js';
 
@@ -374,6 +403,198 @@ async function handleUpdateUserStatus(ctx: RouteContext): Promise<void> {
 }
 
 // ============================================================================
+// Phase 2: Barber Management
+// ============================================================================
+
+/**
+ * GET /api/admin/barbers - List barbers with filtering
+ */
+async function handleGetBarbers(ctx: RouteContext): Promise<void> {
+  const { req, res } = ctx;
+  if (!handleCors(req, res, ['GET', 'OPTIONS'])) return;
+  const admin = await requireAdmin(req, res);
+  if (!admin) return;
+
+  try {
+    const filter = (req.query.filter as string) || 'all';
+    const pageSize = parseInt((req.query.pageSize as string) || '20', 10);
+    const startAfter = req.query.startAfter as string | undefined;
+
+    const sizeValidation = validatePageSize(pageSize);
+    if (!sizeValidation.valid) {
+      res.status(400).json({ error: { code: 'INVALID_PAGE_SIZE', message: sizeValidation.message } });
+      return;
+    }
+
+    const validFilter = ['all', 'active', 'suspended', 'approved', 'pending', 'rejected'].includes(filter) ? (filter as any) : 'all';
+    const result = await getBarberList(validFilter, { pageSize: sizeValidation.normalizedSize, startAfter });
+
+    res.status(200).json({ data: result });
+  } catch (err: any) {
+    console.error('[Admin/barbers]', err.message);
+    res.status(500).json({ error: { code: 'INTERNAL_SERVER_ERROR', message: 'Gagal load barber list.' } });
+  }
+}
+
+/**
+ * GET /api/admin/barbers/:barberId - Barber detail
+ */
+async function handleGetBarberDetail(ctx: RouteContext): Promise<void> {
+  const { req, res } = ctx;
+  if (!handleCors(req, res, ['GET', 'OPTIONS'])) return;
+  const admin = await requireAdmin(req, res);
+  if (!admin) return;
+
+  const barberId = req.url?.split('/barbers/')[1]?.split('?')[0];
+  if (!barberId) {
+    res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'barberId diperlukan.' } });
+    return;
+  }
+
+  try {
+    const detail = await getBarberDetail(barberId);
+    if (!detail) {
+      res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Barber tidak ditemukan.' } });
+      return;
+    }
+
+    res.status(200).json({ data: detail });
+  } catch (err: any) {
+    console.error('[Admin/barbers/:id]', err.message);
+    res.status(500).json({ error: { code: 'INTERNAL_SERVER_ERROR', message: 'Gagal load barber detail.' } });
+  }
+}
+
+// ============================================================================
+// Phase 2: Category Management
+// ============================================================================
+
+/**
+ * GET /api/admin/categories - List all categories
+ */
+async function handleGetCategories(ctx: RouteContext): Promise<void> {
+  const { req, res } = ctx;
+  if (!handleCors(req, res, ['GET', 'OPTIONS'])) return;
+  const admin = await requireAdmin(req, res);
+  if (!admin) return;
+
+  try {
+    const categories = await getCategoriesList();
+    res.status(200).json({ data: categories });
+  } catch (err: any) {
+    console.error('[Admin/categories]', err.message);
+    res.status(500).json({ error: { code: 'INTERNAL_SERVER_ERROR', message: 'Gagal load kategori.' } });
+  }
+}
+
+/**
+ * POST /api/admin/categories - Create new category
+ */
+async function handleCreateCategory(ctx: RouteContext): Promise<void> {
+  const { req, res } = ctx;
+  if (!handleCors(req, res, ['POST', 'OPTIONS'])) return;
+  const admin = await requireAdmin(req, res);
+  if (!admin) return;
+
+  const { name, description, icon, active, order } = req.body || {};
+
+  const nameValidation = validateCategoryName(name);
+  if (!nameValidation.valid) {
+    res.status(400).json({ error: { code: 'INVALID_NAME', message: nameValidation.message } });
+    return;
+  }
+
+  try {
+    const category = await createCategory({ name, description, icon, active, order }, admin.uid);
+    res.status(201).json({ data: category });
+  } catch (err: any) {
+    console.error('[Admin/categories POST]', err.message);
+    if (err.message === 'CATEGORY_ALREADY_EXISTS') {
+      res.status(409).json({ error: { code: 'CATEGORY_ALREADY_EXISTS', message: 'Kategori sudah ada.' } });
+    } else {
+      res.status(500).json({ error: { code: 'INTERNAL_SERVER_ERROR', message: 'Gagal membuat kategori.' } });
+    }
+  }
+}
+
+/**
+ * PATCH /api/admin/categories/:categoryId - Update category
+ */
+async function handleUpdateCategory(ctx: RouteContext): Promise<void> {
+  const { req, res } = ctx;
+  if (!handleCors(req, res, ['PATCH', 'OPTIONS'])) return;
+  const admin = await requireAdmin(req, res);
+  if (!admin) return;
+
+  const categoryId = req.url?.split('/categories/')[1]?.split('?')[0];
+  if (!categoryId) {
+    res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'categoryId diperlukan.' } });
+    return;
+  }
+
+  const { name, description, icon, active, order } = req.body || {};
+
+  // Validate name if provided
+  if (name !== undefined) {
+    const nameValidation = validateCategoryName(name);
+    if (!nameValidation.valid) {
+      res.status(400).json({ error: { code: 'INVALID_NAME', message: nameValidation.message } });
+      return;
+    }
+  }
+
+  // Validate order if provided
+  if (order !== undefined && (!Number.isInteger(order) || order < 0)) {
+    res.status(400).json({ error: { code: 'INVALID_ORDER', message: 'Order harus berupa angka positif.' } });
+    return;
+  }
+
+  try {
+    const category = await updateCategory(categoryId, { name, description, icon, active, order }, admin.uid);
+    res.status(200).json({ data: category });
+  } catch (err: any) {
+    console.error('[Admin/categories/:id PATCH]', err.message);
+    if (err.message === 'CATEGORY_NOT_FOUND') {
+      res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Kategori tidak ditemukan.' } });
+    } else if (err.message === 'CATEGORY_ALREADY_EXISTS') {
+      res.status(409).json({ error: { code: 'CATEGORY_ALREADY_EXISTS', message: 'Kategori sudah ada.' } });
+    } else if (err.message === 'INVALID_ORDER') {
+      res.status(400).json({ error: { code: 'INVALID_ORDER', message: 'Order tidak valid.' } });
+    } else {
+      res.status(500).json({ error: { code: 'INTERNAL_SERVER_ERROR', message: 'Gagal update kategori.' } });
+    }
+  }
+}
+
+/**
+ * DELETE /api/admin/categories/:categoryId - Deactivate category
+ */
+async function handleDeactivateCategory(ctx: RouteContext): Promise<void> {
+  const { req, res } = ctx;
+  if (!handleCors(req, res, ['DELETE', 'OPTIONS'])) return;
+  const admin = await requireAdmin(req, res);
+  if (!admin) return;
+
+  const categoryId = req.url?.split('/categories/')[1]?.split('?')[0];
+  if (!categoryId) {
+    res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'categoryId diperlukan.' } });
+    return;
+  }
+
+  try {
+    await deactivateCategory(categoryId, admin.uid);
+    res.status(204).end();
+  } catch (err: any) {
+    console.error('[Admin/categories/:id DELETE]', err.message);
+    if (err.message === 'CATEGORY_NOT_FOUND') {
+      res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Kategori tidak ditemukan.' } });
+    } else {
+      res.status(500).json({ error: { code: 'INTERNAL_SERVER_ERROR', message: 'Gagal deactivate kategori.' } });
+    }
+  }
+}
+
+// ============================================================================
 // Router & Pattern Matching
 // ============================================================================
 
@@ -383,9 +604,16 @@ const exactRoutes: Record<string, Record<string, RouteHandler>> = {
     '/api/admin/dashboard': handleGetDashboard,
     '/api/admin/barber-registrations': handleGetBarberRegistrations,
     '/api/admin/users': handleGetUsers,
+    '/api/admin/barbers': handleGetBarbers,
+    '/api/admin/categories': handleGetCategories,
   },
   'POST': {
     '/api/admin/barber-registrations/document-url': handleGetDocumentUrl,
+    '/api/admin/categories': handleCreateCategory,
+  },
+  'PATCH': {
+  },
+  'DELETE': {
   },
 };
 
@@ -405,6 +633,10 @@ function matchRoute(pathname: string, method: string): RouteHandler | null {
     if (pathname.match(/^\/api\/admin\/users\/[^/]+$/) && !pathname.includes('/status')) {
       return handleGetUserDetail;
     }
+    // /api/admin/barbers/:barberId (Phase 2)
+    if (pathname.match(/^\/api\/admin\/barbers\/[^/]+$/) && pathname !== '/api/admin/barbers') {
+      return handleGetBarberDetail;
+    }
   }
 
   if (method === 'POST') {
@@ -419,6 +651,20 @@ function matchRoute(pathname: string, method: string): RouteHandler | null {
     // /api/admin/users/:userId/status
     if (pathname.match(/^\/api\/admin\/users\/[^/]+\/status$/)) {
       return handleUpdateUserStatus;
+    }
+  }
+
+  if (method === 'PATCH') {
+    // /api/admin/categories/:categoryId (Phase 2)
+    if (pathname.match(/^\/api\/admin\/categories\/[^/]+$/)) {
+      return handleUpdateCategory;
+    }
+  }
+
+  if (method === 'DELETE') {
+    // /api/admin/categories/:categoryId (Phase 2)
+    if (pathname.match(/^\/api\/admin\/categories\/[^/]+$/)) {
+      return handleDeactivateCategory;
     }
   }
 

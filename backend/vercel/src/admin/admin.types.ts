@@ -162,3 +162,64 @@ export interface PaginationResult<T> {
   nextPageStartAfter?: string;
   hasMore: boolean;
 }
+
+// ============================================================================
+// Verification Detail
+// ============================================================================
+
+export interface VerificationDocumentMetadata {
+  type: AllowedDocType;
+  label: string;
+  available: boolean;
+}
+
+export interface AdminBarberRegistrationDetail extends AdminBarberRegistration {
+  documents_metadata?: VerificationDocumentMetadata[];
+  accountStatus?: UserStatus;
+}
+
+// ============================================================================
+// Barber Management
+// ============================================================================
+
+export interface AdminBarberSummary {
+  uid: string;
+  displayName: string;
+  businessName?: string;
+  verificationStatus: VerificationStatus;
+  listingStatus?: ListingStatus;
+  accountStatus: UserStatus;
+  ratingAverage?: number;
+  reviewCount?: number;
+  approvedAt?: any;
+}
+
+export interface AdminBarberDetail extends AdminBarberSummary {
+  phoneNumber?: string;
+  email?: string;
+  businessAddress?: string;
+  serviceArea?: string;
+  acceptingNewBookings?: boolean;
+  createdAt?: any;
+  updatedAt?: any;
+}
+
+// ============================================================================
+// Category Management
+// ============================================================================
+
+export interface CategoryCreateRequest {
+  name: string;
+  description?: string;
+  icon?: string;
+  active?: boolean;
+  order?: number;
+}
+
+export interface CategoryUpdateRequest {
+  name?: string;
+  description?: string;
+  icon?: string;
+  active?: boolean;
+  order?: number;
+}

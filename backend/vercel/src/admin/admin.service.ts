@@ -7,10 +7,15 @@
 import { FieldValue } from 'firebase-admin/firestore';
 import { db } from '../lib/firebase-admin.js';
 import type {
+    AdminBarberDetail,
     AdminBarberRegistration,
+    AdminBarberSummary,
     AdminBookingRecord,
+    AdminCategory,
     AdminUserRecord,
     ApproveBarberResult,
+    CategoryCreateRequest,
+    CategoryUpdateRequest,
     DashboardMetrics,
     PaginationParams,
     PaginationResult,
@@ -471,5 +476,271 @@ export async function getSignedDocumentUrl(
     };
   } catch (err: any) {
     throw new Error(`Failed to get signed document URL: ${err.message}`);
+  }
+}
+
+// ============================================================================
+// Barber Management (Phase 2)
+// ============================================================================
+
+/**
+ * Get list of barbers with filtering and pagination.
+ */
+export async function getBarberList(
+  filter?: 'all' | 'active' | 'suspended' | 'approved' | 'pending' | 'rejected',
+  params: PaginationParams = {},
+): Promise<PaginationResult<AdminBarberSummary>> {
+  const pageSize = params.pageSize || 20;
+  const maxPageSize = 100;
+  const normalizedPageSize = Math.min(pageSize, maxPageSize);
+
+  try {
+    const collRef = db.collection('barbers');
+    let queryRef: any = collRef;
+
+    // Apply filter based on verification or listing status
+    if (filter && filter !== 'all') {
+      if (['active', 'suspended', 'pending', 'rejected', 'approved'].includes(filter)) {
+        // For verification status filters
+        if (['pending', 'rejected', 'approved'].includes(filter)) {
+          queryRef = queryRef.where('verificationStatus', '==', filter);
+        } else {
+          // For listing status filters
+          queryRef = queryRef.where('listingStatus', '==', filter);
+        }
+      }
+    }
+
+    queryRef = queryRef.orderBy('createdAt', 'desc');
+
+    if (params.startAfter) {
+      const startDoc = await collRef.doc(params.startAfter).get();
+      if (startDoc.exists) {
+        queryRef = queryRef.startAfter(startDoc);
+      }
+    }
+
+    const docs = await queryRef.limit(normalizedPageSize + 1).get();
+    
+    const items: AdminBarberSummary[] = [];
+    for (const doc of docs.docs.slice(0, normalizedPageSize)) {
+      const barberData = doc.data();
+      
+      // Load user status
+      const userSnap = await db.collection('users').doc(doc.id).get();
+      const userData = userSnap.data();
+
+      items.push({
+        uid: doc.id,
+        displayName: barberData.displayName || userData?.displayName || 'N/A',
+        businessName: barberData.businessName,
+        verificationStatus: barberData.verificationStatus || 'pending',
+        listingStatus: barberData.listingStatus,
+        accountStatus: userData?.status || 'active',
+        ratingAverage: barberData.ratingAverage,
+        reviewCount: barberData.reviewCount,
+        approvedAt: barberData.approvedAt,
+      });
+    }
+
+    const nextPageStartAfter = docs.docs.length > normalizedPageSize ? docs.docs[normalizedPageSize - 1].id : undefined;
+
+    return {
+      items,
+      nextPageStartAfter,
+      hasMore: docs.docs.length > normalizedPageSize,
+    };
+  } catch (err: any) {
+    throw new Error(`Failed to get barber list: ${err.message}`);
+  }
+}
+
+/**
+ * Get detailed barber information including operational status.
+ */
+export async function getBarberDetail(barberId: string): Promise<AdminBarberDetail | null> {
+  try {
+    const barberSnap = await db.collection('barbers').doc(barberId).get();
+    if (!barberSnap.exists) {
+      return null;
+    }
+
+    const barberData = barberSnap.data()!;
+    const userSnap = await db.collection('users').doc(barberId).get();
+    const userData = userSnap.data() || {};
+
+    return {
+      uid: barberId,
+      displayName: barberData.displayName || userData.displayName || 'N/A',
+      email: userData.email,
+      businessName: barberData.businessName,
+      businessAddress: barberData.businessAddress,
+      serviceArea: barberData.serviceArea,
+      phoneNumber: userData.phoneNumber,
+      verificationStatus: barberData.verificationStatus || 'pending',
+      listingStatus: barberData.listingStatus,
+      accountStatus: userData.status || 'active',
+      ratingAverage: barberData.ratingAverage,
+      reviewCount: barberData.reviewCount,
+      acceptingNewBookings: barberData.acceptingNewBookings,
+      approvedAt: barberData.approvedAt,
+      createdAt: barberData.createdAt,
+      updatedAt: barberData.updatedAt,
+    };
+  } catch (err: any) {
+    throw new Error(`Failed to get barber detail: ${err.message}`);
+  }
+}
+
+// ============================================================================
+// Category Management (Phase 2)
+// ============================================================================
+
+/**
+ * Get list of all categories.
+ */
+export async function getCategoriesList(): Promise<AdminCategory[]> {
+  try {
+    const snap = await db.collection('categories').orderBy('order', 'asc').get();
+    return snap.docs.map((d) => ({
+      id: d.id,
+      name: d.data().name,
+      description: d.data().description,
+      icon: d.data().icon,
+      active: d.data().active,
+      order: d.data().order,
+      createdAt: d.data().createdAt,
+      updatedAt: d.data().updatedAt,
+    }));
+  } catch (err: any) {
+    throw new Error(`Failed to get categories: ${err.message}`);
+  }
+}
+
+/**
+ * Create a new category.
+ */
+export async function createCategory(
+  req: CategoryCreateRequest,
+  adminUid: string,
+): Promise<AdminCategory> {
+  try {
+    // Generate normalized name for duplicate check
+    const normalizedName = req.name.toLowerCase().trim();
+    
+    // Check for existing category with same normalized name
+    const existingSnap = await db
+      .collection('categories')
+      .where('name_normalized', '==', normalizedName)
+      .limit(1)
+      .get();
+
+    if (!existingSnap.empty) {
+      throw new Error('CATEGORY_ALREADY_EXISTS');
+    }
+
+    // Get max order
+    const maxOrderSnap = await db
+      .collection('categories')
+      .orderBy('order', 'desc')
+      .limit(1)
+      .get();
+
+    const maxOrder = maxOrderSnap.docs.length > 0 ? (maxOrderSnap.docs[0].data().order || 0) + 1 : 0;
+
+    const now = new Date();
+    const newCategory: any = {
+      name: req.name.trim(),
+      name_normalized: normalizedName,
+      description: req.description || '',
+      icon: req.icon,
+      active: req.active !== false,
+      order: req.order !== undefined ? req.order : maxOrder,
+      createdAt: now,
+      updatedAt: now,
+      createdBy: adminUid,
+    };
+
+    const docRef = await db.collection('categories').add(newCategory);
+    newCategory.id = docRef.id;
+
+    return newCategory;
+  } catch (err: any) {
+    throw new Error(`Failed to create category: ${err.message}`);
+  }
+}
+
+/**
+ * Update an existing category.
+ */
+export async function updateCategory(
+  categoryId: string,
+  req: CategoryUpdateRequest,
+  adminUid: string,
+): Promise<AdminCategory> {
+  try {
+    const categorySnap = await db.collection('categories').doc(categoryId).get();
+    if (!categorySnap.exists) {
+      throw new Error('CATEGORY_NOT_FOUND');
+    }
+
+    const currentData = categorySnap.data()!;
+    const updateData: any = { updatedAt: new Date(), updatedBy: adminUid };
+
+    if (req.name !== undefined) {
+      const normalizedName = req.name.toLowerCase().trim();
+      updateData.name = req.name.trim();
+      updateData.name_normalized = normalizedName;
+
+      // Check for duplicate (exclude current)
+      const existingSnap = await db
+        .collection('categories')
+        .where('name_normalized', '==', normalizedName)
+        .get();
+
+      if (existingSnap.docs.some((d) => d.id !== categoryId)) {
+        throw new Error('CATEGORY_ALREADY_EXISTS');
+      }
+    }
+
+    if (req.description !== undefined) updateData.description = req.description || '';
+    if (req.icon !== undefined) updateData.icon = req.icon;
+    if (req.active !== undefined) updateData.active = req.active;
+    if (req.order !== undefined) {
+      if (!Number.isInteger(req.order)) {
+        throw new Error('INVALID_ORDER');
+      }
+      updateData.order = req.order;
+    }
+
+    await db.collection('categories').doc(categoryId).update(updateData);
+
+    return {
+      id: categoryId,
+      ...currentData,
+      ...updateData,
+    } as AdminCategory;
+  } catch (err: any) {
+    throw new Error(`Failed to update category: ${err.message}`);
+  }
+}
+
+/**
+ * Deactivate a category (soft delete, preserve references).
+ */
+export async function deactivateCategory(categoryId: string, adminUid: string): Promise<void> {
+  try {
+    const categorySnap = await db.collection('categories').doc(categoryId).get();
+    if (!categorySnap.exists) {
+      throw new Error('CATEGORY_NOT_FOUND');
+    }
+
+    await db.collection('categories').doc(categoryId).update({
+      active: false,
+      updatedAt: new Date(),
+      updatedBy: adminUid,
+    });
+  } catch (err: any) {
+    throw new Error(`Failed to deactivate category: ${err.message}`);
   }
 }
