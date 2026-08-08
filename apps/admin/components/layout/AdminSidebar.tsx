@@ -7,9 +7,10 @@ export function AdminSidebar({ admin }: { admin: AdminIdentity | null }) {
   const menuItems = [
     { label: 'Dashboard', href: '/', icon: '📊' },
     { label: 'Verifikasi Barber', href: '/barber-verification', icon: '✅' },
+    { label: 'Manajemen Barber', href: '/barbers', icon: '💇' },
     { label: 'Pengguna', href: '/users', icon: '👥' },
+    { label: 'Kategori', href: '/categories', icon: '📂' },
     { label: 'Booking', href: '#', icon: '📅', disabled: true },
-    { label: 'Kategori', href: '#', icon: '📂', disabled: true },
     { label: 'Transaksi', href: '#', icon: '💰', disabled: true },
     { label: 'Pengaturan', href: '#', icon: '⚙️', disabled: true },
   ];
@@ -79,10 +80,10 @@ export function AdminSidebar({ admin }: { admin: AdminIdentity | null }) {
         paddingRight: '1.5rem',
       }}>
         <p style={{ fontSize: '0.75rem', color: '#9ca3af', marginBottom: '0.5rem' }}>
-          Batch 06 - Phase 1 (Admin Operations)
+          Batch 06 - Phase 2 (Barber & Category Management)
         </p>
         <p style={{ fontSize: '0.75rem', color: '#6b7280' }}>
-          Dashboard, Verifikasi Barber, Manajemen Pengguna
+          Dashboard, Verifikasi, Manajemen Barber, Kategori
         </p>
       </div>
     </aside>
