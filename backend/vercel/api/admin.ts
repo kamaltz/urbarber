@@ -23,6 +23,11 @@
  * - GET /api/admin/categories
  * - POST /api/admin/categories
  * - PATCH /api/admin/categories/:categoryId
+ *
+ * Routes (Phase 3):
+ * - GET /api/admin/bookings
+ * - GET /api/admin/bookings/:bookingId
+ * - GET /api/admin/transactions
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
@@ -35,13 +40,16 @@ import {
     getBarberList,
     getBarberRegistrationDetail,
     getBarberRegistrations,
+    getBookingDetail,
+    getBookingsList,
     getCategoriesList,
     getDashboardMetrics,
     getSignedDocumentUrl,
+    getTransactionsList,
     getUsers,
     rejectBarber,
     updateCategory,
-    updateUserStatus,
+    updateUserStatus
 } from '../src/admin/admin.service.js';
 import {
     validateCategoryName,
@@ -595,6 +603,147 @@ async function handleDeactivateCategory(ctx: RouteContext): Promise<void> {
 }
 
 // ============================================================================
+// Phase 3: Booking Monitoring
+// ============================================================================
+
+/**
+ * GET /api/admin/bookings - List bookings with filtering
+ */
+async function handleGetBookings(ctx: RouteContext): Promise<void> {
+  const { req, res } = ctx;
+  if (!handleCors(req, res, ['GET', 'OPTIONS'])) return;
+  const admin = await requireAdmin(req, res);
+  if (!admin) return;
+
+  try {
+    const status = (req.query.status as string) || undefined;
+    const dateFrom = req.query.dateFrom as string | undefined;
+    const dateTo = req.query.dateTo as string | undefined;
+    const paymentMethod = (req.query.paymentMethod as string) || undefined;
+    const paymentStatus = (req.query.paymentStatus as string) || undefined;
+    const pageSize = parseInt((req.query.pageSize as string) || '20', 10);
+    const startAfter = req.query.startAfter as string | undefined;
+
+    const sizeValidation = validatePageSize(pageSize);
+    if (!sizeValidation.valid) {
+      res.status(400).json({ error: { code: 'INVALID_PAGE_SIZE', message: sizeValidation.message } });
+      return;
+    }
+
+    // Validate status enum
+    if (status && !['pending', 'accepted', 'rejected', 'in_progress', 'completed', 'cancelled'].includes(status)) {
+      res.status(400).json({ error: { code: 'INVALID_BOOKING_STATUS', message: 'Status tidak valid.' } });
+      return;
+    }
+
+    // Validate paymentMethod
+    if (paymentMethod && !['cash_on_service', 'midtrans_sandbox'].includes(paymentMethod)) {
+      res.status(400).json({ error: { code: 'INVALID_PAYMENT_METHOD', message: 'Metode pembayaran tidak valid.' } });
+      return;
+    }
+
+    const result = await getBookingsList(
+      {
+        status: status as any,
+        dateFrom,
+        dateTo,
+        paymentMethod: paymentMethod as any,
+        paymentStatus,
+        pageSize: sizeValidation.normalizedSize,
+        startAfter,
+      },
+      { pageSize: sizeValidation.normalizedSize, startAfter }
+    );
+
+    res.status(200).json({ data: result });
+  } catch (err: any) {
+    console.error('[Admin/bookings]', err.message);
+    res.status(500).json({ error: { code: 'INTERNAL_SERVER_ERROR', message: 'Gagal load booking list.' } });
+  }
+}
+
+/**
+ * GET /api/admin/bookings/:bookingId - Booking detail
+ */
+async function handleGetBookingDetail(ctx: RouteContext): Promise<void> {
+  const { req, res } = ctx;
+  if (!handleCors(req, res, ['GET', 'OPTIONS'])) return;
+  const admin = await requireAdmin(req, res);
+  if (!admin) return;
+
+  const bookingId = req.url?.split('/bookings/')[1]?.split('?')[0];
+  if (!bookingId) {
+    res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'bookingId diperlukan.' } });
+    return;
+  }
+
+  try {
+    const detail = await getBookingDetail(bookingId);
+    if (!detail) {
+      res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Booking tidak ditemukan.' } });
+      return;
+    }
+
+    res.status(200).json({ data: detail });
+  } catch (err: any) {
+    console.error('[Admin/bookings/:id]', err.message);
+    res.status(500).json({ error: { code: 'INTERNAL_SERVER_ERROR', message: 'Gagal load booking detail.' } });
+  }
+}
+
+// ============================================================================
+// Phase 3: Transaction Monitoring
+// ============================================================================
+
+/**
+ * GET /api/admin/transactions - List transactions with filtering
+ */
+async function handleGetTransactions(ctx: RouteContext): Promise<void> {
+  const { req, res } = ctx;
+  if (!handleCors(req, res, ['GET', 'OPTIONS'])) return;
+  const admin = await requireAdmin(req, res);
+  if (!admin) return;
+
+  try {
+    const provider = (req.query.provider as string) || undefined;
+    const status = (req.query.status as string) || undefined;
+    const dateFrom = req.query.dateFrom as string | undefined;
+    const dateTo = req.query.dateTo as string | undefined;
+    const pageSize = parseInt((req.query.pageSize as string) || '20', 10);
+    const startAfter = req.query.startAfter as string | undefined;
+
+    const sizeValidation = validatePageSize(pageSize);
+    if (!sizeValidation.valid) {
+      res.status(400).json({ error: { code: 'INVALID_PAGE_SIZE', message: sizeValidation.message } });
+      return;
+    }
+
+    // Validate provider
+    if (provider && !['cash_on_service', 'midtrans_sandbox'].includes(provider)) {
+      res.status(400).json({ error: { code: 'INVALID_PROVIDER', message: 'Provider tidak valid.' } });
+      return;
+    }
+
+    const result = await getTransactionsList(
+      {
+        provider: provider as any,
+        status,
+        dateFrom,
+        dateTo,
+        pageSize: sizeValidation.normalizedSize,
+        startAfter,
+      },
+      { pageSize: sizeValidation.normalizedSize, startAfter }
+    );
+
+    res.status(200).json({ data: result });
+  } catch (err: any) {
+    console.error('[Admin/transactions]', err.message);
+    res.status(500).json({ error: { code: 'INTERNAL_SERVER_ERROR', message: 'Gagal load transaction list.' } });
+  }
+}
+
+// ============================================================================
 // Router & Pattern Matching
 // ============================================================================
 
@@ -606,6 +755,8 @@ const exactRoutes: Record<string, Record<string, RouteHandler>> = {
     '/api/admin/users': handleGetUsers,
     '/api/admin/barbers': handleGetBarbers,
     '/api/admin/categories': handleGetCategories,
+    '/api/admin/bookings': handleGetBookings,
+    '/api/admin/transactions': handleGetTransactions,
   },
   'POST': {
     '/api/admin/barber-registrations/document-url': handleGetDocumentUrl,
@@ -636,6 +787,10 @@ function matchRoute(pathname: string, method: string): RouteHandler | null {
     // /api/admin/barbers/:barberId (Phase 2)
     if (pathname.match(/^\/api\/admin\/barbers\/[^/]+$/) && pathname !== '/api/admin/barbers') {
       return handleGetBarberDetail;
+    }
+    // /api/admin/bookings/:bookingId (Phase 3)
+    if (pathname.match(/^\/api\/admin\/bookings\/[^/]+$/) && pathname !== '/api/admin/bookings') {
+      return handleGetBookingDetail;
     }
   }
 

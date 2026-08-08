@@ -60,7 +60,7 @@ export interface AdminUserRecord {
   createdAt: string;
 }
 
-// Bookings
+// Bookings - Legacy (backward compat for dashboard recent bookings)
 export interface AdminBookingRecord {
   bookingId: string;
   customerId: string;
@@ -70,9 +70,55 @@ export interface AdminBookingRecord {
   date: string;
   startTime: string;
   price: number;
-  paymentMethod: 'cash_on_service' | 'midtrans';
-  paymentStatus: 'unpaid' | 'paid' | 'failed';
+  paymentMethod?: 'cash_on_service' | 'midtrans_sandbox';
+  paymentStatus?: 'not_required' | 'initiated' | 'pending' | 'paid' | 'failed' | 'expired' | 'cancelled' | 'refunded' | 'partially_refunded';
   createdAt: string;
+}
+
+// Bookings - Phase 3: Summary for admin monitoring list
+export interface AdminBookingSummary {
+  bookingId: string;
+  customerName: string;
+  barberName: string;
+  serviceName: string;
+  serviceLocationType?: 'home_service' | 'at_salon';
+  serviceAddress?: string;
+  date: string;
+  startTime: string;
+  status: 'pending' | 'accepted' | 'rejected' | 'in_progress' | 'completed' | 'cancelled';
+  paymentMethod: 'cash_on_service' | 'midtrans_sandbox';
+  paymentStatus: 'not_required' | 'initiated' | 'pending' | 'paid' | 'failed' | 'expired' | 'cancelled' | 'refunded' | 'partially_refunded';
+  totalPrice: number;
+  createdAt: string;
+}
+
+// Bookings - Phase 3: Detail for admin booking review
+export interface AdminBookingDetail extends AdminBookingSummary {
+  customerId: string;
+  customerEmail?: string;
+  customerPhone?: string;
+  barberId: string;
+  barberEmail?: string;
+  barberPhone?: string;
+  serviceId: string;
+  endTime?: string;
+  notes?: string;
+  updatedAt?: string;
+  paidAt?: string;
+}
+
+// Transactions - Phase 3: Payment transaction record
+export interface AdminTransaction {
+  transactionId: string;
+  bookingId?: string;
+  provider: 'cash_on_service' | 'midtrans_sandbox';
+  environment: 'cash' | 'sandbox';
+  orderId?: string;
+  grossAmount: number;
+  status: 'not_required' | 'initiated' | 'pending' | 'paid' | 'failed' | 'expired' | 'cancelled' | 'refunded' | 'partially_refunded';
+  paymentType?: string;
+  createdAt: string;
+  paidAt?: string;
 }
 
 // Pagination
@@ -398,5 +444,81 @@ export class AdminApiClient {
       `/api/admin/categories/${categoryId}`,
       { method: 'DELETE' }
     );
+  }
+
+  // ============================================================================
+  // Phase 3: Booking Monitoring
+  // ============================================================================
+
+  /**
+   * GET /api/admin/bookings
+   * Get list of bookings with pagination and filtering
+   */
+  static async getBookings(
+    status?: 'pending' | 'accepted' | 'rejected' | 'in_progress' | 'completed' | 'cancelled' | 'all',
+    dateFrom?: string,
+    dateTo?: string,
+    paymentMethod?: 'cash_on_service' | 'midtrans_sandbox' | 'all',
+    paymentStatus?: string,
+    pageSize?: number,
+    startAfter?: string
+  ): Promise<PaginationResult<AdminBookingSummary>> {
+    const params = new URLSearchParams();
+    if (status && status !== 'all') params.append('status', status);
+    if (dateFrom) params.append('dateFrom', dateFrom);
+    if (dateTo) params.append('dateTo', dateTo);
+    if (paymentMethod && paymentMethod !== 'all') params.append('paymentMethod', paymentMethod);
+    if (paymentStatus) params.append('paymentStatus', paymentStatus);
+    if (pageSize) params.append('pageSize', String(pageSize));
+    if (startAfter) params.append('startAfter', startAfter);
+
+    const response = await this.request<ApiResponse<PaginationResult<AdminBookingSummary>>>(
+      `/api/admin/bookings?${params}`,
+      { method: 'GET' }
+    );
+    return response.data!;
+  }
+
+  /**
+   * GET /api/admin/bookings/:bookingId
+   * Get single booking detail
+   */
+  static async getBookingDetail(bookingId: string): Promise<AdminBookingDetail> {
+    const response = await this.request<ApiResponse<AdminBookingDetail>>(
+      `/api/admin/bookings/${bookingId}`,
+      { method: 'GET' }
+    );
+    return response.data!;
+  }
+
+  // ============================================================================
+  // Phase 3: Transaction Monitoring
+  // ============================================================================
+
+  /**
+   * GET /api/admin/transactions
+   * Get list of transactions with pagination and filtering
+   */
+  static async getTransactions(
+    provider?: 'cash_on_service' | 'midtrans_sandbox' | 'all',
+    status?: string,
+    dateFrom?: string,
+    dateTo?: string,
+    pageSize?: number,
+    startAfter?: string
+  ): Promise<PaginationResult<AdminTransaction>> {
+    const params = new URLSearchParams();
+    if (provider && provider !== 'all') params.append('provider', provider);
+    if (status) params.append('status', status);
+    if (dateFrom) params.append('dateFrom', dateFrom);
+    if (dateTo) params.append('dateTo', dateTo);
+    if (pageSize) params.append('pageSize', String(pageSize));
+    if (startAfter) params.append('startAfter', startAfter);
+
+    const response = await this.request<ApiResponse<PaginationResult<AdminTransaction>>>(
+      `/api/admin/transactions?${params}`,
+      { method: 'GET' }
+    );
+    return response.data!;
   }
 }

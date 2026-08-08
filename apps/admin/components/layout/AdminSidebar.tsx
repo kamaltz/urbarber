@@ -2,18 +2,26 @@
 
 import type { AdminIdentity } from '@/lib/api-client';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 
 export function AdminSidebar({ admin }: { admin: AdminIdentity | null }) {
+  const pathname = usePathname();
+
   const menuItems = [
     { label: 'Dashboard', href: '/', icon: '📊' },
     { label: 'Verifikasi Barber', href: '/barber-verification', icon: '✅' },
     { label: 'Manajemen Barber', href: '/barbers', icon: '💇' },
     { label: 'Pengguna', href: '/users', icon: '👥' },
+    { label: 'Booking', href: '/bookings', icon: '📅' },
     { label: 'Kategori', href: '/categories', icon: '📂' },
-    { label: 'Booking', href: '#', icon: '📅', disabled: true },
-    { label: 'Transaksi', href: '#', icon: '💰', disabled: true },
-    { label: 'Pengaturan', href: '#', icon: '⚙️', disabled: true },
+    { label: 'Transaksi', href: '/transactions', icon: '💰' },
+    { label: 'Pengaturan', href: '/settings', icon: '⚙️' },
   ];
+
+  const isActive = (href: string) => {
+    if (href === '/') return pathname === '/';
+    return pathname.startsWith(href);
+  };
 
   return (
     <aside style={{
@@ -31,44 +39,34 @@ export function AdminSidebar({ admin }: { admin: AdminIdentity | null }) {
 
       <nav>
         {menuItems.map((item) => (
-          <div key={item.label}>
-            {item.disabled ? (
-              <div
-                style={{
-                  padding: '0.75rem 1.5rem',
-                  color: '#6b7280',
-                  fontSize: '0.875rem',
-                  cursor: 'not-allowed',
-                  opacity: 0.5,
-                }}
-              >
-                <span style={{ marginRight: '0.5rem' }}>{item.icon}</span>
-                {item.label}
-              </div>
-            ) : (
-              <Link
-                href={item.href}
-                style={{
-                  display: 'block',
-                  padding: '0.75rem 1.5rem',
-                  color: '#f3f4f6',
-                  textDecoration: 'none',
-                  fontSize: '0.875rem',
-                  transition: 'background-color 0.2s',
-                  cursor: 'pointer',
-                }}
-                onMouseEnter={(e) => {
-                  (e.currentTarget as HTMLAnchorElement).style.backgroundColor = '#374151';
-                }}
-                onMouseLeave={(e) => {
-                  (e.currentTarget as HTMLAnchorElement).style.backgroundColor = 'transparent';
-                }}
-              >
-                <span style={{ marginRight: '0.5rem' }}>{item.icon}</span>
-                {item.label}
-              </Link>
-            )}
-          </div>
+          <Link
+            key={item.label}
+            href={item.href}
+            style={{
+              display: 'block',
+              padding: '0.75rem 1.5rem',
+              color: isActive(item.href) ? '#fff' : '#f3f4f6',
+              textDecoration: 'none',
+              fontSize: '0.875rem',
+              transition: 'background-color 0.2s',
+              cursor: 'pointer',
+              backgroundColor: isActive(item.href) ? '#374151' : 'transparent',
+              borderLeft: isActive(item.href) ? '3px solid #3b82f6' : '3px solid transparent',
+            }}
+            onMouseEnter={(e) => {
+              if (!isActive(item.href)) {
+                (e.currentTarget as HTMLAnchorElement).style.backgroundColor = '#374151';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!isActive(item.href)) {
+                (e.currentTarget as HTMLAnchorElement).style.backgroundColor = 'transparent';
+              }
+            }}
+          >
+            <span style={{ marginRight: '0.5rem' }}>{item.icon}</span>
+            {item.label}
+          </Link>
         ))}
       </nav>
 
@@ -80,10 +78,10 @@ export function AdminSidebar({ admin }: { admin: AdminIdentity | null }) {
         paddingRight: '1.5rem',
       }}>
         <p style={{ fontSize: '0.75rem', color: '#9ca3af', marginBottom: '0.5rem' }}>
-          Batch 06 - Phase 2 (Barber & Category Management)
+          URBarber Admin Operations
         </p>
         <p style={{ fontSize: '0.75rem', color: '#6b7280' }}>
-          Dashboard, Verifikasi, Manajemen Barber, Kategori
+          Batch 06 - Phase 3 Complete
         </p>
       </div>
     </aside>

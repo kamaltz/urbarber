@@ -4,6 +4,7 @@
  * All state mutations use atomic Firestore transactions.
  */
 
+import type { DocumentSnapshot } from 'firebase-admin/firestore';
 import { FieldValue } from 'firebase-admin/firestore';
 import { db } from '../lib/firebase-admin.js';
 import type {
@@ -742,5 +743,255 @@ export async function deactivateCategory(categoryId: string, adminUid: string): 
     });
   } catch (err: any) {
     throw new Error(`Failed to deactivate category: ${err.message}`);
+  }
+}
+
+// ============================================================================
+// Phase 3: Booking Monitoring
+// ============================================================================
+
+export interface BookingMonitoringFilters {
+  status?: 'pending' | 'accepted' | 'rejected' | 'in_progress' | 'completed' | 'cancelled';
+  dateFrom?: string; // YYYY-MM-DD
+  dateTo?: string;   // YYYY-MM-DD
+  paymentMethod?: 'cash_on_service' | 'midtrans_sandbox';
+  paymentStatus?: string;
+  pageSize?: number;
+  startAfter?: string;
+}
+
+/**
+ * Get list of bookings with admin-safe fields and filtering.
+ * Supports pagination, status filter, date range, payment filters.
+ * No location tracking history exposed.
+ */
+export async function getBookingsList(
+  filters: BookingMonitoringFilters = {},
+  params: PaginationParams = {}
+): Promise<PaginationResult<any>> {
+  try {
+    const pageSize = Math.min(params.pageSize || 20, 100);
+    let query: any = db.collection('bookings').orderBy('createdAt', 'desc');
+
+    // Apply filters
+    if (filters.status) {
+      query = query.where('status', '==', filters.status);
+    }
+    if (filters.paymentMethod) {
+      query = query.where('paymentMethod', '==', filters.paymentMethod);
+    }
+    if (filters.paymentStatus) {
+      query = query.where('paymentStatus', '==', filters.paymentStatus);
+    }
+
+    // Date range filtering (basic - Firestore limitation)
+    if (filters.dateFrom) {
+      query = query.where('date', '>=', filters.dateFrom);
+    }
+    if (filters.dateTo) {
+      query = query.where('date', '<=', filters.dateTo);
+    }
+
+    // Pagination
+    if (params.startAfter) {
+      const startDoc = await db.collection('bookings').doc(params.startAfter).get();
+      if (startDoc.exists) {
+        query = query.startAfter(startDoc);
+      }
+    }
+
+    query = query.limit(pageSize + 1);
+
+    const snapshot = await query.get();
+    const docs = snapshot.docs.slice(0, pageSize);
+    const hasMore = snapshot.docs.length > pageSize;
+
+    const items = docs.map((doc: DocumentSnapshot) => {
+      const data = doc.data();
+      return {
+        bookingId: doc.id,
+        customerName: data?.customerName || 'Unknown',
+        barberName: data?.barberName || 'Unknown',
+        serviceName: data?.serviceName || 'Service',
+        serviceLocationType: data?.serviceLocationType,
+        serviceAddress: data?.serviceAddress,
+        date: data?.date,
+        startTime: data?.startTime,
+        status: data?.status,
+        paymentMethod: data?.paymentMethod,
+        paymentStatus: data?.paymentStatus,
+        totalPrice: data?.totalPrice || 0,
+        createdAt: data?.createdAt,
+      };
+    });
+
+    return {
+      items,
+      nextPageStartAfter: hasMore ? docs[docs.length - 1]?.id : undefined,
+      hasMore,
+    };
+  } catch (err: any) {
+    throw new Error(`Failed to get bookings list: ${err.message}`);
+  }
+}
+
+/**
+ * Get booking detail with safe operational fields.
+ * Does NOT expose snapToken, server keys, or tracking history.
+ */
+export async function getBookingDetail(bookingId: string): Promise<any | null> {
+  try {
+    const bookingSnap = await db.collection('bookings').doc(bookingId).get();
+    if (!bookingSnap.exists) {
+      return null;
+    }
+
+    const data = bookingSnap.data()!;
+
+    return {
+      bookingId: bookingSnap.id,
+      customerId: data.customerId,
+      customerName: data.customerName || 'Unknown',
+      customerEmail: data.customerEmail,
+      customerPhone: data.customerPhone,
+      barberId: data.barberId,
+      barberName: data.barberName || 'Unknown',
+      barberEmail: data.barberEmail,
+      barberPhone: data.barberPhone,
+      serviceId: data.serviceId,
+      serviceName: data.serviceName,
+      serviceLocationType: data.serviceLocationType,
+      serviceAddress: data.serviceAddress,
+      date: data.date,
+      startTime: data.startTime,
+      endTime: data.endTime,
+      status: data.status,
+      notes: data.notes,
+      paymentMethod: data.paymentMethod,
+      paymentStatus: data.paymentStatus,
+      totalPrice: data.totalPrice || 0,
+      createdAt: data.createdAt,
+      updatedAt: data.updatedAt,
+      paidAt: data.paidAt,
+      // SECURITY: Do NOT expose:
+      // - latitude, longitude (location tracking)
+      // - snapToken (payment gateway)
+      // - bookingTracking array (location history)
+    };
+  } catch (err: any) {
+    throw new Error(`Failed to get booking detail: ${err.message}`);
+  }
+}
+
+// ============================================================================
+// Phase 3: Transaction Monitoring
+// ============================================================================
+
+export interface TransactionMonitoringFilters {
+  provider?: 'cash_on_service' | 'midtrans_sandbox';
+  status?: string;
+  dateFrom?: string; // YYYY-MM-DD
+  dateTo?: string;   // YYYY-MM-DD
+  pageSize?: number;
+  startAfter?: string;
+}
+
+/**
+ * Get list of transactions (cash + Midtrans Sandbox).
+ * Safe transaction fields only.
+ * Does NOT expose snapToken, server keys, or raw webhook payloads.
+ */
+export async function getTransactionsList(
+  filters: TransactionMonitoringFilters = {},
+  params: PaginationParams = {}
+): Promise<PaginationResult<any>> {
+  try {
+    const pageSize = Math.min(params.pageSize || 20, 100);
+
+    // For cash_on_service, read from bookings with paymentMethod='cash_on_service'
+    // For midtrans_sandbox, read from payments collection
+
+    const items: any[] = [];
+    let hasMore = false;
+
+    // Get cash transactions
+    if (!filters.provider || filters.provider === 'cash_on_service') {
+      let cashQuery: any = db.collection('bookings')
+        .where('paymentMethod', '==', 'cash_on_service')
+        .orderBy('createdAt', 'desc');
+
+      if (filters.status && filters.status !== 'not_required') {
+        cashQuery = cashQuery.where('paymentStatus', '==', filters.status);
+      }
+
+      const cashDocs = await cashQuery.limit(pageSize).get();
+      items.push(
+        ...cashDocs.docs.map((doc: DocumentSnapshot) => {
+          const data = doc.data();
+          return {
+            transactionId: `cash-${doc.id}`,
+            bookingId: doc.id,
+            provider: 'cash_on_service',
+            environment: 'cash',
+            grossAmount: data?.totalPrice || 0,
+            status: 'not_required',
+            createdAt: data?.createdAt,
+            paidAt: undefined,
+          };
+        })
+      );
+    }
+
+    // Get Midtrans Sandbox transactions
+    if (!filters.provider || filters.provider === 'midtrans_sandbox') {
+      let midtransQuery: any = db.collection('payments')
+        .where('environment', '==', 'sandbox')
+        .orderBy('createdAt', 'desc');
+
+      if (filters.status) {
+        midtransQuery = midtransQuery.where('status', '==', filters.status);
+      }
+
+      const midtransDocs = await midtransQuery.limit(pageSize).get();
+      items.push(
+        ...midtransDocs.docs.map((doc: DocumentSnapshot) => {
+          const data = doc.data();
+          return {
+            transactionId: data?.transactionId || doc.id,
+            bookingId: data?.bookingId,
+            provider: 'midtrans_sandbox',
+            environment: 'sandbox',
+            orderId: data?.orderId,
+            grossAmount: data?.grossAmount || 0,
+            status: data?.status,
+            paymentType: data?.paymentType,
+            createdAt: data?.createdAt,
+            paidAt: data?.paidAt,
+            // SECURITY: Do NOT expose:
+            // - snapToken
+            // - server key
+            // - full raw payload
+          };
+        })
+      );
+    }
+
+    // Sort combined results by createdAt desc
+    items.sort((a, b) => {
+      const aTime = a.createdAt?.toMillis?.() || 0;
+      const bTime = b.createdAt?.toMillis?.() || 0;
+      return bTime - aTime;
+    });
+
+    const paginatedItems = items.slice(0, pageSize);
+    hasMore = items.length > pageSize;
+
+    return {
+      items: paginatedItems,
+      nextPageStartAfter: hasMore ? paginatedItems[paginatedItems.length - 1]?.transactionId : undefined,
+      hasMore,
+    };
+  } catch (err: any) {
+    throw new Error(`Failed to get transactions list: ${err.message}`);
   }
 }
