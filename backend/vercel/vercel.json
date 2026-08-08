@@ -1,15 +1,16 @@
 {
   "version": 2,
   "rewrites": [
-    { "source": "/", "destination": "/api/index" },
-    { "source": "/payments/finish", "destination": "/api/payments/return?result=finish" },
-    { "source": "/payments/unfinish", "destination": "/api/payments/return?result=unfinish" },
-    { "source": "/payments/error", "destination": "/api/payments/return?result=error" },
-    { "source": "/api/payments/return", "destination": "/api/payments/return" },
-    { "source": "/api/payments/create", "destination": "/api/payments/create" },
-    { "source": "/api/payments/sync", "destination": "/api/payments/sync" },
-    { "source": "/api/payments/webhook", "destination": "/api/payments/webhook" },
+    { "source": "/", "destination": "/api/health" },
     { "source": "/api/health", "destination": "/api/health" },
-    { "source": "/:path*", "destination": "/api/index" }
+    { "source": "/api/admin/:path*", "destination": "/api/admin" },
+    { "source": "/api/auth/:path*", "destination": "/api/app" },
+    { "source": "/api/barber/:path*", "destination": "/api/app" },
+    { "source": "/api/bookings/:path*", "destination": "/api/app" },
+    { "source": "/api/payments/webhook", "destination": "/api/webhook" },
+    { "source": "/api/payments/:path*", "destination": "/api/payments" },
+    { "source": "/payments/finish", "destination": "/api/payments?result=finish" },
+    { "source": "/payments/unfinish", "destination": "/api/payments?result=unfinish" },
+    { "source": "/payments/error", "destination": "/api/payments?result=error" }
   ]
 }

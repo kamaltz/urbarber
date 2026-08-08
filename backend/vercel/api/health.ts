@@ -6,7 +6,8 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
 
   res.status(200).json({
     status: 'ok',
+    ok: true,
+    service: 'urbarber-api',
     timestamp: new Date().toISOString(),
-    service: 'urbarber-vercel-backend',
   });
 }

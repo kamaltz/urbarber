@@ -1,10 +1,11 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getSlotLockId } from '../../src/bookings/slot-lock.js';
-import { config } from '../../src/config/index.js';
-import { handleCors } from '../../src/lib/cors.js';
-import { db } from '../../src/lib/firebase-admin.js';
-import { parseOrderId, verifyMidtransSignature } from '../../src/payments/signature.js';
-import { mapMidtransStatus, shouldReleaseSlot } from '../../src/payments/status-mapper.js';
+import type { Transaction } from 'firebase-admin/firestore';
+import { getSlotLockId } from '../src/bookings/slot-lock.js';
+import { config } from '../src/config/index.js';
+import { handleCors } from '../src/lib/cors.js';
+import { db } from '../src/lib/firebase-admin.js';
+import { parseOrderId, verifyMidtransSignature } from '../src/payments/signature.js';
+import { mapMidtransStatus, shouldReleaseSlot } from '../src/payments/status-mapper.js';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const midtransClient = require('midtrans-client');
@@ -106,7 +107,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const slotLockRef = db.collection('slotLocks').doc(slotDocId);
 
   // 6. Update Firestore atomically
-  await db.runTransaction(async (t) => {
+  await db.runTransaction(async (t: Transaction) => {
     const updatePayment: Record<string, any> = {
       status: targetStatus,
       transactionStatus: verifiedStatus,
