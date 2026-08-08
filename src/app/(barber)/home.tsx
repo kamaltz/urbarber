@@ -10,7 +10,8 @@ import type { BarberBooking, BarberProfile } from '@/features/barbers/types/barb
 import { formatCurrency } from '@/utils/formatters';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { RefreshControl, SafeAreaView, ScrollView, Switch, Text, TouchableOpacity, View } from 'react-native';
+import { RefreshControl, ScrollView, Switch, Text, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function BarberHomeScreen() {
   const { user, logout } = useAuth();

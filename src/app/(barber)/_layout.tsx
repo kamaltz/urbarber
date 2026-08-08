@@ -5,7 +5,8 @@ import { barberRepository } from '@/features/barbers/repository/barber.repositor
 import type { BarberProfile } from '@/features/barbers/types/barber';
 import { router, Stack } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { SafeAreaView, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function BarberLayout() {
   const { isAuthenticated, emailVerified, user, role, loading: authLoading, logout } = useAuth();

@@ -2,7 +2,8 @@ import { Avatar } from '@/components/ui/Avatar';
 import { useLocalSearchParams } from 'expo-router';
 import { backOrReplace } from '@/lib/navigation';
 import { useMemo, useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, SafeAreaView, ScrollView, Text, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 type Message = { id: string; content: string; time: string; outgoing: boolean };
 const initialMessages: Message[] = [

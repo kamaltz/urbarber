@@ -1,7 +1,8 @@
 import { AppButton } from '@/components/ui/AppButton';
 import { routes } from '@/constants/routes';
 import { router, useLocalSearchParams } from 'expo-router';
-import { SafeAreaView, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 const steps = [
   { eyebrow: 'URBARBER', title: 'Selamat Datang', description: 'Temukan pengalaman grooming yang lebih mudah dan nyaman.', icon: '✂', button: 'Mulai' },

@@ -17,6 +17,10 @@ const envSchema = z.object({
   ALLOWED_ORIGINS: z.string().optional().default('http://localhost:8081,http://localhost:19006'),
   APP_DEEP_LINK_SCHEME: z.string().optional().default('urbarber'),
   PAYMENT_RETURN_BASE_URL: z.string().optional().default('https://urbarber.vercel.app'),
+  // Supabase service-role key (server-only, NEVER exposed to clients)
+  SUPABASE_URL: z.string().optional().default(''),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().optional().default(''),
+  SUPABASE_PRIVATE_BUCKET: z.string().optional().default('private-documents'),
 });
 
 function loadConfig() {
@@ -39,6 +43,9 @@ function loadConfig() {
     allowedOrigins: result.data.ALLOWED_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean),
     appDeepLinkScheme: result.data.APP_DEEP_LINK_SCHEME,
     paymentReturnBaseUrl: result.data.PAYMENT_RETURN_BASE_URL,
+    supabaseUrl: result.data.SUPABASE_URL,
+    supabaseServiceRoleKey: result.data.SUPABASE_SERVICE_ROLE_KEY,
+    supabasePrivateBucket: result.data.SUPABASE_PRIVATE_BUCKET,
   };
 }
 

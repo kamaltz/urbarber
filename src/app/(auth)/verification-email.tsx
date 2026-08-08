@@ -3,7 +3,8 @@ import { useAuth } from '@/features/auth/hooks/use-auth';
 import { authService } from '@/features/auth/services/auth.service';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, SafeAreaView, Text, View } from 'react-native';
+import { ActivityIndicator, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function VerificationEmailScreen() {
   const { user, reloadUser, logout } = useAuth();

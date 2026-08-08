@@ -2,7 +2,8 @@ import { CustomerBottomNavigation } from '@/components/navigation/CustomerBottom
 import { AppButton } from '@/components/ui/AppButton';
 import { backOrReplace } from '@/lib/navigation';
 import type { ReactNode } from 'react';
-import { Pressable, SafeAreaView, ScrollView, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 type CustomerScreenProps = {
   title: string;

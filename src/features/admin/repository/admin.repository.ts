@@ -1,650 +1,339 @@
 /**
- * Firebase Admin Repository
- * Data access layer for admin operations including user management, moderation, and analytics
+ * Admin Repository (Client-Side Firestore Reads)
+ * Provides read-only access to admin-accessible Firestore data.
+ *
+ * RULES:
+ * - This repository is READ-ONLY from the client.
+ * - All state mutations go through src/features/admin/services/admin.service.ts
+ *   which proxies to the trusted Vercel backend.
+ * - Never write barberRegistrations.verificationStatus, users.status,
+ *   or reviewedBy from this module.
  */
 
 import { firestore } from '@/lib/firebase';
 import {
-    addDoc,
-    collection,
-    doc,
-    getDoc,
-    getDocs,
-    query,
-    Timestamp,
-    updateDoc,
-    where,
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  limit,
+  orderBy,
+  query,
+  where,
 } from 'firebase/firestore';
 import type {
-    AdminAnalyticsData,
-    AdminDashboardData,
-    AdminUser,
-    BookingFlagRequest,
-    BookingForVerification,
-    ChatConversation,
-    ReviewForModeration,
-    ReviewModerationRequest,
-    SupportTicket,
-    SystemHealthData,
-    SystemUser,
-    TicketReplyData,
-    UserManagementSummary,
-    UserVerificationRequest,
+  AdminBarberRecord,
+  AdminBarberRegistration,
+  AdminBookingRecord,
+  AdminUserRecord,
+  CategoryRecord,
+  SystemUser,
 } from '../types/admin';
 
+// ─── Barber Registrations ─────────────────────────────────────────────────────
+
 export const adminRepository = {
-  /**
-   * Get admin profile
-   */
-  async getAdminProfile(adminId: string): Promise<AdminUser | null> {
+
+  async getBarberRegistrations(
+    verificationStatus?: string,
+    limitCount = 50,
+  ): Promise<AdminBarberRegistration[]> {
     try {
-      const docRef = doc(firestore, 'admins', adminId);
-      const snapshot = await getDoc(docRef);
-
-      if (!snapshot.exists()) {
-        return null;
+      const colRef = collection(firestore, 'barberRegistrations');
+      let q;
+      if (verificationStatus) {
+        q = query(colRef, where('verificationStatus', '==', verificationStatus), orderBy('submittedAt', 'desc'), limit(limitCount));
+      } else {
+        q = query(colRef, orderBy('submittedAt', 'desc'), limit(limitCount));
       }
-
-      return snapshot.data() as AdminUser;
+      const snap = await getDocs(q);
+      return snap.docs.map(d => ({
+        barberId: d.id,
+        ownerName: d.data().ownerName ?? '',
+        businessName: d.data().businessName ?? '',
+        phoneNumber: d.data().phoneNumber,
+        businessAddress: d.data().businessAddress,
+        serviceArea: d.data().serviceArea,
+        verificationStatus: d.data().verificationStatus,
+        onboardingStatus: d.data().onboardingStatus,
+        submittedAt: d.data().submittedAt ?? null,
+        reviewedAt: d.data().reviewedAt ?? null,
+        reviewedBy: d.data().reviewedBy ?? null,
+        rejectionReason: d.data().rejectionReason ?? null,
+      }));
     } catch (error) {
-      console.error('Error fetching admin profile:', error);
+      console.warn('[AdminRepository getBarberRegistrations Error]', error);
+      return [];
+    }
+  },
+
+  // ─── Users ─────────────────────────────────────────────────────────────────
+
+  async getUsers(role?: string, status?: string, limitCount = 50): Promise<AdminUserRecord[]> {
+    try {
+      const colRef = collection(firestore, 'users');
+      let q;
+      if (role && status) {
+        q = query(colRef, where('role', '==', role), where('status', '==', status), orderBy('createdAt', 'desc'), limit(limitCount));
+      } else if (role) {
+        q = query(colRef, where('role', '==', role), orderBy('createdAt', 'desc'), limit(limitCount));
+      } else if (status) {
+        q = query(colRef, where('status', '==', status), orderBy('createdAt', 'desc'), limit(limitCount));
+      } else {
+        q = query(colRef, orderBy('createdAt', 'desc'), limit(limitCount));
+      }
+      const snap = await getDocs(q);
+      return snap.docs.map(d => ({
+        uid: d.id,
+        email: d.data().email ?? '',
+        name: d.data().name ?? '',
+        role: d.data().role,
+        status: d.data().status,
+        phoneNumber: d.data().phoneNumber,
+        createdAt: d.data().createdAt ?? null,
+      }));
+    } catch (error) {
+      console.warn('[AdminRepository getUsers Error]', error);
+      return [];
+    }
+  },
+
+  async getUserDetail(userId: string): Promise<AdminUserRecord | null> {
+    try {
+      const snap = await getDoc(doc(firestore, 'users', userId));
+      if (!snap.exists()) return null;
+      return {
+        uid: snap.id,
+        email: snap.data().email ?? '',
+        name: snap.data().name ?? '',
+        role: snap.data().role,
+        status: snap.data().status,
+        phoneNumber: snap.data().phoneNumber,
+        createdAt: snap.data().createdAt ?? null,
+      };
+    } catch (error) {
+      console.warn('[AdminRepository getUserDetail Error]', error);
       return null;
     }
   },
 
-  /**
-   * Get admin dashboard data
-   */
-  async getAdminDashboard(adminId: string): Promise<AdminDashboardData | null> {
+  // ─── Barbers ───────────────────────────────────────────────────────────────
+
+  async getBarbers(verificationStatus?: string, limitCount = 50): Promise<AdminBarberRecord[]> {
     try {
-      const profile = await this.getAdminProfile(adminId);
-      const ticketsOpen = await getDocs(
-        query(collection(firestore, 'supportTickets'), where('status', 'in', ['open', 'in_progress']))
-      );
-      const reviewsPending = await getDocs(
-        query(collection(firestore, 'reviews'), where('status', '==', 'pending'))
-      );
-      const bookingsFlagged = await getDocs(
-        query(collection(firestore, 'bookings'), where('verificationStatus', '==', 'flagged'))
-      );
-
-      if (!profile) {
-        return null;
+      const colRef = collection(firestore, 'barbers');
+      let q;
+      if (verificationStatus) {
+        q = query(colRef, where('verificationStatus', '==', verificationStatus), orderBy('createdAt', 'desc'), limit(limitCount));
+      } else {
+        q = query(colRef, orderBy('createdAt', 'desc'), limit(limitCount));
       }
-
-            return {
-              metrics: {
-                totalUsers: 1000,
-                totalBookings: 2156,
-                totalRevenue: 18500000,
-                averageRating: 4.6,
-                ticketsOpen: ticketsOpen.size,
-                reviewsPending: reviewsPending.size,
-                bookingsFlagged: bookingsFlagged.size,
-              },
-              recentTickets: [],
-              recentReviews: [],
-              flaggedBookings: [],
-              usersNeedingVerification: [],
-            } as unknown as AdminDashboardData;
+      const snap = await getDocs(q);
+      return snap.docs.map(d => ({
+        id: d.id,
+        displayName: d.data().displayName ?? d.data().ownerName ?? '',
+        businessName: d.data().businessName,
+        verificationStatus: d.data().verificationStatus,
+        listingStatus: d.data().listingStatus,
+        status: d.data().status,
+        acceptingNewBookings: d.data().acceptingNewBookings,
+        ratingAverage: d.data().ratingAverage,
+        reviewCount: d.data().reviewCount,
+        approvedAt: d.data().approvedAt ?? null,
+        createdAt: d.data().createdAt ?? null,
+      }));
     } catch (error) {
-      console.error('Error fetching admin dashboard:', error);
+      console.warn('[AdminRepository getBarbers Error]', error);
+      return [];
+    }
+  },
+
+  async getBarberDetail(barberId: string): Promise<AdminBarberRecord | null> {
+    try {
+      const snap = await getDoc(doc(firestore, 'barbers', barberId));
+      if (!snap.exists()) return null;
+      return {
+        id: snap.id,
+        displayName: snap.data().displayName ?? snap.data().ownerName ?? '',
+        businessName: snap.data().businessName,
+        verificationStatus: snap.data().verificationStatus,
+        listingStatus: snap.data().listingStatus,
+        status: snap.data().status,
+        acceptingNewBookings: snap.data().acceptingNewBookings,
+        ratingAverage: snap.data().ratingAverage,
+        reviewCount: snap.data().reviewCount,
+        approvedAt: snap.data().approvedAt ?? null,
+        createdAt: snap.data().createdAt ?? null,
+      };
+    } catch (error) {
+      console.warn('[AdminRepository getBarberDetail Error]', error);
       return null;
     }
   },
 
-  /**
-   * Get support tickets
-   */
-  async getSupportTickets(adminId: string, status?: string): Promise<SupportTicket[]> {
+  // ─── Bookings ──────────────────────────────────────────────────────────────
+
+  async getBookings(status?: string, limitCount = 50): Promise<AdminBookingRecord[]> {
     try {
+      const colRef = collection(firestore, 'bookings');
       let q;
       if (status) {
-        q = query(collection(firestore, 'supportTickets'), where('status', '==', status));
+        q = query(colRef, where('status', '==', status), orderBy('createdAt', 'desc'), limit(limitCount));
       } else {
-        q = query(collection(firestore, 'supportTickets'));
+        q = query(colRef, orderBy('createdAt', 'desc'), limit(limitCount));
       }
-
-      const snapshot = await getDocs(q);
-      return snapshot.docs.map((doc) => ({
-        ...doc.data(),
-        ticketId: doc.id,
-      })) as SupportTicket[];
+      const snap = await getDocs(q);
+      return snap.docs.map(d => ({
+        id: d.id,
+        customerId: d.data().customerId,
+        barberId: d.data().barberId,
+        status: d.data().status,
+        paymentMethod: d.data().paymentMethod,
+        paymentStatus: d.data().paymentStatus,
+        totalPrice: d.data().totalPrice ?? 0,
+        date: d.data().date ?? '',
+        startTime: d.data().startTime ?? '',
+        createdAt: d.data().createdAt ?? null,
+      }));
     } catch (error) {
-      console.error('Error fetching support tickets:', error);
+      console.warn('[AdminRepository getBookings Error]', error);
       return [];
     }
   },
 
-  /**
-   * Get ticket detail
-   */
-  async getTicketDetail(adminId: string, ticketId: string): Promise<SupportTicket | null> {
+  async getBookingDetail(bookingId: string): Promise<AdminBookingRecord | null> {
     try {
-      const docRef = doc(firestore, 'supportTickets', ticketId);
-      const snapshot = await getDoc(docRef);
-
-      if (!snapshot.exists()) {
-        return null;
-      }
-
-      return { ...snapshot.data(), ticketId: snapshot.id } as SupportTicket;
+      const snap = await getDoc(doc(firestore, 'bookings', bookingId));
+      if (!snap.exists()) return null;
+      return {
+        id: snap.id,
+        customerId: snap.data().customerId,
+        barberId: snap.data().barberId,
+        status: snap.data().status,
+        paymentMethod: snap.data().paymentMethod,
+        paymentStatus: snap.data().paymentStatus,
+        totalPrice: snap.data().totalPrice ?? 0,
+        date: snap.data().date ?? '',
+        startTime: snap.data().startTime ?? '',
+        createdAt: snap.data().createdAt ?? null,
+      };
     } catch (error) {
-      console.error('Error fetching ticket detail:', error);
+      console.warn('[AdminRepository getBookingDetail Error]', error);
       return null;
     }
   },
 
-  /**
-   * Reply to ticket
-   */
-  async replyToTicket(
-    adminId: string,
-    ticketId: string,
-    data: TicketReplyData,
-  ): Promise<{ success: boolean; error?: { message: string } }> {
+  // ─── Categories ────────────────────────────────────────────────────────────
+
+  async getCategories(activeOnly = false): Promise<CategoryRecord[]> {
     try {
-      if (!adminId || !ticketId || !data.replyText) {
-        return { success: false, error: { message: 'Missing parameters' } };
-      }
-
-      await addDoc(collection(firestore, 'supportTickets', ticketId, 'replies'), {
-        adminId,
-        replyText: data.replyText,
-        createdAt: Timestamp.now(),
-      });
-
-      return { success: true };
+      const colRef = collection(firestore, 'categories');
+      const q = activeOnly
+        ? query(colRef, where('active', '==', true), orderBy('order', 'asc'))
+        : query(colRef, orderBy('order', 'asc'));
+      const snap = await getDocs(q);
+      return snap.docs.map(d => ({
+        id: d.id,
+        name: d.data().name ?? '',
+        description: d.data().description ?? null,
+        icon: d.data().icon ?? null,
+        active: d.data().active ?? true,
+        order: d.data().order ?? 0,
+        createdAt: d.data().createdAt ?? null,
+      }));
     } catch (error) {
-      return {
-        success: false,
-        error: { message: 'Failed to reply to ticket' },
-      };
-    }
-  },
-
-  /**
-   * Update ticket status
-   */
-  async updateTicketStatus(
-    adminId: string,
-    ticketId: string,
-    newStatus: string,
-  ): Promise<{ success: boolean; error?: { message: string } }> {
-    try {
-      if (!adminId || !ticketId || !newStatus) {
-        return { success: false, error: { message: 'Missing parameters' } };
-      }
-
-      await updateDoc(doc(firestore, 'supportTickets', ticketId), {
-        status: newStatus,
-        updatedAt: Timestamp.now(),
-      });
-
-      return { success: true };
-    } catch (error) {
-      return {
-        success: false,
-        error: { message: 'Failed to update ticket status' },
-      };
-    }
-  },
-
-  /**
-   * Assign ticket to admin
-   */
-  async assignTicket(
-    adminId: string,
-    ticketId: string,
-    assignToAdminId: string,
-  ): Promise<{ success: boolean; error?: { message: string } }> {
-    try {
-      if (!adminId || !ticketId || !assignToAdminId) {
-        return { success: false, error: { message: 'Missing parameters' } };
-      }
-
-      await updateDoc(doc(firestore, 'supportTickets', ticketId), {
-        assignedTo: assignToAdminId,
-        updatedAt: Timestamp.now(),
-      });
-
-      return { success: true };
-    } catch (error) {
-      return {
-        success: false,
-        error: { message: 'Failed to assign ticket' },
-      };
-    }
-  },
-
-  /**
-   * Get all system users
-   */
-  async getSystemUsers(
-    adminId: string,
-    role?: string,
-    status?: string,
-  ): Promise<SystemUser[]> {
-    try {
-      let baseQuery = collection(firestore, 'customers');
-
-      if (role === 'barber') {
-        baseQuery = collection(firestore, 'barbers');
-      }
-
-      let q;
-      if (status) {
-        q = query(baseQuery, where('status', '==', status));
-      } else {
-        q = query(baseQuery);
-      }
-
-      const snapshot = await getDocs(q);
-      return snapshot.docs.map((doc) => ({
-        ...doc.data(),
-        userId: doc.id,
-      })) as SystemUser[];
-    } catch (error) {
-      console.error('Error fetching system users:', error);
+      console.warn('[AdminRepository getCategories Error]', error);
       return [];
     }
   },
 
-  /**
-   * Get user detail
-   */
-  async getUserDetail(adminId: string, userId: string): Promise<SystemUser | null> {
-    try {
-      let docRef = doc(firestore, 'customers', userId);
-      let snapshot = await getDoc(docRef);
+  // ─── Legacy support (keep for existing hooks that use old signatures) ────────
 
-      if (!snapshot.exists()) {
-        docRef = doc(firestore, 'barbers', userId);
-        snapshot = await getDoc(docRef);
-      }
-
-      if (!snapshot.exists()) {
-        return null;
-      }
-
-      return { ...snapshot.data(), userId: snapshot.id } as SystemUser;
-    } catch (error) {
-      console.error('Error fetching user detail:', error);
-      return null;
-    }
+  /** @deprecated Use getUsers */
+  async getSystemUsers(adminId: string, role?: string, status?: string): Promise<SystemUser[]> {
+    const rawUsers = await this.getUsers(role, status);
+    return rawUsers.map((u) => ({
+      userId: u.uid,
+      name: u.name,
+      email: u.email,
+      phone: u.phoneNumber,
+      userRole: u.role,
+      status: u.status,
+      joinedAt: u.createdAt ? new Date(u.createdAt.seconds * 1000).toISOString() : '',
+      verificationStatus: 'approved',
+    }));
   },
 
-  /**
-   * Verify user
-   */
-  async verifyUser(
-    adminId: string,
-    data: UserVerificationRequest,
-  ): Promise<{ success: boolean; error?: { message: string } }> {
-    try {
-      if (!adminId || !data.userId || data.approve === undefined) {
-        return { success: false, error: { message: 'Missing parameters' } };
-      }
-
-      const newStatus = data.approve ? 'approved' : 'rejected';
-
-      let docRef = doc(firestore, 'customers', data.userId);
-      await updateDoc(docRef, {
-        verificationStatus: newStatus,
-        verifiedAt: Timestamp.now(),
-        updatedAt: Timestamp.now(),
-      }).catch(() => {
-        docRef = doc(firestore, 'barbers', data.userId);
-        return updateDoc(docRef, {
-          verificationStatus: newStatus,
-          verifiedAt: Timestamp.now(),
-          updatedAt: Timestamp.now(),
-        });
-      });
-
-      return { success: true };
-    } catch (error) {
-      return {
-        success: false,
-        error: { message: 'Failed to verify user' },
-      };
-    }
+  /** @deprecated Use getUsers */
+  async getUserManagementSummary(_adminId: string) {
+    return {
+      totalCustomers: 0, activeCustomers: 0, suspendedCustomers: 0,
+      totalBarbers: 0, activeBarbers: 0, suspendedBarbers: 0, unverifiedCount: 0,
+    };
   },
 
-  /**
-   * Suspend/activate user
-   */
-  async updateUserStatus(
-    adminId: string,
-    userId: string,
-    newStatus: 'active' | 'suspended' | 'inactive',
-  ): Promise<{ success: boolean; error?: { message: string } }> {
-    try {
-      if (!adminId || !userId || !newStatus) {
-        return { success: false, error: { message: 'Missing parameters' } };
-      }
-
-      let docRef = doc(firestore, 'customers', userId);
-      await updateDoc(docRef, {
-        status: newStatus,
-        updatedAt: Timestamp.now(),
-      }).catch(() => {
-        docRef = doc(firestore, 'barbers', userId);
-        return updateDoc(docRef, {
-          status: newStatus,
-          updatedAt: Timestamp.now(),
-        });
-      });
-
-      return { success: true };
-    } catch (error) {
-      return {
-        success: false,
-        error: { message: 'Failed to update user status' },
-      };
-    }
+  /** @deprecated Use admin.service updateUserStatus via Vercel backend */
+  async updateUserStatus(_adminId: string, _userId: string, _newStatus: string) {
+    return { success: false, error: { message: 'Gunakan admin.service.updateUserStatus melalui Vercel backend.' } };
   },
 
-  /**
-   * Get user management summary
-   */
-  async getUserManagementSummary(adminId: string): Promise<UserManagementSummary> {
-    try {
-      const customers = await getDocs(collection(firestore, 'customers'));
-      const barbers = await getDocs(collection(firestore, 'barbers'));
-
-      const activeCustomers = customers.docs.filter((d) => d.data().status === 'active').length;
-      const suspendedCustomers = customers.docs.filter((d) => d.data().status === 'suspended').length;
-      const activeBarbers = barbers.docs.filter((d) => d.data().status === 'active').length;
-      const suspendedBarbers = barbers.docs.filter((d) => d.data().status === 'suspended').length;
-      const unverified = [
-        ...customers.docs.filter((d) => d.data().verificationStatus === 'pending'),
-        ...barbers.docs.filter((d) => d.data().verificationStatus === 'pending'),
-      ].length;
-
-      return {
-        totalCustomers: customers.size,
-        activeCustomers,
-        suspendedCustomers,
-        totalBarbers: barbers.size,
-        activeBarbers,
-        suspendedBarbers,
-        unverifiedCount: unverified,
-      };
-    } catch (error) {
-      console.error('Error fetching user management summary:', error);
-      return {
-        totalCustomers: 0,
-        activeCustomers: 0,
-        suspendedCustomers: 0,
-        totalBarbers: 0,
-        activeBarbers: 0,
-        suspendedBarbers: 0,
-        unverifiedCount: 0,
-      };
-    }
+  /** @deprecated */
+  async verifyUser(_adminId: string, _data: any) {
+    return { success: false, error: { message: 'Gunakan admin.service untuk operasi ini.' } };
   },
 
-  /**
-   * Get reviews for moderation
-   */
-  async getReviewsForModeration(
-    adminId: string,
-    status?: string,
-  ): Promise<ReviewForModeration[]> {
-    try {
-      let q;
-      if (status) {
-        q = query(collection(firestore, 'reviews'), where('moderationStatus', '==', status));
-      } else {
-        q = query(collection(firestore, 'reviews'));
-      }
-
-      const snapshot = await getDocs(q);
-      return snapshot.docs.map((doc) => ({
-        ...doc.data(),
-        reviewId: doc.id,
-      })) as ReviewForModeration[];
-    } catch (error) {
-      console.error('Error fetching reviews for moderation:', error);
-      return [];
-    }
+  /** @deprecated */
+  async getAdminAnalytics(_adminId: string, _period?: string) {
+    return null;
   },
 
-  /**
-   * Get review detail
-   */
-  async getReviewDetail(adminId: string, reviewId: string): Promise<ReviewForModeration | null> {
-    try {
-      const docRef = doc(firestore, 'reviews', reviewId);
-      const snapshot = await getDoc(docRef);
-
-      if (!snapshot.exists()) {
-        return null;
-      }
-
-      return { ...snapshot.data(), reviewId: snapshot.id } as ReviewForModeration;
-    } catch (error) {
-      console.error('Error fetching review detail:', error);
-      return null;
-    }
+  /** @deprecated */
+  async getSystemHealth(_adminId: string) {
+    return null;
   },
 
-  /**
-   * Moderate review
-   */
-  async moderateReview(
-    adminId: string,
-    data: ReviewModerationRequest,
-  ): Promise<{ success: boolean; error?: { message: string } }> {
-    try {
-      if (!adminId || !data.reviewId || !data.action) {
-        return { success: false, error: { message: 'Missing parameters' } };
-      }
-
-      const newStatus = data.action === 'approve' ? 'approved' : 'rejected';
-
-      await updateDoc(doc(firestore, 'reviews', data.reviewId), {
-        moderationStatus: newStatus,
-        moderatedAt: Timestamp.now(),
-        moderatedBy: adminId,
-        moderationReason: data.reason || '',
-      });
-
-      return { success: true };
-    } catch (error) {
-      return {
-        success: false,
-        error: { message: 'Failed to moderate review' },
-      };
-    }
+  /** @deprecated */
+  async getBookingsForVerification(_adminId: string, _status?: string) {
+    return [];
   },
 
-  /**
-   * Get bookings for verification
-   */
-  async getBookingsForVerification(
-    adminId: string,
-    status?: string,
-  ): Promise<BookingForVerification[]> {
-    try {
-      let q;
-      if (status) {
-        q = query(collection(firestore, 'bookings'), where('verificationStatus', '==', status));
-      } else {
-        q = query(collection(firestore, 'bookings'));
-      }
-
-      const snapshot = await getDocs(q);
-      return snapshot.docs.map((doc) => ({
-        ...doc.data(),
-        bookingId: doc.id,
-      })) as BookingForVerification[];
-    } catch (error) {
-      console.error('Error fetching bookings for verification:', error);
-      return [];
-    }
+  /** @deprecated */
+  async updateBookingFlag(_adminId: string, _data: any) {
+    return { success: false };
   },
 
-  /**
-   * Get booking detail for verification
-   */
-  async getBookingVerificationDetail(
-    adminId: string,
-    bookingId: string,
-  ): Promise<BookingForVerification | null> {
-    try {
-      const docRef = doc(firestore, 'bookings', bookingId);
-      const snapshot = await getDoc(docRef);
-
-      if (!snapshot.exists()) {
-        return null;
-      }
-
-      return { ...snapshot.data(), bookingId: snapshot.id } as BookingForVerification;
-    } catch (error) {
-      console.error('Error fetching booking verification detail:', error);
-      return null;
-    }
+  /** @deprecated */
+  async getAdminDashboard(_adminId: string) {
+    return null;
   },
 
-  /**
-   * Flag or unflag booking
-   */
-  async updateBookingFlag(
-    adminId: string,
-    data: BookingFlagRequest,
-  ): Promise<{ success: boolean; error?: { message: string } }> {
-    try {
-      if (!adminId || !data.bookingId || data.flag === undefined) {
-        return { success: false, error: { message: 'Missing parameters' } };
-      }
-
-      const newStatus = data.flag ? 'flagged' : 'verified';
-
-      await updateDoc(doc(firestore, 'bookings', data.bookingId), {
-        verificationStatus: newStatus,
-        flaggedReason: data.reason || '',
-        flaggedAt: data.flag ? Timestamp.now() : null,
-        updatedAt: Timestamp.now(),
-      });
-
-      return { success: true };
-    } catch (error) {
-      return {
-        success: false,
-        error: { message: 'Failed to update booking flag' },
-      };
-    }
+  /** @deprecated */
+  async getReviewsForModeration(_adminId: string, _status?: string) {
+    return [];
   },
 
-  /**
-   * Get admin analytics
-   */
-  async getAdminAnalytics(
-    adminId: string,
-    period: 'daily' | 'weekly' | 'monthly' = 'monthly',
-  ): Promise<AdminAnalyticsData> {
-    try {
-      const bookings = await getDocs(collection(firestore, 'bookings'));
-      const bookingsByStatus: Record<string, number> = {};
-
-      bookings.docs.forEach((doc) => {
-        const status = doc.data().status || 'unknown';
-        bookingsByStatus[status] = (bookingsByStatus[status] || 0) + 1;
-      });
-
-      return {
-        period,
-        bookingTrend: [],
-        revenueTrend: [],
-        userGrowth: [],
-        topBarbers: [],
-        topCustomers: [],
-      };
-    } catch (error) {
-      console.error('Error fetching admin analytics:', error);
-      return {
-        period,
-        bookingTrend: [],
-        revenueTrend: [],
-        userGrowth: [],
-        topBarbers: [],
-        topCustomers: [],
-      };
-    }
+  /** @deprecated */
+  async moderateReview(_adminId: string, _data: any) {
+    return { success: false };
   },
 
-  /**
-   * Get system health status
-   */
-  async getSystemHealth(adminId: string): Promise<SystemHealthData> {
-    try {
-      return {
-        apiStatus: 'healthy',
-        databaseStatus: 'healthy',
-        storageUsage: 67,
-        activeUsers: 234,
-        averageResponseTime: 145,
-        errorRate: 0.8,
-      };
-    } catch (error) {
-      console.error('Error fetching system health:', error);
-      return {
-        apiStatus: 'down',
-        databaseStatus: 'down',
-        storageUsage: 0,
-        activeUsers: 0,
-        averageResponseTime: 0,
-        errorRate: 100,
-      };
-    }
+  /** @deprecated */
+  async getSupportTickets(_adminId: string, _status?: string) {
+    return [];
   },
 
-  /**
-   * Get chat conversations
-   */
-  async getAdminChatConversations(adminId: string): Promise<ChatConversation[]> {
-    try {
-      const q = query(
-        collection(firestore, 'conversations'),
-        where('participants', 'array-contains', adminId),
-      );
-
-      const snapshot = await getDocs(q);
-            return snapshot.docs.map((doc) => ({
-        ...doc.data(),
-        id: doc.id,
-      })) as unknown as ChatConversation[];
-    } catch (error) {
-      console.error('Error fetching chat conversations:', error);
-      return [];
-    }
+  /** @deprecated */
+  async updateTicketStatus(_adminId: string, _ticketId: string, _newStatus: string) {
+    return { success: false };
   },
 
-  /**
-   * Mark notification as read
-   */
-  async markNotificationAsRead(
-    adminId: string,
-    notificationId: string,
-  ): Promise<{ success: boolean; error?: { message: string } }> {
-    try {
-      if (!adminId || !notificationId) {
-        return { success: false, error: { message: 'Missing parameters' } };
-      }
+  /** @deprecated */
+  async replyToTicket(_adminId: string, _ticketId: string, _data: any) {
+    return { success: false };
+  },
 
-      await updateDoc(doc(firestore, 'notifications', notificationId), {
-        read: true,
-        readAt: Timestamp.now(),
-      });
-
-      return { success: true };
-    } catch (error) {
-      return {
-        success: false,
-        error: { message: 'Failed to mark notification as read' },
-      };
-    }
+  /** @deprecated */
+  async assignTicket(_adminId: string, _ticketId: string, _assignToAdminId: string) {
+    return { success: false };
   },
 };

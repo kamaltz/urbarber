@@ -82,17 +82,39 @@ service cloud.firestore {
       // Public read for barbers so customers can browse & book
       allow read: if true;
 
-      // Signed-in users can write barber profile
-      allow write: if isSignedIn();
+      // Barber owner can create/update their own profile.
+      // Admin can update any barber document.
+      // verificationStatus, listingStatus, verified, approvedAt, approvedBy are
+      // written only by the trusted backend (Admin SDK bypasses rules).
+      allow create: if isOwner(barberId);
+      allow update: if isOwner(barberId) || isAdmin();
+      allow delete: if isAdmin();
     }
 
     // =========================================================================
     // 3b. COLLECTION: barberRegistrations
     // =========================================================================
-    match /barberRegistrations/{uid} {
-      // Signed-in users can read and write registration records
-      allow read, write: if isSignedIn();
+    match /barberRegistrations/{barberId} {
+      // Barber owner can read their own registration.
+      // Admin can read all registration records.
+      allow read: if isOwner(barberId) || isAdmin();
+
+      // Barber owner can create the initial registration document.
+      allow create: if isOwner(barberId);
+
+      // Barber owner can update their own registration during onboarding:
+      //   - May advance verificationStatus from 'draft' → 'pending' (submission step)
+      //   - Cannot change verificationStatus to 'approved' or 'rejected' from the client
+      //   - Cannot change reviewedBy, reviewedAt (admin-only fields — set by trusted backend)
+      allow update: if isOwner(barberId)
+        && request.resource.data.verificationStatus != 'approved'
+        && request.resource.data.verificationStatus != 'rejected'
+        && request.resource.data.reviewedBy == resource.data.reviewedBy
+        && request.resource.data.reviewedAt == resource.data.reviewedAt;
+
+      allow delete: if isAdmin();
     }
+
 
     // =========================================================================
     // 4. COLLECTION: barberServices

@@ -4,7 +4,8 @@ import { SearchInput } from '@/components/ui/SearchInput';
 import { routes } from '@/constants/routes';
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Pressable, SafeAreaView, ScrollView, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 const conversations = [
   { id: 'CONV001', name: 'Toni Barbershop', message: 'Silakan konfirmasi jadwal Anda.', time: '10.32', unread: 2, online: true },

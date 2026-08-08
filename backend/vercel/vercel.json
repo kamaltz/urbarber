@@ -10,6 +10,18 @@
     { "source": "/api/payments/sync", "destination": "/api/payments/sync" },
     { "source": "/api/payments/webhook", "destination": "/api/payments/webhook" },
     { "source": "/api/health", "destination": "/api/health" },
+    { "source": "/api/admin/dashboard", "destination": "/api/admin/dashboard" },
+    { "source": "/api/admin/barber-registrations/list", "destination": "/api/admin/barber-registrations/list" },
+    { "source": "/api/admin/barber-registrations/detail", "destination": "/api/admin/barber-registrations/detail" },
+    { "source": "/api/admin/barber-registrations/approve", "destination": "/api/admin/barber-registrations/approve" },
+    { "source": "/api/admin/barber-registrations/reject", "destination": "/api/admin/barber-registrations/reject" },
+    { "source": "/api/admin/barber-registrations/document-url", "destination": "/api/admin/barber-registrations/document-url" },
+    { "source": "/api/admin/users/list", "destination": "/api/admin/users/list" },
+    { "source": "/api/admin/users/status", "destination": "/api/admin/users/status" },
+    { "source": "/api/admin/bookings/list", "destination": "/api/admin/bookings/list" },
+    { "source": "/api/admin/categories/create", "destination": "/api/admin/categories/create" },
+    { "source": "/api/admin/categories/update", "destination": "/api/admin/categories/update" },
     { "source": "/:path*", "destination": "/api/index" }
   ]
 }
+
