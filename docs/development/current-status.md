@@ -67,6 +67,47 @@ All features across the application are categorized according to their explicit 
 - **Map Component**: `planned` (Scheduled for Batch 06)
 - **Scope Note**: Classified as **Preferred Core Enhancement (E-01)**. MapLibre React Native + OpenFreeMap stack requires an Expo development build (`npx expo run:android` / `eas build`).
 
+### 3.5 Batch 08: Payment-First Slot Ownership
+- **Status**: `code implemented` (Core fixes applied)
+- **Testing Status**: `automated test pending` (45 test cases designed, implementation pending)
+- **Deployment Status**: `deployment pending` (Vercel + Firebase rules ready for deployment)
+- **Completion**: ~20% (core guards implemented, test suite + final validation remaining)
+- **Core Principle**: A customer does NOT own a final booking slot until payment has been authoritatively confirmed as `paymentStatus = 'paid'`
+
+#### Changes Completed
+- ✅ Payment method canonical: `'midtrans_sandbox'` enforced in payment creation
+- ✅ Barber acceptance guarded: requires `paymentStatus === 'paid'` (explicit + Firestore rules)
+- ✅ Paid rejection tracked: marks `refundRequired: true` (audit preservation)
+- ✅ Paid cancellation tracked: marks `refundRequired: true` (audit preservation)
+- ✅ Barber dashboard alignment: all paymentStatus checks use canonical `'paid'`
+- ✅ Firestore index added: customerId + paymentStatus + createdAt (for query optimization)
+- ✅ Documentation: ADR-008 created, test plan designed (45 test cases)
+
+#### Remaining Work (In Priority Order)
+1. ⚠️ **Test Suite Implementation** (Batch 08): 45 automated test cases
+   - Slot hold tests (5)
+   - Payment flow tests (11)
+   - Finalization tests (9)
+   - Slot rights tests (1)
+   - Barber operations tests (4)
+   - Legacy cash compatibility tests (4)
+   - Chat regression tests (4)
+2. ⚠️ **Backend Test Data Migration**: Update existing test fixtures from legacy values (`cash_on_service`, `completed`, `not_required`) to canonical (`midtrans_sandbox`, `paid`, `initiated`/`pending`)
+3. ⚠️ **Barber Cancellation Audit**: Handle barber cancellation of accepted/in_progress bookings with same refund tracking logic
+4. ⚠️ **Admin Validation**: Verify admin web dashboard cannot modify `paymentStatus` field
+5. ❌ **Quality Gates**:
+   - `npm run check` (typecheck + lint) - all pass
+   - Backend test suite - all pass
+   - `git diff --check` - no whitespace issues
+   - Vercel function count remains = 5
+6. ❌ **Final Documentation**: Update `current-status.md` and `roadmap.md` post-implementation
+
+#### Blockers / Notes
+- Manual refund reconciliation only (automated Midtrans refund API out of scope for Batch 08)
+- Paid booking rejection/cancellation leaves payment in `'paid'` state (requires admin reconciliation in Batch 09+)
+- No fake payment simulation in production paths (Midtrans Sandbox mock only)
+- Delayed webhook protection: payment status verified before releasing apparently expired holds
+
 ---
 
 ## 4. Summary of Current Blockers

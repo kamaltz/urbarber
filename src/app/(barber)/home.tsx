@@ -74,20 +74,21 @@ export default function BarberHomeScreen() {
   };
 
   // Metric Computations (bounded real data)
+  // Batch 08: Use canonical 'paid' status (not legacy 'completed')
   const pendingPaidCount = bookings.filter(
-    (b) => b.status === 'pending' && b.paymentStatus === 'completed'
+    (b) => b.status === 'pending' && b.paymentStatus === 'paid'
   ).length;
   const acceptedCount = bookings.filter((b) => b.status === 'accepted').length;
   const inProgressCount = bookings.filter((b) => b.status === 'in_progress').length;
   const completedCount = bookings.filter((b) => b.status === 'completed').length;
 
-  // Monthly revenue calculation: strictly status === 'completed' && paymentStatus === 'completed' ('paid')
+  // Monthly revenue calculation: Batch 08 - strictly status === 'completed' && paymentStatus === 'paid'
   const currentMonthYear = new Date().toISOString().substring(0, 7); // YYYY-MM
   const currentMonthRevenue = bookings
     .filter(
       (b) =>
         b.status === 'completed' &&
-        (b.paymentStatus === 'completed' || (b as any).paymentStatus === 'paid') &&
+        (b.paymentStatus === 'paid') &&
         (b.bookingDate || b.createdAt || '').startsWith(currentMonthYear)
     )
     .reduce((sum, b) => sum + (b.totalAmount || (b as any).totalPrice || 0), 0);

@@ -92,7 +92,7 @@ export const MOCK_BARBER_BOOKINGS: BarberBooking[] = [
     status: 'pending',
     services: [MOCK_BARBER_SERVICES[0]],
     totalAmount: 50000,
-    paymentStatus: 'completed',
+    paymentStatus: 'paid',
     notes: 'Potongan rambut clean cut dengan fade',
     createdAt: '2024-08-03T10:00:00Z',
   },
@@ -106,7 +106,7 @@ export const MOCK_BARBER_BOOKINGS: BarberBooking[] = [
     status: 'in_progress',
     services: [MOCK_BARBER_SERVICES[0], MOCK_BARBER_SERVICES[1]],
     totalAmount: 85000,
-    paymentStatus: 'completed',
+    paymentStatus: 'paid',
     createdAt: '2024-08-02T14:00:00Z',
   },
   {
@@ -118,7 +118,7 @@ export const MOCK_BARBER_BOOKINGS: BarberBooking[] = [
     status: 'completed',
     services: [MOCK_BARBER_SERVICES[0]],
     totalAmount: 50000,
-    paymentStatus: 'completed',
+    paymentStatus: 'paid',
     createdAt: '2024-08-02T09:00:00Z',
   },
 ];

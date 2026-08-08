@@ -12,16 +12,17 @@ This document specifies the authoritative, re-sequenced batch execution roadmap 
 |---|---|---|---|---|
 | **Batch 00** | Branch Audit & Consolidation | Dynamic remote branch audit, semantic integration, non-regressive baseline stabilization. | Infrastructure | **COMPLETED** |
 | **Batch 01** | Scope, Acceptance Criteria & Roadmap Sync | 3-tier scope classification, 54-screen reconciliation, ADR definitions, traceability matrix. | Documentation | **COMPLETED** |
-| **Batch 02** | Infrastructure Deployment & Live Validation | Deployment of Vercel backend (`backend/vercel`), Supabase Storage RLS policies, `firestore.rules`, and Midtrans webhook setup. | Infrastructure / A-01 | **NEXT BATCH** |
+| **Batch 02** | Infrastructure Deployment & Live Validation | Deployment of Vercel backend (`backend/vercel`), Supabase Storage RLS policies, `firestore.rules`, and Midtrans webhook setup. | Infrastructure / A-01 | **COMPLETED** |
 | **Batch 03** | Barber Registration & Verification | Implementation of direct barber registration, Firebase Auth account bootstrap via Vercel backend (`POST /api/auth/initialize-account`), barber onboarding wizard (`/(barber-onboarding)/`), private document upload to Supabase Storage, and submission endpoint (`POST /api/barber/registration/submit`). | Core MVP | **COMPLETED** |
-| **Batch 04** | Admin Operations | Implementation of Admin Dashboard screens (`src/app/(admin)/dashboard.tsx`), customer/barber management, service category editor (F-24 to F-30). | Core MVP | Planned |
+| **Batch 04** | Admin Operations | Implementation of Admin Dashboard screens (`src/app/(admin)/dashboard.tsx`), customer/barber management, service category editor (F-24 to F-30). | Core MVP | **COMPLETED** |
 | **Batch 05** | Core Customer-Barber Real-Time Chat | Implementation of real-time text chat (F-31) via Firestore `conversations/{bookingId}` and `messages` listeners (`onSnapshot`), listener cleanup, and security rules. | Core MVP | Planned |
 | **Batch 06** | Interactive Map Proof of Concept & Booking Location | Development build setup (`npx expo run:android`), MapLibre React Native + OpenFreeMap map pin picker integration (E-01), coordinate capture, and text fallback validation. | Preferred Enhancement | Planned |
 | **Batch 07** | Production-Path Cleanup & Architecture Hardening | Decoupling optional payment mode (`cash_on_service` vs `midtrans_sandbox`), removing any transient code, ensuring strict production path integrity. | Architecture | Planned |
-| **Batch 08** | Automated Testing & Security Hardening | Comprehensive unit testing, Firestore security rules suite expansion, API validation testing. | Testing & Security | Planned |
-| **Batch 09** | Live End-to-End Acceptance Testing | Staged multi-device execution testing across Customer, Barber, and Admin roles. | Quality Gate | Planned |
-| **Batch 10** | Android Development & Release Builds | Android release APK/AAB build generation via EAS / Gradle, release asset validation. | Release Build | Planned |
-| **Batch 11** | Final Documentation, Thesis Evidence & Git Finalization | Final thesis evidence compilation, audit log archiving, git tag release. | Documentation & Release | Planned |
+| **Batch 08** | Payment-First Slot Ownership & Transactional Booking | Core payment-first principle: customers own booking slots only after `paymentStatus = 'paid'` confirmed. Atomic transaction for slot finalization, hold/booking separation, refund audit trails, webhook/sync convergence, 45 automated tests. | Core MVP (Payment Architecture) | **IN PROGRESS** |
+| **Batch 09** | Automated Testing Hardening | Comprehensive unit testing, Firestore security rules suite expansion, API validation testing, backend test migration to canonical payment values. | Testing & Security | Planned |
+| **Batch 10** | Live End-to-End Acceptance Testing | Staged multi-device execution testing across Customer, Barber, and Admin roles. | Quality Gate | Planned |
+| **Batch 11** | Android Development & Release Builds | Android release APK/AAB build generation via EAS / Gradle, release asset validation. | Release Build | Planned |
+| **Batch 12** | Final Documentation, Thesis Evidence & Git Finalization | Final thesis evidence compilation, audit log archiving, git tag release. | Documentation & Release | Planned |
 
 ---
 

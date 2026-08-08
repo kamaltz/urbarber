@@ -147,7 +147,8 @@ service cloud.firestore {
         )
         ||
         // Barber transitions: pending -> accepted / rejected, accepted -> in_progress, in_progress -> completed
-        // Barber can process/accept booking ONLY when paymentStatus is 'paid'
+        // Batch 08: Barber can process/accept booking ONLY when paymentStatus is 'paid'
+        // This enforces payment-first principle: no slot ownership until payment confirmed
         (
           isOwner(resource.data.barberId)
           && 'paymentStatus' in resource.data
@@ -173,6 +174,8 @@ service cloud.firestore {
     // =========================================================================
     // 7b. COLLECTION: payments
     // =========================================================================
+    // Batch 08: All payment state transitions must occur server-side
+    // Clients can only read their own payment records, never write payment state
     match /payments/{bookingId} {
       // Customer, assigned barber, or admin can read payment record
       allow read: if isOwner(resource.data.customerId)

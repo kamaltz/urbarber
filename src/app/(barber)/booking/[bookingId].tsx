@@ -142,7 +142,8 @@ export default function BarberBookingDetailScreen() {
   if (loading && !refreshing) return <Loading />;
 
   const isPaid =
-    booking?.paymentStatus === 'completed' || (booking as any)?.paymentStatus === 'paid';
+    // Batch 08: Use canonical 'paid' status for payment verification
+    booking?.paymentStatus === 'paid';
 
   return (
     <View className="flex-1 bg-slate-50">

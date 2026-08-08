@@ -20,7 +20,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { z } from 'zod';
 import { getSlotLockId } from '../src/bookings/slot-lock.js';
-import { config } from '../src/config/index.js';
 import { authenticateRequest } from '../src/lib/auth-middleware.js';
 import { handleCors } from '../src/lib/cors.js';
 import { adminAuth, db } from '../src/lib/firebase-admin.js';
@@ -344,6 +343,17 @@ async function handleBarberRespondBooking(ctx: RouteContext): Promise<void> {
       return;
     }
 
+    // Batch 08: Barber can only accept PAID bookings (enforced by rules, explicit check for clarity)
+    if (action === 'accept' && bookingData.paymentStatus !== 'paid') {
+      res.status(400).json({
+        error: {
+          code: 'PAYMENT_REQUIRED',
+          message: 'Booking belum dibayar. Hanya booking yang sudah dibayar yang dapat diterima.',
+        },
+      });
+      return;
+    }
+
     const timestamp = new Date().toISOString();
     const updateData: Record<string, any> = {
       status: action === 'accept' ? 'accepted' : 'rejected',
@@ -355,9 +365,16 @@ async function handleBarberRespondBooking(ctx: RouteContext): Promise<void> {
       updateData.rejectionReason = reason;
     }
 
+    // Batch 08: If barber rejects a PAID booking, mark for refund reconciliation
+    // Payment remains 'paid' (not refunded automatically)
+    // Admin must manually handle refund via dashboard
+    if (action === 'reject' && bookingData.paymentStatus === 'paid') {
+      updateData.refundRequired = true;
+    }
+
     await bookingRef.update(updateData);
 
-    // Release slot lock if rejected
+    // Release slot lock if rejected (payment audit trail preserved)
     if (action === 'reject') {
       const slotLockId = getSlotLockId(barberId, bookingData.date, bookingData.startTime);
       const slotLockRef = db.collection('slotLocks').doc(slotLockId);
@@ -770,12 +787,13 @@ async function handleCancelBooking(ctx: RouteContext): Promise<void> {
       return;
     }
 
-    // Cannot cancel completed or already cancelled bookings
-    if (bookingData.status === 'completed' || bookingData.status === 'cancelled') {
+    // Cannot cancel completed, cancelled, or in_progress bookings
+    // Batch 08: in_progress bookings cannot be cancelled (service already underway)
+    if (bookingData.status === 'completed' || bookingData.status === 'cancelled' || bookingData.status === 'in_progress') {
       res.status(400).json({
         error: {
-          code: 'INVALID_STATE',
-          message: `Pesanan dengan status ${bookingData.status} tidak dapat dibatalkan.`,
+          code: 'INVALID_BOOKING_STATE',
+          message: `Pesanan dengan status "${bookingData.status}" tidak dapat dibatalkan.`,
         },
       });
       return;
@@ -783,36 +801,24 @@ async function handleCancelBooking(ctx: RouteContext): Promise<void> {
 
     const timestamp = new Date().toISOString();
 
-    // Update booking
-    await bookingRef.update({
+    const updateData: Record<string, any> = {
       status: 'cancelled',
       cancelledAt: timestamp,
       cancellationReason: reason,
       updatedAt: timestamp,
-    });
+    };
 
-    // Handle payment refund if needed
-    if (paymentData.status === 'paid' || paymentData.status === 'settlement') {
-      const snap = new midtransClient.Snap({
-        isProduction: config.midtransIsProduction || false,
-        serverKey: config.midtransServerKey,
-      });
-
-      try {
-        await snap.refund(paymentData.transactionId);
-      } catch (refundErr: any) {
-        console.error('[Cancel Booking] Refund failed:', refundErr.message);
-        // Don't fail the cancel if refund fails; it can be retried
-      }
-
-      await paymentRef.update({
-        status: 'refunded',
-        refundedAt: timestamp,
-        updatedAt: timestamp,
-      });
+    // Batch 08: If customer cancels a PAID booking, mark for refund reconciliation
+    // Payment remains 'paid' (not automatically refunded in Batch 08)
+    // Admin must manually handle refund via dashboard after Batch 08
+    if (paymentData.status === 'paid') {
+      updateData.refundRequired = true;
     }
 
-    // Release slot lock
+    // Update booking
+    await bookingRef.update(updateData);
+
+    // Release slot lock (calendar availability freed, but payment audit preserved)
     if (bookingData.barberId && bookingData.date && bookingData.startTime) {
       const slotLockId = getSlotLockId(bookingData.barberId, bookingData.date, bookingData.startTime);
       await db.collection('slotLocks').doc(slotLockId).delete();

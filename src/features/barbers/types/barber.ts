@@ -4,10 +4,11 @@
  */
 
 import type {
-  BarberListingStatus,
-  BarberOnboardingStatus,
-  BarberVerificationStatus,
-  BookingStatus,
+    BarberListingStatus,
+    BarberOnboardingStatus,
+    BarberVerificationStatus,
+    BookingStatus,
+    PaymentStatus,
 } from '@/types/domain';
 
 export interface BarberProfile {
@@ -61,7 +62,7 @@ export interface BarberBooking {
   status: BookingStatus;
   services: BarberService[];
   totalAmount: number;
-  paymentStatus: 'pending' | 'completed' | 'failed';
+  paymentStatus: PaymentStatus;
   notes?: string;
   createdAt: string;
 }

@@ -77,7 +77,8 @@ export default function BarberBookingsScreen() {
 
   const getStatusBadge = (booking: BarberBooking) => {
     if (booking.status === 'pending') {
-      const isPaid = booking.paymentStatus === 'completed' || (booking as any).paymentStatus === 'paid';
+      // Batch 08: Use canonical 'paid' status for payment verification
+      const isPaid = booking.paymentStatus === 'paid';
       return (
         <View className={isPaid ? 'bg-emerald-100 px-2.5 py-1 rounded-full' : 'bg-amber-100 px-2.5 py-1 rounded-full'}>
           <Text className={isPaid ? 'text-emerald-800 font-bold text-xs' : 'text-amber-800 font-semibold text-xs'}>

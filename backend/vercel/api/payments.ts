@@ -199,7 +199,7 @@ async function handleCreatePayment(ctx: RouteContext): Promise<void> {
         orderId,
         amount: price,
         currency: 'IDR',
-        method: 'midtrans',
+        method: 'midtrans_sandbox',
         status: 'pending',
         transactionId: transaction.transaction_id,
         createdAt: timestamp,
