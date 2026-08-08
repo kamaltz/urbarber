@@ -69,9 +69,10 @@ function createMockBooking(
   date: string,
   startTime: string,
   status: MockBooking['status'] = 'pending',
-  paymentStatus: MockBooking['paymentStatus'] = 'initiated'
+  paymentStatus: MockBooking['paymentStatus'] = 'initiated',
+  explicitBookingId?: string
 ): MockBooking {
-  const id = `BOOK-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  const id = explicitBookingId || `BOOK-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   const booking: MockBooking = {
     id,
     customerId,
@@ -444,6 +445,7 @@ describe('Category D: Payment Finalization & Booking Creation', () => {
 
   it('D2: Paid payment creates exactly one final slot lock', () => {
     const slotId = getSlotLockId('barb-013', '2026-08-21', '10:00');
+    const holdResult = createSlotHold('barb-013', '2026-08-21', '10:00', 'cust-001');
     const booking = createMockBooking('cust-001', 'barb-013', '2026-08-21', '10:00', 'pending', 'paid');
 
     finalizeSlotLock(slotId, booking.id);
@@ -455,9 +457,7 @@ describe('Category D: Payment Finalization & Booking Creation', () => {
 
   it('D3: Repeated webhook produces same booking (idempotent)', () => {
     const bookingId = 'BOOK-019';
-    const booking1 = createMockBooking('cust-001', 'barb-014', '2026-08-21', '15:00', 'pending', 'paid');
-    booking1.id = bookingId;
-    bookings.set(bookingId, booking1);
+    const booking1 = createMockBooking('cust-001', 'barb-014', '2026-08-21', '15:00', 'pending', 'paid', bookingId);
 
     // Webhook arrives twice (network retry)
     const booking2 = bookings.get(bookingId);
@@ -480,8 +480,7 @@ describe('Category D: Payment Finalization & Booking Creation', () => {
 
   it('D5: Webhook + sync race creates no duplicate', () => {
     const bookingId = 'BOOK-021';
-    const booking = createMockBooking('cust-001', 'barb-016', '2026-08-22', '16:00', 'pending', 'paid');
-    booking.id = bookingId;
+    const booking = createMockBooking('cust-001', 'barb-016', '2026-08-22', '16:00', 'pending', 'paid', bookingId);
 
     // Both webhook and sync attempt to finalize
     // Should converge on same booking
@@ -538,6 +537,7 @@ describe('Category E: Slot Ownership & Rights', () => {
 
   it('E1: Paid customer retains final slot ownership', () => {
     const slotId = getSlotLockId('barb-019', '2026-08-24', '10:00');
+    createSlotHold('barb-019', '2026-08-24', '10:00', 'cust-001');
     const booking = createMockBooking('cust-001', 'barb-019', '2026-08-24', '10:00', 'pending', 'paid');
 
     finalizeSlotLock(slotId, booking.id);
@@ -549,6 +549,7 @@ describe('Category E: Slot Ownership & Rights', () => {
 
   it('E2: Second customer cannot obtain finalized slot', () => {
     const slotId = getSlotLockId('barb-020', '2026-08-25', '10:00');
+    createSlotHold('barb-020', '2026-08-25', '10:00', 'cust-001');
     const booking = createMockBooking('cust-001', 'barb-020', '2026-08-25', '10:00', 'pending', 'paid');
 
     finalizeSlotLock(slotId, booking.id);
@@ -563,6 +564,7 @@ describe('Category E: Slot Ownership & Rights', () => {
   it('E3: Delayed webhook cannot reassign paid payer slot', () => {
     // Customer A holds slot, pays
     const slotId = getSlotLockId('barb-021', '2026-08-26', '11:00');
+    createSlotHold('barb-021', '2026-08-26', '11:00', 'cust-001');
     const bookingA = createMockBooking('cust-001', 'barb-021', '2026-08-26', '11:00', 'pending', 'paid');
 
     finalizeSlotLock(slotId, bookingA.id);
@@ -577,6 +579,7 @@ describe('Category E: Slot Ownership & Rights', () => {
 
   it('E4: Mobile app close does not release paid entitlement', () => {
     const slotId = getSlotLockId('barb-022', '2026-08-27', '09:00');
+    createSlotHold('barb-022', '2026-08-27', '09:00', 'cust-001');
     const booking = createMockBooking('cust-001', 'barb-022', '2026-08-27', '09:00', 'pending', 'paid');
 
     finalizeSlotLock(slotId, booking.id);
@@ -781,9 +784,7 @@ describe('Critical: Webhook & Sync Convergence', () => {
     const bookingId = 'BOOK-RACE-001';
 
     // Webhook creates booking
-    const webhookBooking = createMockBooking('cust-001', 'barb-034', '2026-09-07', '10:00', 'pending', 'paid');
-    webhookBooking.id = bookingId;
-    bookings.set(bookingId, webhookBooking);
+    const webhookBooking = createMockBooking('cust-001', 'barb-034', '2026-09-07', '10:00', 'pending', 'paid', bookingId);
 
     // Sync also attempts to create (should be idempotent)
     const syncBooking = bookings.get(bookingId);

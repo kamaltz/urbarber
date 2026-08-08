@@ -126,9 +126,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (targetStatus === 'paid' && !paymentData.paidAt) {
       updatePayment.paidAt = nowIso;
       updateBooking.paidAt = nowIso;
-    }
 
-    if (shouldReleaseSlot(targetStatus)) {
+      // Finalize slot lock atomically when payment is confirmed paid
+      // Prevents race condition where another customer tries to claim the same slot
+      const slotLockData = await t.get(slotLockRef);
+      if (slotLockData.exists) {
+        t.update(slotLockRef, {
+          status: 'finalized',
+          bookingId,
+          finalizedAt: nowIso,
+        });
+      }
+    } else if (shouldReleaseSlot(targetStatus)) {
       updateBooking.status = 'cancelled';
       t.delete(slotLockRef);
     }

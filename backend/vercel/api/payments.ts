@@ -101,6 +101,7 @@ async function handleCreatePayment(ctx: RouteContext): Promise<void> {
         paymentUrl: existing.paymentUrl || null,
         message: 'Permintaan booking sudah diproses sebelumnya',
       });
+      return;
     }
 
     // Get service details for pricing
@@ -109,6 +110,7 @@ async function handleCreatePayment(ctx: RouteContext): Promise<void> {
       res.status(404).json({
         error: { code: 'SERVICE_NOT_FOUND', message: 'Layanan tidak ditemukan.' },
       });
+      return;
     }
 
     const serviceData = serviceSnap.data() || {};
@@ -126,6 +128,7 @@ async function handleCreatePayment(ctx: RouteContext): Promise<void> {
           message: 'Slot waktu telah diambil oleh pengguna lain.',
         },
       });
+      return;
     }
 
     const timestamp = new Date().toISOString();
@@ -198,9 +201,10 @@ async function handleCreatePayment(ctx: RouteContext): Promise<void> {
         customerId,
         orderId,
         amount: price,
+        grossAmount: price,
         currency: 'IDR',
         method: 'midtrans_sandbox',
-        status: 'pending',
+        status: 'initiated',
         transactionId: transaction.transaction_id,
         createdAt: timestamp,
         updatedAt: timestamp,
@@ -273,6 +277,7 @@ async function handleSyncPayment(ctx: RouteContext): Promise<void> {
       res.status(404).json({
         error: { code: 'PAYMENT_NOT_FOUND', message: 'Pembayaran tidak ditemukan.' },
       });
+      return;
     }
 
     const paymentData = paymentSnap.data() || {};
@@ -322,8 +327,9 @@ async function handleSyncPayment(ctx: RouteContext): Promise<void> {
     if (mappedStatus === 'paid') {
       updateData.paidAt = timestamp;
 
-      // Update booking status
-      await bookingRef.update({ status: 'confirmed', updatedAt: timestamp });
+      // Update booking with payment status (payment-first principle)
+      // Booking stays 'pending' until barber accepts it
+      await bookingRef.update({ paymentStatus: 'paid', updatedAt: timestamp });
     } else if (shouldReleaseSlot(mappedStatus)) {
       // Release slot for cancelled/expired payments
       const slotLockId = getSlotLockId(bookingData.barberId, bookingData.date, bookingData.startTime);
