@@ -5,6 +5,7 @@
 
 import { firebaseAuth, firestore } from '@/lib/firebase';
 import { withTimeout } from '@/lib/promise';
+import type { PublicRegistrationRole } from '@/types/domain';
 import { accountBootstrapService } from './account-bootstrap.service';
 import {
     createUserWithEmailAndPassword,
@@ -17,7 +18,7 @@ import {
     signOut,
     updateProfile,
 } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 
 export interface RegisterPayload {
   fullName: string;
@@ -145,23 +146,15 @@ class FirebaseAuthService {
         };
       }
 
-      // 4. Force refresh ID token & verify claims
+      // 4. Refresh ID token
       await userCredential.user.getIdToken(true);
-      const tokenResult = await userCredential.user.getIdTokenResult(false);
-
-      if (tokenResult.claims.app_role !== 'customer') {
-        return {
-          success: false,
-          error: { code: 'CLAIM_VERIFICATION_FAILED', message: 'Verifikasi klaim peran akun gagal.' },
-        };
-      }
 
       return { success: true, emailVerified: userCredential.user.emailVerified };
     } catch (error: any) {
       const firebaseError = error as FirebaseAuthError;
       const message =
         firebaseError.code === 'auth/email-already-in-use'
-          ? 'Email sudah terdaftar'
+          ? 'Email sudah terdaftar. Silakan login ke akun Anda.'
           : 'Pendaftaran gagal';
 
       return {
@@ -212,7 +205,7 @@ class FirebaseAuthService {
         console.warn('Failed to send verification email during barber registration:', emailErr);
       }
 
-      // 3. Invoke trusted Vercel account initialization endpoint
+      // 3. Invoke account initialization service
       const initResult = await accountBootstrapService.initializeAccount({
         requestedRole: 'barber',
         name: payload.fullName.trim(),
@@ -226,23 +219,15 @@ class FirebaseAuthService {
         };
       }
 
-      // 4. Force refresh ID token & verify claims
+      // 4. Refresh ID token
       await userCredential.user.getIdToken(true);
-      const tokenResult = await userCredential.user.getIdTokenResult(false);
-
-      if (tokenResult.claims.app_role !== 'barber') {
-        return {
-          success: false,
-          error: { code: 'CLAIM_VERIFICATION_FAILED', message: 'Verifikasi klaim peran akun gagal.' },
-        };
-      }
 
       return { success: true, emailVerified: userCredential.user.emailVerified };
     } catch (error: any) {
       const firebaseError = error as FirebaseAuthError;
       const message =
         firebaseError.code === 'auth/email-already-in-use'
-          ? 'Email sudah terdaftar'
+          ? 'Email sudah terdaftar. Silakan login ke akun Anda.'
           : 'Pendaftaran barber gagal';
 
       return {
@@ -393,61 +378,66 @@ class FirebaseAuthService {
   }
 
   /**
-   * Login with Google (requires native idToken)
+   * Login or Register with Google (supports native idToken credential or Firebase Popup)
    */
-  async loginWithGoogle(idToken?: string): Promise<SocialAuthResponse> {
+  async loginWithGoogle(
+    idToken?: string,
+    requestedRole: PublicRegistrationRole = 'customer'
+  ): Promise<SocialAuthResponse> {
     try {
-      if (!idToken) {
-        return {
-          success: false,
-          error: { code: 'GOOGLE_TOKEN_REQUIRED', message: 'Google Sign-In belum dikonfigurasi' },
-        };
+      let userCredential;
+
+      if (idToken) {
+        const credential = GoogleAuthProvider.credential(idToken);
+        userCredential = await signInWithCredential(firebaseAuth, credential);
+      } else {
+        const provider = new GoogleAuthProvider();
+        provider.setCustomParameters({ prompt: 'select_account' });
+        try {
+          const { signInWithPopup } = await import('firebase/auth');
+          userCredential = await signInWithPopup(firebaseAuth, provider);
+        } catch (popupErr: any) {
+          return {
+            success: false,
+            error: {
+              code: 'GOOGLE_CONFIG_REQUIRED',
+              message:
+                popupErr?.message ||
+                'Google Sign-In pada perangkat seluler memerlukan idToken credential.',
+            },
+          };
+        }
       }
-      const credential = GoogleAuthProvider.credential(idToken);
-      const userCredential = await signInWithCredential(firebaseAuth, credential);
 
-      const now = new Date().toISOString();
-      const userRef = doc(firestore, 'users', userCredential.user.uid);
-      await setDoc(
-        userRef,
-        {
-          uid: userCredential.user.uid,
-          email: userCredential.user.email,
-          name: userCredential.user.displayName,
-          role: 'customer',
-          status: 'active',
-          updatedAt: now,
-        },
-        { merge: true },
-      );
+      const uid = userCredential.user.uid;
+      const email = userCredential.user.email;
+      const displayName =
+        userCredential.user.displayName || email?.split('@')[0] || 'Pengguna Google';
+      const photoURL = userCredential.user.photoURL || undefined;
 
-      const customerRef = doc(firestore, 'customers', userCredential.user.uid);
-      await setDoc(
-        customerRef,
-        {
-          userId: userCredential.user.uid,
-          email: userCredential.user.email,
-          fullName: userCredential.user.displayName,
-          profileImage: userCredential.user.photoURL,
-          role: 'customer',
-          updatedAt: now,
-        },
-        { merge: true },
-      );
+      // Auto-bootstrap user document in Firestore if new
+      await accountBootstrapService.initializeAccount({
+        requestedRole,
+        name: displayName,
+      });
 
       return {
         success: true,
         user: {
-          id: userCredential.user.uid,
-          email: userCredential.user.email || '',
-          displayName: userCredential.user.displayName || '',
-          photoUrl: userCredential.user.photoURL || undefined,
+          id: uid,
+          email: email || '',
+          displayName,
+          photoUrl: photoURL,
         },
       };
     } catch (error: any) {
+      const firebaseError = error as FirebaseAuthError;
       return {
         success: false,
-        error: { code: 'GOOGLE_LOGIN_FAILED', message: 'Google login gagal' },
+        error: {
+          code: firebaseError?.code || 'GOOGLE_LOGIN_FAILED',
+          message: firebaseError?.message || 'Gagal masuk dengan Akun Google.',
+        },
       };
     }
   }

@@ -18,8 +18,8 @@ export function ServiceList({
 }: ServiceListProps) {
   return (
     <View className="gap-3">
-      {services.map((service) => (
-        <View key={service.id} className="flex-row items-center gap-3 pb-3 border-b border-slate-200">
+      {services.map((service, index) => (
+        <View key={service.id || (service as any).serviceId || `svc-${index}`} className="flex-row items-center gap-3 pb-3 border-b border-slate-200">
           {showImages && service.imageUrl && (
             <Image
               source={{ uri: service.imageUrl }}

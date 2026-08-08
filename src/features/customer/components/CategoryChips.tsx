@@ -17,9 +17,9 @@ export function CategoryChips({ chips, onSelectCategory }: CategoryChipsProps) {
       horizontal
       showsHorizontalScrollIndicator={false}
       className="flex-row gap-2">
-      {chips.map((chip) => (
+      {chips.map((chip, idx) => (
         <Pressable
-          key={chip.id}
+          key={chip.id ? `chip-${chip.id}` : `chip-idx-${idx}`}
           onPress={() => onSelectCategory?.(chip.id)}
           className={`rounded-full border px-4 py-2 ${
             chip.isActive

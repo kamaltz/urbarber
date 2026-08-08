@@ -1,23 +1,25 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
 import {
-    KeyboardAvoidingView,
-    Platform,
-    Pressable,
-    SafeAreaView,
-    ScrollView,
-    Text,
-    View,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppButton } from '@/components/ui/AppButton';
 import { AppInput } from '@/components/ui/AppInput';
 import { AuthHeaderBlock } from '@/features/auth/components/AuthHeaderBlock';
 import { SocialLoginButton } from '@/features/auth/components/SocialLoginButton';
+import { useAuth } from '@/features/auth/hooks/use-auth';
 import { authService } from '@/features/auth/services/auth.service';
 import { validateLoginForm } from '@/features/auth/validation/auth.validation';
 
 export default function LoginScreen() {
+  const { reloadUser } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -44,7 +46,7 @@ export default function LoginScreen() {
       } else {
         setError(response.error?.message || 'Email atau password salah');
       }
-    } catch (err) {
+    } catch (err: any) {
       setError('Terjadi kesalahan. Coba lagi.');
     } finally {
       setIsLoading(false);
@@ -52,7 +54,21 @@ export default function LoginScreen() {
   };
 
   const handleGoogleLogin = async () => {
-    setError('Google Login memerlukan konfigurasi native.');
+    setError('');
+    setIsLoading(true);
+    try {
+      const response = await authService.loginWithGoogle();
+      if (response.success) {
+        await reloadUser();
+        router.replace('/(customer)/home');
+      } else {
+        setError(response.error?.message || 'Gagal masuk dengan Akun Google.');
+      }
+    } catch (err: any) {
+      setError('Terjadi kesalahan saat masuk dengan Google.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleForgotPassword = () => {
@@ -60,7 +76,11 @@ export default function LoginScreen() {
   };
 
   const handleRegister = () => {
-    router.push('/(auth)/register-customer');
+    router.push({ pathname: '/(auth)/register-customer', params: { role: 'customer' } });
+  };
+
+  const handleRegisterBarber = () => {
+    router.push({ pathname: '/(auth)/register-customer', params: { role: 'barber' } });
   };
 
   const isFormValid = email.includes('@') && password.length >= 6;
@@ -79,7 +99,7 @@ export default function LoginScreen() {
                 description="Masukkan email Anda untuk memulai"
               />
 
-                            <View className="mt-12 gap-6">
+              <View className="mt-12 gap-6">
                 <AppInput
                   label="Email"
                   placeholder="nama@example.com"
@@ -109,44 +129,39 @@ export default function LoginScreen() {
                   loading={isLoading}
                   disabled={!isFormValid}
                   onPress={handleLogin}
-                  className="h-[54px] rounded-lg"
+                  className="h-[54px] bg-slate-900 rounded-lg"
                 />
 
-                {/* Divider */}
-                <View className="flex-row items-center gap-3">
-                  <View className="flex-1 h-px bg-slate-300" />
-                  <Text className="text-sm text-slate-600">atau</Text>
-                  <View className="flex-1 h-px bg-slate-300" />
-                </View>
+                <Pressable onPress={handleForgotPassword}>
+                  <Text className="text-center text-[#D2691E] font-semibold text-sm">
+                    Lupa Password?
+                  </Text>
+                </Pressable>
 
-                {/* Social Login (Disabled until native configuration) */}
-                <View className="gap-3">
-                  <SocialLoginButton
-                    provider="google"
-                    onPress={handleGoogleLogin}
-                    disabled={true}
-                  />
-                </View>
-              </View>
-
-              <View className="mt-8 gap-4">
-                <View className="items-center">
-                  <Pressable onPress={handleForgotPassword} disabled={isLoading}>
-                    <Text className="text-sm font-semibold text-[#D2691E] underline">
-                      Lupa password?
+                <View className="flex-row items-center justify-between mt-2">
+                  <Pressable onPress={handleRegister}>
+                    <Text className="text-[#D2691E] font-semibold text-sm">
+                      Daftar Pelanggan
                     </Text>
                   </Pressable>
-                </View>
 
-                <View className="flex-row items-center justify-center gap-2">
-                  <Text className="text-sm text-slate-600">Belum punya akun?</Text>
-                  <Pressable onPress={handleRegister} disabled={isLoading}>
-                    <Text className="text-sm font-semibold text-[#D2691E] underline">
-                      Daftar
+                  <Text className="text-slate-300">|</Text>
+
+                  <Pressable onPress={handleRegisterBarber}>
+                    <Text className="text-[#D2691E] font-semibold text-sm">
+                      Daftar Mitra Barber
                     </Text>
                   </Pressable>
                 </View>
               </View>
+            </View>
+
+            <View className="mt-8 mb-8">
+              <SocialLoginButton
+                provider="google"
+                onPress={handleGoogleLogin}
+                disabled={isLoading}
+              />
             </View>
           </View>
         </ScrollView>

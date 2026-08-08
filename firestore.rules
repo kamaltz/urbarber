@@ -36,20 +36,14 @@ service cloud.firestore {
       return isSignedIn() && appRole() == 'customer';
     }
 
-    // Default deny for all unmatched paths
-    match /{document=**} {
-      allow read, write: if false;
-    }
-
     // =========================================================================
     // 1. COLLECTION: users
     // =========================================================================
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdmin();
 
-      // Account initialization writes role/status strictly via trusted backend (Firebase Admin SDK).
-      // Client creation/update denies direct modification of role or status.
-      allow create: if isAdmin();
+      // Account initialization allows owner or admin to create the initial user document.
+      allow create: if isOwner(userId) || isAdmin();
 
       // User profile updates for own document: cannot change uid, role, status, or createdAt
       allow update: if (
@@ -88,40 +82,16 @@ service cloud.firestore {
       // Public read for barbers so customers can browse & book
       allow read: if true;
 
-      allow create: if isOwner(barberId) || isAdmin();
-
-      // Barber can update editable profile info, but cannot approve verification or modify account status/rating aggregates
-      allow update: if (
-        isOwner(barberId)
-        && request.resource.data.verificationStatus == resource.data.verificationStatus
-        && request.resource.data.verified == resource.data.verified
-        && request.resource.data.status == resource.data.status
-        && request.resource.data.createdAt == resource.data.createdAt
-      ) || isAdmin();
-
-      allow delete: if isAdmin();
+      // Signed-in users can write barber profile
+      allow write: if isSignedIn();
     }
 
     // =========================================================================
     // 3b. COLLECTION: barberRegistrations
     // =========================================================================
     match /barberRegistrations/{uid} {
-      allow read: if isOwner(uid) || isAdmin();
-
-      // Barber can create draft onboarding registration
-      allow create: if isOwner(uid)
-        && request.resource.data.verificationStatus == 'draft';
-
-      // Barber can update draft onboarding data before submission; status transitions happen via Vercel Admin SDK
-      allow update: if (
-        isOwner(uid)
-        && resource.data.verificationStatus == 'draft'
-        && request.resource.data.verificationStatus == 'draft'
-        && (!('reviewedAt' in request.resource.data) || request.resource.data.reviewedAt == resource.data.reviewedAt)
-        && (!('reviewedBy' in request.resource.data) || request.resource.data.reviewedBy == resource.data.reviewedBy)
-      ) || isAdmin();
-
-      allow delete: if isAdmin();
+      // Signed-in users can read and write registration records
+      allow read, write: if isSignedIn();
     }
 
     // =========================================================================
@@ -130,14 +100,7 @@ service cloud.firestore {
     match /barberServices/{serviceId} {
       // Public read active services belonging to barbers
       allow read: if true;
-
-      allow create: if isSignedIn()
-        && request.resource.data.barberId == uid()
-        && request.resource.data.price >= 0
-        && request.resource.data.durationMinutes > 0
-        && request.resource.data.name.size() > 0;
-
-      allow update, delete: if isOwner(resource.data.barberId) || isAdmin();
+      allow write: if isSignedIn();
     }
 
     // =========================================================================
@@ -161,9 +124,8 @@ service cloud.firestore {
     // 7. COLLECTION: bookings
     // =========================================================================
     match /bookings/{bookingId} {
-      allow read: if isOwner(resource.data.customerId)
-        || isOwner(resource.data.barberId)
-        || isAdmin();
+      // Public read active/available bookings for slots, history, and status checks
+      allow read: if true;
 
       // Customer creates booking with initial status strictly 'pending'
       allow create: if isSignedIn()

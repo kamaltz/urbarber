@@ -9,15 +9,7 @@ import type { BarberScheduleDay } from '@/features/barbers/types/barber';
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, RefreshControl, ScrollView, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
-const DAYS_OF_WEEK: ('Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday')[] = [
-  'Monday',
-  'Tuesday',
-  'Wednesday',
-  'Thursday',
-  'Friday',
-  'Saturday',
-  'Sunday',
-];
+import { DEFAULT_BARBER_SCHEDULE_DAYS } from '@/features/barbers/constants/schedule.constants';
 
 const DAY_LABELS: Record<string, string> = {
   Monday: 'Senin',
@@ -29,12 +21,7 @@ const DAY_LABELS: Record<string, string> = {
   Sunday: 'Minggu',
 };
 
-const DEFAULT_SCHEDULE: BarberScheduleDay[] = DAYS_OF_WEEK.map((day) => ({
-  dayOfWeek: day,
-  isOpen: day !== 'Sunday',
-  startTime: '09:00',
-  endTime: '20:00',
-}));
+const DEFAULT_SCHEDULE: BarberScheduleDay[] = DEFAULT_BARBER_SCHEDULE_DAYS;
 
 export default function BarberScheduleScreen() {
   const { user } = useAuth();
@@ -195,7 +182,7 @@ export default function BarberScheduleScreen() {
           <View className="gap-3">
             {scheduleDays.map((day, idx) => (
               <View
-                key={day.dayOfWeek}
+                key={day.dayOfWeek ? `sched-${day.dayOfWeek}` : `sched-day-${idx}`}
                 className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex-row items-center justify-between">
                 <View className="flex-row items-center gap-3">
                   <Switch
@@ -258,8 +245,8 @@ export default function BarberScheduleScreen() {
             <Text className="text-slate-400 text-xs italic">Belum ada tanggal libur khusus.</Text>
           ) : (
             <View className="flex-row flex-wrap gap-2">
-              {unavailableDates.map((dateStr) => (
-                <View key={dateStr} className="bg-red-50 border border-red-200 px-3 py-1.5 rounded-lg flex-row items-center gap-2">
+              {unavailableDates.map((dateStr, idx) => (
+                <View key={dateStr ? `off-${dateStr}` : `off-date-${idx}`} className="bg-red-50 border border-red-200 px-3 py-1.5 rounded-lg flex-row items-center gap-2">
                   <Text className="text-red-800 text-xs font-semibold">{dateStr}</Text>
                   <TouchableOpacity onPress={() => handleRemoveOffDate(dateStr)}>
                     <SymbolIcon name="xmark" size={14} color="#991b1b" />

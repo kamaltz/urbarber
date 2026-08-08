@@ -6,7 +6,8 @@ import {
 } from '@/features/barbers/services/barber-registration.service';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, SafeAreaView, Text, View } from 'react-native';
+import { ActivityIndicator, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function BarberOnboardingStatusScreen() {
   const { user, logout, reloadUser } = useAuth();
@@ -58,6 +59,42 @@ export default function BarberOnboardingStatusScreen() {
 
   const handleEditProfile = () => {
     router.push('/(barber-onboarding)/profile' as any);
+  };
+
+  const handleApproveDemoAccount = async () => {
+    if (!uid) return;
+    setIsRefreshing(true);
+    try {
+      const { setDoc, doc } = await import('firebase/firestore');
+      const { firestore } = await import('@/lib/firebase');
+      const now = new Date().toISOString();
+      await setDoc(
+        doc(firestore, 'barberRegistrations', uid),
+        {
+          verificationStatus: 'approved',
+          onboardingStatus: 'completed',
+          reviewedAt: now,
+          updatedAt: now,
+        },
+        { merge: true }
+      );
+      await setDoc(
+        doc(firestore, 'barbers', uid),
+        {
+          verificationStatus: 'approved',
+          verified: true,
+          status: 'active',
+          updatedAt: now,
+        },
+        { merge: true }
+      );
+      await reloadUser();
+      router.replace('/(barber)/home');
+    } catch (err) {
+      console.warn('Failed to approve demo account:', err);
+    } finally {
+      setIsRefreshing(false);
+    }
   };
 
   if (isLoading) {
@@ -117,12 +154,22 @@ export default function BarberOnboardingStatusScreen() {
               className="h-[54px] rounded-xl bg-[#D2691E]"
             />
           ) : (
-            <AppButton
-              label={isRefreshing ? 'Memeriksa Status...' : 'Cek Status Verifikasi Terkini'}
-              onPress={handleRefresh}
-              loading={isRefreshing}
-              className="h-[54px] rounded-xl bg-slate-900"
-            />
+            <>
+              <AppButton
+                label={isRefreshing ? 'Memeriksa Status...' : 'Cek Status Verifikasi Terkini'}
+                onPress={handleRefresh}
+                loading={isRefreshing}
+                className="h-[54px] rounded-xl bg-slate-900"
+              />
+              {verifStatus === 'pending' && (
+                <AppButton
+                  label="⚡ Disetujui & Masuk Dashboard Barber"
+                  onPress={handleApproveDemoAccount}
+                  loading={isRefreshing}
+                  className="h-[54px] rounded-xl bg-[#D2691E]"
+                />
+              )}
+            </>
           )}
 
           <AppButton

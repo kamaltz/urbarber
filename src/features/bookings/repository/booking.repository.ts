@@ -155,30 +155,37 @@ class BookingRepository {
         ? {
             isOpen: dayConfig.isOpen,
             openTime: dayConfig.startTime || dayConfig.openTime || '09:00',
-            closeTime: dayConfig.endTime || dayConfig.closeTime || '18:00',
+            closeTime: dayConfig.endTime || dayConfig.closeTime || '21:00',
           }
-        : { isOpen: false, openTime: '09:00', closeTime: '18:00' };
+        : { isOpen: true, openTime: '09:00', closeTime: '21:00' };
 
       // 4. Query existing active bookings for this barber & date
-      const qBookings = query(
-        collection(firestore, 'bookings'),
-        where('barberId', '==', barberId),
-        where('status', 'in', ['pending', 'accepted', 'in_progress'])
-      );
+      let existingBookings: any[] = [];
+      try {
+        const qBookings = query(
+          collection(firestore, 'bookings'),
+          where('barberId', '==', barberId),
+          where('status', 'in', ['pending', 'accepted', 'in_progress'])
+        );
 
-      const bookingsSnap = await getDocs(qBookings);
-      const existingBookings = bookingsSnap.docs
-        .map((docSnap) => {
-          const bData = docSnap.data();
-          const bDate = bData.date || bData.bookingDate || bData.scheduledAt?.split('T')?.[0];
-          if (bDate !== date) return null;
-          return {
-            startTime: bData.startTime || bData.scheduledTime || '00:00',
-            durationMinutes: bData.durationMinutes || options?.serviceDurationMinutes || 45,
-            status: bData.status,
-          };
-        })
-        .filter(Boolean) as any[];
+        const bookingsSnap = await getDocs(qBookings);
+        existingBookings = bookingsSnap.docs
+          .map((docSnap) => {
+            const bData = docSnap.data();
+            const bDate = bData.date || bData.bookingDate || bData.scheduledAt?.split('T')?.[0];
+            if (bDate !== date) return null;
+            return {
+              startTime: bData.startTime || bData.scheduledTime || '00:00',
+              durationMinutes: bData.durationMinutes || options?.serviceDurationMinutes || 45,
+              status: bData.status,
+            };
+          })
+          .filter(Boolean) as any[];
+      } catch (err: any) {
+        if (__DEV__) {
+          console.warn('[BookingRepository getAvailableSlots active bookings query warning]', err?.code || err?.message || err);
+        }
+      }
 
       // 5. Generate slots using pure slot generator engine
       const generatedSlots = generateTimeSlots({

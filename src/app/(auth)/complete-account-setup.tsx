@@ -6,7 +6,8 @@ import { firebaseAuth } from '@/lib/firebase';
 import type { PublicRegistrationRole } from '@/types/domain';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { SafeAreaView, Text, TouchableOpacity, View } from 'react-native';
+import { Text, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function CompleteAccountSetupScreen() {
   const { user, logout, reloadUser } = useAuth();
@@ -45,6 +46,9 @@ export default function CompleteAccountSetupScreen() {
 
       // Force token refresh & reload user profile in AuthProvider
       await reloadUser();
+      if (res.nextRoute) {
+        router.replace(res.nextRoute as any);
+      }
     } catch (err: any) {
       setError('Terjadi kesalahan saat menyelesaikan penyiapan akun.');
     } finally {

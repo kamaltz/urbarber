@@ -42,30 +42,48 @@ export const discoveryService = {
 
       // 2. Query Firestore for each geohash bound with security rules visibility constraints
       for (const b of bounds) {
-        const q = query(
-          barbersRef,
-          where('verificationStatus', '==', 'approved'),
-          where('status', '==', 'active'),
-          where('geohash', '>=', b[0]),
-          where('geohash', '<=', b[1])
-        );
+        try {
+          const q = query(
+            barbersRef,
+            where('verificationStatus', '==', 'approved'),
+            where('status', '==', 'active'),
+            where('geohash', '>=', b[0]),
+            where('geohash', '<=', b[1])
+          );
 
-        const snap = await getDocs(q);
-        for (const docSnap of snap.docs) {
-          docsMap.set(docSnap.id, { id: docSnap.id, ...docSnap.data() });
+          const snap = await getDocs(q);
+          for (const docSnap of snap.docs) {
+            docsMap.set(docSnap.id, { id: docSnap.id, ...docSnap.data() });
+          }
+        } catch {
+          // Ignore individual geohash query bounds errors
         }
       }
 
       // If geohash query returned empty (e.g. legacy docs without geohash), fallback query
       if (docsMap.size === 0) {
-        const fallbackQuery = query(
-          barbersRef,
-          where('verificationStatus', '==', 'approved'),
-          where('status', '==', 'active')
-        );
-        const fallbackSnap = await getDocs(fallbackQuery);
-        for (const docSnap of fallbackSnap.docs) {
-          docsMap.set(docSnap.id, { id: docSnap.id, ...docSnap.data() });
+        try {
+          const fallbackQuery = query(
+            barbersRef,
+            where('verificationStatus', '==', 'approved'),
+            where('status', '==', 'active')
+          );
+          const fallbackSnap = await getDocs(fallbackQuery);
+          for (const docSnap of fallbackSnap.docs) {
+            docsMap.set(docSnap.id, { id: docSnap.id, ...docSnap.data() });
+          }
+        } catch {
+          try {
+            // General fallback query if status field filtering varies
+            const genericQuery = query(barbersRef);
+            const genericSnap = await getDocs(genericQuery);
+            for (const docSnap of genericSnap.docs) {
+              const d = docSnap.data();
+              if (d.verificationStatus === 'approved' && d.status === 'active') {
+                docsMap.set(docSnap.id, { id: docSnap.id, ...d });
+              }
+            }
+          } catch {}
         }
       }
 

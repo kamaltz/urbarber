@@ -3,6 +3,7 @@
  * Data access layer for barber operations, services, bookings, and analytics
  */
 
+import { getDefaultWeeklySchedule } from '../constants/schedule.constants';
 import { firestore } from '@/lib/firebase';
 import { mapLegacyBookingStatus, BookingStatus } from '@/types/domain';
 import {
@@ -404,22 +405,20 @@ export const barberRepository = {
       const snapshot = await getDoc(docRef);
 
       if (!snapshot.exists()) {
-        return {
-          barberId,
-          schedule: [],
-          isConfigured: false,
-          isConfirmed: false,
-          scheduleSource: 'custom',
-          lastUpdated: new Date().toISOString(),
-        };
+        return getDefaultWeeklySchedule(barberId);
       }
 
       const data = snapshot.data();
+      const rawSchedule = data.schedule || [];
+      if (rawSchedule.length === 0) {
+        return getDefaultWeeklySchedule(barberId);
+      }
+
       return {
         barberId,
-        schedule: data.schedule || [],
-        isConfigured: !!data.isConfigured,
-        isConfirmed: !!data.isConfirmed,
+        schedule: rawSchedule,
+        isConfigured: data.isConfigured !== false,
+        isConfirmed: data.isConfirmed !== false,
         scheduleSource: data.scheduleSource || 'custom',
         unavailableDates: data.unavailableDates || [],
         lastUpdated: data.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
@@ -428,7 +427,7 @@ export const barberRepository = {
       if (__DEV__) {
         console.warn('[BarberRepository getWeeklySchedule Error]', error?.code, error?.message || error);
       }
-      return null;
+      return getDefaultWeeklySchedule(barberId);
     }
   },
 

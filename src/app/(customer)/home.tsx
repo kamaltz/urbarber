@@ -180,9 +180,9 @@ export default function HomeScreen() {
           <Text className="text-lg font-bold text-slate-900 mb-3">Kategori Layanan</Text>
           {homeData?.featuredServices && homeData.featuredServices.length > 0 ? (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row gap-3">
-              {homeData.featuredServices.map((cat) => (
+              {homeData.featuredServices.map((cat, idx) => (
                 <Pressable
-                  key={cat.id}
+                  key={cat.id || `cat-feat-${idx}`}
                   onPress={() =>
                     router.push({
                       pathname: '/(customer)/explore',
@@ -220,9 +220,9 @@ export default function HomeScreen() {
               <AppButton label="Coba Lagi" onPress={() => refresh()} variant="secondary" />
             </View>
           ) : homeData?.barberSuggestions && homeData.barberSuggestions.length > 0 ? (
-            homeData.barberSuggestions.slice(0, 5).map((barber) => (
+            homeData.barberSuggestions.slice(0, 5).map((barber, idx) => (
               <AppCard
-                key={barber.barberId}
+                key={barber.barberId || `barber-suggest-${idx}`}
                 onPress={() =>
                   router.push({
                     pathname: '/(customer)/barber/[barberId]',

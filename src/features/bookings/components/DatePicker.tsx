@@ -61,7 +61,7 @@ export function DatePicker({
           <View key={weekIdx} className="flex-row justify-between">
             {days.slice(weekIdx * 7, (weekIdx + 1) * 7).map((day, dayIdx) => {
               if (!day) {
-                return <View key={`empty-${dayIdx}`} className="h-12 w-12" />;
+                return <View key={`empty-${weekIdx}-${dayIdx}`} className="h-12 w-12" />;
               }
 
               const dateStr = formatDateString(
@@ -73,7 +73,7 @@ export function DatePicker({
 
               return (
                 <Pressable
-                  key={day}
+                  key={dateStr || `day-${weekIdx}-${dayIdx}`}
                   onPress={() => onDateChange(dateStr)}
                   className={`h-12 w-12 items-center justify-center rounded-lg ${
                     isSelected ? 'bg-orange-600' : 'bg-white border border-slate-200'

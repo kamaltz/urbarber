@@ -153,8 +153,8 @@ export default function BarberDetailScreen() {
           <Text className="text-lg font-bold text-slate-900 mb-3">Katalog Layanan</Text>
           {services.length > 0 ? (
             <View className="gap-3">
-              {services.map((service) => (
-                <AppCard key={service.serviceId || service.name} className="p-4">
+              {services.map((service, idx) => (
+                <AppCard key={service.serviceId || service.name ? `svc-${service.serviceId || service.name}` : `barber-svc-${idx}`} className="p-4">
                   <View className="flex-row items-center justify-between mb-1">
                     <Text className="text-base font-bold text-slate-900">{service.name}</Text>
                     <Text className="text-sm font-extrabold text-[#D2691E]">

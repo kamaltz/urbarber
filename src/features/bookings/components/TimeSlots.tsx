@@ -28,9 +28,9 @@ export function TimeSlots({
         <Text className="text-center text-slate-600">Tidak ada waktu yang tersedia untuk tanggal ini</Text>
       ) : (
         <View className="flex-row flex-wrap gap-3">
-          {slots.map((slot) => (
+          {slots.map((slot, idx) => (
             <Pressable
-              key={slot.id}
+              key={slot.id || `slot-${slot.time || idx}`}
               onPress={() => {
                 if (slot.available) {
                   onTimeSelect(slot.time);

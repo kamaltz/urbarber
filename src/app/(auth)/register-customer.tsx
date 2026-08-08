@@ -6,21 +6,27 @@ import { TermsAgreement } from '@/features/auth/components/TermsAgreement';
 import { authService } from '@/features/auth/services/auth.service';
 import { validateRegisterForm } from '@/features/auth/validation/auth.validation';
 import type { PublicRegistrationRole } from '@/types/domain';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
-  SafeAreaView,
   ScrollView,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { useAuth } from '@/features/auth/hooks/use-auth';
 
 export default function RegisterCustomerScreen() {
-  const [selectedRole, setSelectedRole] = useState<PublicRegistrationRole>('customer');
+  const { reloadUser } = useAuth();
+  const { role: initialRole } = useLocalSearchParams<{ role?: string }>();
+  const [selectedRole, setSelectedRole] = useState<PublicRegistrationRole>(
+    initialRole === 'barber' ? 'barber' : 'customer',
+  );
 
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -31,9 +37,11 @@ export default function RegisterCustomerScreen() {
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
 
   const handleRegister = async () => {
     setError('');
+    setSuccessMessage('');
     const validationErrors = validateRegisterForm(
       fullName,
       email,
@@ -51,34 +59,30 @@ export default function RegisterCustomerScreen() {
     setIsLoading(true);
 
     try {
-      if (selectedRole === 'customer') {
-        const response = await authService.registerCustomer({
-          fullName: fullName.trim(),
-          email: email.trim(),
-          phoneNumber: phoneNumber.trim(),
-          password,
-          acceptedTerms,
-        });
+      const response =
+        selectedRole === 'customer'
+          ? await authService.registerCustomer({
+              fullName: fullName.trim(),
+              email: email.trim(),
+              phoneNumber: phoneNumber.trim(),
+              password,
+              acceptedTerms,
+            })
+          : await authService.registerBarber({
+              fullName: fullName.trim(),
+              email: email.trim(),
+              phoneNumber: phoneNumber.trim(),
+              password,
+              acceptedTerms,
+            });
 
-        if (response.success) {
+      if (response.success) {
+        setSuccessMessage('🎉 Registrasi berhasil! Email verifikasi telah dikirim. Mengalihkan...');
+        setTimeout(() => {
           router.replace('/(auth)/verification-email' as any);
-        } else {
-          setError(response.error?.message || 'Gagal mendaftar sebagai pelanggan');
-        }
+        }, 1200);
       } else {
-        const response = await authService.registerBarber({
-          fullName: fullName.trim(),
-          email: email.trim(),
-          phoneNumber: phoneNumber.trim(),
-          password,
-          acceptedTerms,
-        });
-
-        if (response.success) {
-          router.replace('/(auth)/verification-email' as any);
-        } else {
-          setError(response.error?.message || 'Gagal mendaftar sebagai mitra barber.');
-        }
+        setError(response.error?.message || 'Gagal melakukan pendaftaran.');
       }
     } catch (err: any) {
       setError('Terjadi kesalahan saat pendaftaran. Coba lagi.');
@@ -88,7 +92,27 @@ export default function RegisterCustomerScreen() {
   };
 
   const handleGoogleSignUp = async () => {
-    setError('Google Sign-Up memerlukan konfigurasi native.');
+    setError('');
+    setSuccessMessage('');
+    setIsLoading(true);
+    try {
+      const response = await authService.loginWithGoogle(undefined, selectedRole);
+      if (response.success) {
+        await reloadUser();
+        setSuccessMessage('🎉 Berhasil mendaftar dengan Akun Google! Mengalihkan...');
+        setTimeout(() => {
+          router.replace(
+            selectedRole === 'barber' ? ('/(barber-onboarding)/profile' as any) : ('/(customer)/home' as any),
+          );
+        }, 1000);
+      } else {
+        setError(response.error?.message || 'Gagal mendaftar dengan Akun Google.');
+      }
+    } catch (err: any) {
+      setError('Terjadi kesalahan saat mendaftar dengan Google.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleLoginLink = () => {
@@ -117,40 +141,13 @@ export default function RegisterCustomerScreen() {
           <View className="flex-1 px-[18px] pt-10 pb-6">
             <View>
               <AuthHeaderBlock
-                title="Daftar Akun Baru"
-                description="Pilih peran akun Anda untuk bergabung dengan URBarber"
+                title={selectedRole === 'barber' ? 'Daftar Mitra Barber' : 'Daftar Akun Pelanggan'}
+                description={
+                  selectedRole === 'barber'
+                    ? 'Lengkapi data Anda untuk mendaftar sebagai Mitra Barber URBarber'
+                    : 'Lengkapi data Anda untuk memesan layanan cukur rambut'
+                }
               />
-
-              {/* Role Selection Segmented Control */}
-              <View className="flex-row mt-6 bg-slate-100 p-1 rounded-xl border border-slate-200">
-                <TouchableOpacity
-                  className={`flex-1 py-2.5 rounded-lg items-center ${
-                    selectedRole === 'customer' ? 'bg-white shadow-sm' : ''
-                  }`}
-                  onPress={() => setSelectedRole('customer')}
-                  disabled={isLoading}>
-                  <Text
-                    className={`text-xs font-bold ${
-                      selectedRole === 'customer' ? 'text-slate-900' : 'text-slate-500'
-                    }`}>
-                    👤 Pelanggan (Customer)
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  className={`flex-1 py-2.5 rounded-lg items-center ${
-                    selectedRole === 'barber' ? 'bg-[#D2691E] shadow-sm' : ''
-                  }`}
-                  onPress={() => setSelectedRole('barber')}
-                  disabled={isLoading}>
-                  <Text
-                    className={`text-xs font-bold ${
-                      selectedRole === 'barber' ? 'text-white' : 'text-slate-500'
-                    }`}>
-                    💈 Mitra Barber
-                  </Text>
-                </TouchableOpacity>
-              </View>
 
               <View className="mt-6 gap-4">
                 <AppInput
@@ -208,8 +205,16 @@ export default function RegisterCustomerScreen() {
                   />
                 </View>
 
+                {successMessage ? (
+                  <View className="rounded-xl bg-emerald-50 p-3 border border-emerald-200">
+                    <Text className="text-center text-xs font-semibold text-emerald-800">
+                      {successMessage}
+                    </Text>
+                  </View>
+                ) : null}
+
                 {error ? (
-                  <Text className="text-center text-sm text-rose-600">{error}</Text>
+                  <Text className="text-center text-sm text-rose-600 font-medium">{error}</Text>
                 ) : null}
 
                 <AppButton
@@ -238,7 +243,7 @@ export default function RegisterCustomerScreen() {
                   <SocialLoginButton
                     provider="google"
                     onPress={handleGoogleSignUp}
-                    disabled={true}
+                    disabled={isLoading}
                   />
                 </View>
               </View>

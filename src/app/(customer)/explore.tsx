@@ -89,11 +89,11 @@ export default function ExploreScreen() {
                 Semua
               </Text>
             </Pressable>
-            {exploreData.categoryChips.map((chip) => {
+            {exploreData.categoryChips.map((chip, idx) => {
               const active = selectedCategory === chip.id;
               return (
                 <Pressable
-                  key={chip.id}
+                  key={chip.id || `chip-${idx}`}
                   onPress={() => onCategorySelect(chip.id)}
                   className={`rounded-full px-4 py-2 border ${
                     active
@@ -133,9 +133,9 @@ export default function ExploreScreen() {
           <Text className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
             Ditemukan ({exploreData.nearbyBarbers.length}) Barber
           </Text>
-          {exploreData.nearbyBarbers.map((barber) => (
+          {exploreData.nearbyBarbers.map((barber, idx) => (
             <AppCard
-              key={barber.barberId}
+              key={barber.barberId || `explore-barber-${idx}`}
               onPress={() => handleBarberPress(barber.barberId)}
               className="p-4"
             >

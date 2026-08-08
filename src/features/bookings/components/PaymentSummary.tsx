@@ -13,20 +13,22 @@ export type PaymentSummaryProps = {
   totalPrice: number;
 };
 
-const formatCurrency = (amount: number | string | undefined | null): string => {
-  if (amount === undefined || amount === null) return '0';
-  const num = typeof amount === 'string' ? parseFloat(amount) : amount;
-  if (isNaN(num)) return '0';
-  return num.toLocaleString('id-ID');
+const formatCurrency = (amount?: number | string | null): string => {
+  const num = typeof amount === 'string' ? parseFloat(amount) : Number(amount);
+  if (!isFinite(num) || isNaN(num)) {
+    return '0';
+  }
+  // Format number according to Indonesian locale (without currency symbol)
+  return new Intl.NumberFormat('id-ID').format(num);
 };
 
 export function PaymentSummary({
-  subtotal,
-  travelFee,
-  handlingFee,
-  discount,
-  couponCode,
-  totalPrice,
+  subtotal = 0,
+  travelFee = 0,
+  handlingFee = 0,
+  discount = 0,
+  couponCode = '',
+  totalPrice = 0,
 }: PaymentSummaryProps) {
   return (
     <View className="gap-3 rounded-lg bg-slate-50 p-4">
