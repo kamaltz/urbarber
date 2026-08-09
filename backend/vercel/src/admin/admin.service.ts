@@ -85,10 +85,17 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
       .orderBy('submittedAt', 'desc')
       .limit(5)
       .get();
-    const recentBarberRegistrations = recentRegSnap.docs.map(d => ({
-      barberId: d.id,
-      ...d.data(),
-    } as AdminBarberRegistration));
+    // Batch 09F-3: strip raw documentPaths -- the dashboard UI only reads
+    // businessName/ownerName/verificationStatus/submittedAt (see apps/admin's
+    // recentBarberRegistrations table), never document info, so it is simply
+    // omitted rather than replaced with a documentsAvailable map it doesn't use.
+    const recentBarberRegistrations = recentRegSnap.docs.map(d => {
+      const { documentPaths, ...safeData } = d.data();
+      return {
+        barberId: d.id,
+        ...safeData,
+      } as AdminBarberRegistration;
+    });
 
     // Recent bookings (last 5)
     const recentBookingSnap = await db
@@ -157,10 +164,19 @@ export async function getBarberRegistrations(
 
     // Fetch one extra to determine hasMore
     const docs = await queryRef.limit(normalizedPageSize + 1).get();
-    const items = docs.docs.slice(0, normalizedPageSize).map((d: any) => ({
-      barberId: d.id,
-      ...d.data(),
-    } as AdminBarberRegistration));
+    // Batch 09F-3 (P2_ADMIN_RAW_DOCUMENT_PATHS): strip raw documentPaths -- the list
+    // UI (apps/admin barber-verification table) only reads
+    // businessName/ownerName/phoneNumber/verificationStatus/submittedAt, never
+    // document info, so it is simply omitted here rather than replaced with a
+    // documentsAvailable map it doesn't use. getBarberRegistrationDetail already
+    // exposes documentsAvailable for the one screen that does need it.
+    const items = docs.docs.slice(0, normalizedPageSize).map((d: any) => {
+      const { documentPaths, ...safeData } = d.data();
+      return {
+        barberId: d.id,
+        ...safeData,
+      } as AdminBarberRegistration;
+    });
 
     const nextPageStartAfter = docs.docs.length > normalizedPageSize ? docs.docs[normalizedPageSize - 1].id : undefined;
 
