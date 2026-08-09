@@ -15,7 +15,7 @@ import { config } from '../src/config/index.js';
 import { authenticateRequest } from '../src/lib/auth-middleware.js';
 import { handleCors } from '../src/lib/cors.js';
 import { db } from '../src/lib/firebase-admin.js';
-import { reconcilePaymentSync } from '../src/payments/sync-reconciliation.js';
+import { SyncInvalidStateError, syncPaymentStatusService } from '../src/payments/sync-payment-service.js';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const midtransClient = require('midtrans-client');
@@ -312,40 +312,20 @@ async function handleSyncPayment(ctx: RouteContext): Promise<void> {
       return;
     }
 
-    // Query Midtrans
-    const snap = new midtransClient.Snap({
-      isProduction: config.midtransIsProduction || false,
-      serverKey: config.midtransServerKey,
-    });
+    // Midtrans query + reconciliation (fraud_status-aware status mapping, atomic
+    // slot finalization, evidence-gated corruption recovery, and the
+    // P1_SYNC_UNOPENED_SNAP_500 unrecognized-transaction handling) lives in
+    // sync-payment-service.ts -- see Batch 09E-P0/09F-1 for the incidents this
+    // guards against.
+    const result = await syncPaymentStatusService(bookingId, bookingData, paymentData);
 
-    // Snap's createTransaction never returns a transaction_id (only Midtrans assigns
-    // one once a payment attempt occurs), so orderId -- known from creation, and
-    // accepted by Midtrans's Get Status API just like transaction_id -- is the
-    // reliable lookup key here (matches the webhook's reconciliation, which also
-    // queries by orderId).
-    const orderId = paymentData.orderId || paymentData.transactionId;
-    if (!orderId) {
-      res.status(400).json({
-        error: { code: 'INVALID_STATE', message: 'Order ID tidak ditemukan.' },
-      });
+    res.status(200).json({ ...result, bookingId });
+  } catch (err: any) {
+    if (err instanceof SyncInvalidStateError) {
+      res.status(400).json({ error: { code: 'INVALID_STATE', message: err.message } });
       return;
     }
 
-    const midtransStatus = await snap.transaction.status(orderId);
-
-    // Reconciliation logic (fraud_status-aware status mapping, slot finalization,
-    // sync-bug-corruption recovery) lives in sync-reconciliation.ts -- see Batch
-    // 09E-P0 for the incident this guards against.
-    const { mappedStatus } = await reconcilePaymentSync(bookingId, bookingData, paymentData, midtransStatus);
-
-    res.status(200).json({
-      success: true,
-      bookingId,
-      paymentStatus: mappedStatus,
-      transactionStatus: midtransStatus.transaction_status,
-      message: 'Status pembayaran berhasil disinkronkan',
-    });
-  } catch (err: any) {
     console.error('[Payments/sync] Error:', err.message);
     res.status(500).json({
       error: { code: 'INTERNAL_SERVER_ERROR', message: 'Terjadi kesalahan internal.' },

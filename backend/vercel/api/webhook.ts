@@ -1,11 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import type { Transaction } from 'firebase-admin/firestore';
-import { getSlotLockId } from '../src/bookings/slot-lock.js';
 import { config } from '../src/config/index.js';
 import { handleCors } from '../src/lib/cors.js';
 import { db } from '../src/lib/firebase-admin.js';
+import { isAlreadyReconciled, reconcileWebhookPayment } from '../src/payments/webhook-reconciliation.js';
 import { parseOrderId, verifyMidtransSignature } from '../src/payments/signature.js';
-import { mapMidtransStatus, shouldReleaseSlot } from '../src/payments/status-mapper.js';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const midtransClient = require('midtrans-client');
@@ -94,57 +92,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // If Get Status API fails, fallback to notification values if signature was verified
   }
 
-  const targetStatus = mapMidtransStatus(verifiedStatus, verifiedFraud);
+  const midtransStatus = { transaction_status: verifiedStatus, fraud_status: verifiedFraud };
 
-  // 5. Idempotent check: If status is unchanged, return 200 without duplicate writes
-  if (paymentData.status === targetStatus && bookingData.paymentStatus === targetStatus) {
+  // 5. Idempotent check: if the stored state already matches what this notification
+  // would produce (payment/booking status AND slot ownership), return 200 without
+  // duplicate writes. This intentionally does NOT short-circuit on payment/booking
+  // status alone -- a corrupted state (e.g. paidAt set but booking wrongly cancelled,
+  // or the slot lock missing) can share the same status fields while still needing
+  // repair, which reconcileWebhookPayment's shared decision logic (see
+  // src/payments/reconciliation-decision.ts) handles safely.
+  const alreadyReconciled = await isAlreadyReconciled(bookingId, bookingData, paymentData, midtransStatus);
+  if (alreadyReconciled) {
     res.status(200).json({ status: 'OK', message: 'Notification already processed.' });
     return;
   }
 
-  const nowIso = new Date().toISOString();
-  const slotDocId = getSlotLockId(bookingData.barberId, bookingData.date, bookingData.startTime);
-  const slotLockRef = db.collection('slotLocks').doc(slotDocId);
-
-  // 6. Update Firestore atomically
-  await db.runTransaction(async (t: Transaction) => {
-    const updatePayment: Record<string, any> = {
-      status: targetStatus,
-      transactionStatus: verifiedStatus,
-      fraudStatus: verifiedFraud || null,
-      paymentType: verifiedPaymentType,
-      transactionId: verifiedTransactionId,
-      updatedAt: nowIso,
-      lastNotificationAt: nowIso,
-    };
-
-    const updateBooking: Record<string, any> = {
-      paymentStatus: targetStatus,
-      updatedAt: nowIso,
-    };
-
-    if (targetStatus === 'paid' && !paymentData.paidAt) {
-      updatePayment.paidAt = nowIso;
-      updateBooking.paidAt = nowIso;
-
-      // Finalize slot lock atomically when payment is confirmed paid
-      // Prevents race condition where another customer tries to claim the same slot
-      const slotLockData = await t.get(slotLockRef);
-      if (slotLockData.exists) {
-        t.update(slotLockRef, {
-          status: 'finalized',
-          bookingId,
-          finalizedAt: nowIso,
-        });
-      }
-    } else if (shouldReleaseSlot(targetStatus)) {
-      updateBooking.status = 'cancelled';
-      t.delete(slotLockRef);
-    }
-
-    t.update(paymentRef, updatePayment);
-    t.update(bookingRef, updateBooking);
-  });
+  // 6. Update Firestore atomically via the reconciliation logic shared with
+  // POST /api/payments/sync (see src/payments/webhook-reconciliation.ts).
+  await reconcileWebhookPayment(
+    bookingId,
+    bookingData,
+    paymentData,
+    midtransStatus,
+    verifiedPaymentType,
+    verifiedTransactionId
+  );
 
   res.status(200).json({ status: 'OK', message: 'Notification processed successfully.' });
 }
