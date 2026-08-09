@@ -47,6 +47,24 @@ describe('Vercel Backend Utilities Unit Tests', () => {
     expect(mapMidtransStatus('partial_refund')).toBe('partially_refunded');
   });
 
+  // Batch 09E-P0 regression: an incomplete/missing fraud_status on a 'capture' must
+  // never be treated as a definitive failure -- that previously caused a real paid
+  // sandbox transaction to be destructively cancelled when sync omitted fraud_status
+  // entirely (see payment-sync-reconciliation.test.ts for the full incident scenario).
+  it('3b. Capture with missing/unknown fraud_status maps to a non-destructive state, never a definitive failure', () => {
+    expect(mapMidtransStatus('capture')).toBe('pending');
+    expect(mapMidtransStatus('capture', undefined)).toBe('pending');
+    expect(mapMidtransStatus('capture', null)).toBe('pending');
+    expect(mapMidtransStatus('capture', '')).toBe('pending');
+    expect(mapMidtransStatus('capture', 'unknown_future_fraud_value')).toBe('pending');
+
+    // None of these should ever equal the destructive 'failed' state, and none are
+    // in shouldReleaseSlot's destructive set -- an ambiguous read must not release a
+    // slot or cancel a booking.
+    expect(mapMidtransStatus('capture')).not.toBe('failed');
+    expect(shouldReleaseSlot(mapMidtransStatus('capture'))).toBe(false);
+  });
+
   it('4. Determines slot release rules correctly', () => {
     expect(shouldReleaseSlot('failed')).toBe(true);
     expect(shouldReleaseSlot('expired')).toBe(true);

@@ -386,7 +386,7 @@ describe('Security Validation', () => {
   it('should not expose private credentials', () => {
     // Setup: Admin Web built with environment variables
     // Assert: FIREBASE_PRIVATE_KEY not in bundle
-    // Assert: SUPABASE_SERVICE_ROLE_KEY not in bundle
+    // Assert: SUPABASE_SECRET_KEY not in bundle
     // Assert: MIDTRANS_SERVER_KEY not in bundle
     // Assert: Only NEXT_PUBLIC_* variables in bundle
   });

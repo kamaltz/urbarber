@@ -287,9 +287,23 @@ async function handleGetDocumentUrl(ctx: RouteContext): Promise<void> {
     const result = await getSignedDocumentUrl(barberId, documentType);
     res.status(200).json({ data: result });
   } catch (err: any) {
+    // Never log/forward the raw error to the client -- may contain internal detail.
     console.error('[Admin/document-url]', err.message);
     if (err.message === 'REGISTRATION_NOT_FOUND' || err.message === 'DOCUMENT_NOT_FOUND') {
       res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Dokumen tidak ditemukan.' } });
+    } else if (err.message === 'INVALID_DOCUMENT_TYPE') {
+      res.status(400).json({ error: { code: 'INVALID_DOCUMENT_TYPE', message: 'Jenis dokumen tidak valid.' } });
+    } else if (err.message === 'DOCUMENT_PATH_INVALID') {
+      res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Dokumen tidak ditemukan.' } });
+    } else if (err.message === 'SUPABASE_NOT_CONFIGURED') {
+      res.status(503).json({
+        error: {
+          code: 'SERVER_CONFIGURATION_ERROR',
+          message: 'Layanan penyimpanan dokumen belum dikonfigurasi di server.',
+        },
+      });
+    } else if (err.message === 'SIGNED_URL_FAILED') {
+      res.status(502).json({ error: { code: 'STORAGE_ERROR', message: 'Gagal membuat URL dokumen.' } });
     } else {
       res.status(500).json({ error: { code: 'INTERNAL_SERVER_ERROR', message: 'Gagal membuat URL.' } });
     }

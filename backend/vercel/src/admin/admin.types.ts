@@ -7,7 +7,9 @@ export type VerificationStatus = 'draft' | 'pending' | 'approved' | 'rejected';
 export type ListingStatus = 'active' | 'inactive' | 'suspended';
 export type UserStatus = 'active' | 'pending_verification' | 'suspended';
 export type UserRole = 'customer' | 'barber' | 'admin';
-export type AllowedDocType = 'ktp' | 'selfie_with_ktp' | 'business_permit';
+// Canonical document types actually written by the mobile upload flow
+// (src/app/(barber-onboarding)/documents.tsx + barber-registration.service.ts).
+export type AllowedDocType = 'ktp' | 'business_license' | 'certificate';
 
 // ============================================================================
 // Barber Registration
@@ -26,7 +28,11 @@ export interface AdminBarberRegistration {
   reviewedAt?: any;
   reviewedBy?: string;
   rejectionReason?: string | null;
-  documents?: Record<string, string>; // documentType -> storagePath
+  // Batch 09D-2B: raw documentPaths (storage paths) are intentionally NOT part of the
+  // browser-facing contract -- the Admin browser must never rely on/receive authoritative
+  // storage paths (see getSignedDocumentUrl). Only a presence map is exposed; the actual
+  // path is resolved server-side again when the Admin requests a signed URL.
+  documentsAvailable?: Record<AllowedDocType, boolean>;
 }
 
 export interface ApproveBarberResult {

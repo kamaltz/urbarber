@@ -1,18 +1,48 @@
 'use client';
 
 import { useAdminAuth } from '@/features/auth/AdminAuthProvider';
-import { AdminApiClient, type AdminBarberRegistration } from '@/lib/api-client';
+import {
+  ALL_DOCUMENT_TYPES,
+  AdminApiClient,
+  DOCUMENT_TYPE_LABELS,
+  type AdminBarberRegistration,
+  type AllowedDocType,
+} from '@/lib/api-client';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 interface DocumentPreview {
-  type: string;
+  type: AllowedDocType;
   label: string;
   available: boolean;
   loading?: boolean;
   url?: string;
   expiresAt?: string;
   error?: string;
+}
+
+/**
+ * Maps a document-url request failure to a safe, user-facing Indonesian message.
+ * Never surfaces raw Supabase errors, storage paths, service-role values, or
+ * internal stack traces -- only the backend's already-sanitized error code is used.
+ */
+function documentErrorMessage(code: string | undefined): string {
+  switch (code) {
+    case 'INVALID_DOCUMENT_TYPE':
+      return 'Jenis dokumen tidak valid.';
+    case 'NOT_FOUND':
+      return 'Dokumen tidak ditemukan.';
+    case 'UNAUTHENTICATED':
+      return 'Sesi Anda telah berakhir. Silakan login kembali.';
+    case 'FORBIDDEN':
+      return 'Anda tidak memiliki akses untuk melihat dokumen ini.';
+    case 'SERVER_CONFIGURATION_ERROR':
+      return 'Layanan penyimpanan dokumen belum dikonfigurasi di server. Hubungi administrator sistem.';
+    case 'STORAGE_ERROR':
+      return 'Gagal membuat tautan dokumen. Silakan coba lagi.';
+    default:
+      return 'Gagal memuat dokumen. Silakan coba lagi.';
+  }
 }
 
 export default function BarberVerificationDetailPage() {
@@ -40,12 +70,13 @@ export default function BarberVerificationDetailPage() {
         const data = await AdminApiClient.getBarberRegistrationDetail(barberId);
         setRegistration(data);
 
-        // Initialize documents array
-        const docTypes: DocumentPreview[] = [
-          { type: 'ktp', label: 'KTP', available: !!data.documents?.ktp },
-          { type: 'selfie_with_ktp', label: 'Selfie dengan KTP', available: !!data.documents?.selfie_with_ktp },
-          { type: 'business_permit', label: 'Surat Ijin Usaha', available: !!data.documents?.business_permit },
-        ];
+        // Initialize documents array from the presence-only map -- the browser
+        // never receives raw storage paths, only whether each document type exists.
+        const docTypes: DocumentPreview[] = ALL_DOCUMENT_TYPES.map((type) => ({
+          type,
+          label: DOCUMENT_TYPE_LABELS[type],
+          available: !!data.documentsAvailable?.[type],
+        }));
         setDocuments(docTypes);
       } catch (err: any) {
         setError(err.message || 'Gagal load detail.');
@@ -90,26 +121,28 @@ export default function BarberVerificationDetailPage() {
     }
   };
 
-  // Load document preview
-  const loadDocumentPreview = async (docType: string) => {
+  // Load document preview -- sends only barberId + documentType, never a storage
+  // path. The returned signed URL is short-lived and kept only in-memory (React
+  // state) for the preview modal; it is never persisted to Firestore or any
+  // browser storage.
+  const loadDocumentPreview = async (docType: AllowedDocType) => {
     setPreviewingDoc(docType);
     setPreviewLoading(true);
     try {
       const { url, expiresAt } = await AdminApiClient.getDocumentUrl(barberId, docType);
       setPreviewUrl(url);
-      
+
       // Update documents array
       setDocuments((prev) =>
         prev.map((d) =>
-          d.type === docType ? { ...d, url, expiresAt, loading: false } : d
+          d.type === docType ? { ...d, url, expiresAt, loading: false, error: undefined } : d
         )
       );
     } catch (err: any) {
-      alert(`Gagal load dokumen: ${err.message}`);
+      const message = documentErrorMessage(err.code);
+      alert(message);
       setDocuments((prev) =>
-        prev.map((d) =>
-          d.type === docType ? { ...d, error: err.message, loading: false } : d
-        )
+        prev.map((d) => (d.type === docType ? { ...d, error: message, loading: false } : d))
       );
     } finally {
       setPreviewLoading(false);

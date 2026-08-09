@@ -7,6 +7,8 @@
 import type { DocumentSnapshot } from 'firebase-admin/firestore';
 import { FieldValue } from 'firebase-admin/firestore';
 import { db } from '../lib/firebase-admin.js';
+import { getSupabaseAdminClient } from '../lib/supabase-admin.js';
+import { ALLOWED_DOC_TYPES, assertPathFromFirestore, validateStoragePathNamespace } from './admin.validation.js';
 import type {
     AdminBarberDetail,
     AdminBarberRegistration,
@@ -174,6 +176,10 @@ export async function getBarberRegistrations(
 
 /**
  * Get detailed barber registration record.
+ * Batch 09D-2B: raw documentPaths (storage paths) are stripped before returning to
+ * the Admin browser -- only a per-type presence boolean is exposed. The browser
+ * requests a signed URL (barberId + documentType only) when it actually needs to
+ * view a document; the path is resolved authoritatively server-side again there.
  */
 export async function getBarberRegistrationDetail(barberId: string): Promise<AdminBarberRegistration | null> {
   try {
@@ -181,9 +187,17 @@ export async function getBarberRegistrationDetail(barberId: string): Promise<Adm
     if (!regSnap.exists) {
       return null;
     }
+
+    const { documentPaths, ...safeData } = regSnap.data()!;
+    const documentsAvailable = {} as Record<string, boolean>;
+    for (const docType of ALLOWED_DOC_TYPES) {
+      documentsAvailable[docType] = Boolean(documentPaths?.[docType]);
+    }
+
     return {
       barberId,
-      ...regSnap.data(),
+      ...safeData,
+      documentsAvailable,
     } as AdminBarberRegistration;
   } catch (err: any) {
     throw new Error(`Failed to get registration detail: ${err.message}`);
@@ -440,44 +454,69 @@ export async function updateUserStatus(
 // Private Document Access
 // ============================================================================
 
+// Short-lived expiry for Admin document viewing (10 minutes). Deliberately much
+// shorter than the mobile app's generic STORAGE_CONFIG.DEFAULT_SIGNED_URL_EXPIRES_IN
+// (3600s in src/features/services/storage.config.ts), which serves a different,
+// unrelated call site -- Admin document review only needs a viewing window.
+const ADMIN_DOCUMENT_SIGNED_URL_TTL_SECONDS = 600;
+
 /**
  * Generate a short-lived signed URL for private verification documents.
- * CRITICAL: Backend validates path from Firestore, never from client.
+ * CRITICAL: Backend validates path from Firestore, never from client -- the caller
+ * supplies only barberId + documentType; the storage path is always resolved
+ * authoritatively server-side from barberRegistrations/{barberId}.documentPaths.
  */
 export async function getSignedDocumentUrl(
   barberId: string,
   documentType: string,
 ): Promise<SignedUrlResult> {
-  try {
-    // Load registration to get stored path
-    const regSnap = await db.collection('barberRegistrations').doc(barberId).get();
-    if (!regSnap.exists) {
-      throw new Error('REGISTRATION_NOT_FOUND');
-    }
-
-    const regData = regSnap.data()!;
-    const storagePath = regData.documents?.[documentType];
-
-    if (!storagePath) {
-      throw new Error('DOCUMENT_NOT_FOUND');
-    }
-
-    // Supabase signed URL would be generated here
-    // For now, document the structure:
-    // 1. Get Supabase admin client
-    // 2. Call supabase.storage.from('private-documents').createSignedUrl(storagePath, 3600)
-    // 3. Return signed URL with 1-hour expiration
-
-    // PLACEHOLDER: Real implementation pending Supabase integration
-    const expiresAt = new Date(Date.now() + 3600 * 1000).toISOString();
-
-    return {
-      url: `https://placeholder-signed-url-for-${storagePath}`,
-      expiresAt,
-    };
-  } catch (err: any) {
-    throw new Error(`Failed to get signed document URL: ${err.message}`);
+  // Defense in depth: the route layer also validates this, but the service must be
+  // safe to call directly (e.g. from tests or future callers).
+  if (!ALLOWED_DOC_TYPES.has(documentType)) {
+    throw new Error('INVALID_DOCUMENT_TYPE');
   }
+
+  const regSnap = await db.collection('barberRegistrations').doc(barberId).get();
+  if (!regSnap.exists) {
+    throw new Error('REGISTRATION_NOT_FOUND');
+  }
+
+  const regData = regSnap.data()!;
+  const storagePath = regData.documentPaths?.[documentType];
+
+  if (!assertPathFromFirestore(storagePath)) {
+    throw new Error('DOCUMENT_NOT_FOUND');
+  }
+
+  // Firestore data is not trusted blindly even though it's server-side: reject a
+  // path that doesn't resolve inside this barber's own storage namespace, and
+  // reject malformed/traversal-like paths.
+  if (!validateStoragePathNamespace(storagePath, barberId)) {
+    throw new Error('DOCUMENT_PATH_INVALID');
+  }
+
+  let supabase;
+  try {
+    supabase = getSupabaseAdminClient();
+  } catch {
+    throw new Error('SUPABASE_NOT_CONFIGURED');
+  }
+
+  const { data, error } = await supabase.storage
+    .from('private-documents')
+    .createSignedUrl(storagePath, ADMIN_DOCUMENT_SIGNED_URL_TTL_SECONDS);
+
+  if (error || !data?.signedUrl) {
+    // Sanitized: never surface the raw Supabase error (may contain internal detail).
+    throw new Error('SIGNED_URL_FAILED');
+  }
+
+  const expiresAt = new Date(Date.now() + ADMIN_DOCUMENT_SIGNED_URL_TTL_SECONDS * 1000).toISOString();
+
+  return {
+    url: data.signedUrl,
+    expiresAt,
+  };
 }
 
 // ============================================================================

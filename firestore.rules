@@ -42,8 +42,9 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdmin();
 
-      // Account initialization allows owner or admin to create the initial user document.
-      allow create: if isOwner(userId) || isAdmin();
+      // Account initialization is backend-only (Admin SDK via trusted Vercel endpoint)
+      // Client create is DENIED to prevent unauthorized account creation
+      allow create: if false;
 
       // User profile updates for own document: cannot change uid, role, status, or createdAt
       allow update: if (
@@ -82,16 +83,42 @@ service cloud.firestore {
       // Public read for barbers so customers can browse & book
       allow read: if true;
 
-      // Signed-in users can write barber profile
-      allow write: if isSignedIn();
+      // Barber can only create/update their own profile
+      allow create: if isOwner(barberId) && request.resource.data.userId == barberId;
+
+      // Barber can update only their own profile, cannot change authoritative fields.
+      // Compares against a shared default (null) rather than gating on field presence, so a
+      // barber cannot bypass these guards simply by being the first write to introduce the field.
+      allow update: if (
+        isOwner(barberId)
+        && request.resource.data.get('verificationStatus', null) == resource.data.get('verificationStatus', null)
+        && request.resource.data.get('verified', null) == resource.data.get('verified', null)
+        && request.resource.data.get('ratingAverage', null) == resource.data.get('ratingAverage', null)
+        && request.resource.data.get('ratingCount', null) == resource.data.get('ratingCount', null)
+        && request.resource.data.get('createdAt', null) == resource.data.get('createdAt', null)
+        && request.resource.data.get('userId', null) == resource.data.get('userId', null)
+      ) || isAdmin();
+
+      allow delete: if isAdmin();
     }
 
     // =========================================================================
     // 3b. COLLECTION: barberRegistrations
     // =========================================================================
-    match /barberRegistrations/{uid} {
-      // Signed-in users can read and write registration records
-      allow read, write: if isSignedIn();
+    match /barberRegistrations/{registrationUid} {
+      // Barber can read only their own registration
+      allow read: if isOwner(registrationUid) || isAdmin();
+
+      // Barber can create/update only their own registration
+      // Cannot change verificationStatus directly (backend-only via Admin SDK)
+      allow create: if isOwner(registrationUid);
+
+      allow update: if (
+        isOwner(registrationUid)
+        && request.resource.data.get('verificationStatus', null) == resource.data.get('verificationStatus', null)
+      ) || isAdmin();
+
+      allow delete: if isAdmin();
     }
 
     // =========================================================================
@@ -100,7 +127,21 @@ service cloud.firestore {
     match /barberServices/{serviceId} {
       // Public read active services belonging to barbers
       allow read: if true;
-      allow write: if isSignedIn();
+
+      // Barber can only create services for themselves
+      allow create: if (
+        isBarber()
+        && request.resource.data.barberId == uid()
+      );
+
+      // Barber can only update their own services
+      allow update: if (
+        isBarber()
+        && resource.data.barberId == uid()
+        && request.resource.data.barberId == resource.data.barberId
+      ) || isAdmin();
+
+      allow delete: if isAdmin();
     }
 
     // =========================================================================
@@ -124,14 +165,26 @@ service cloud.firestore {
     // 7. COLLECTION: bookings
     // =========================================================================
     match /bookings/{bookingId} {
-      // Public read active/available bookings for slots, history, and status checks
-      allow read: if true;
+      // Customer may read their own booking/payment-intent document regardless of
+      // paymentStatus (needed for checkout/payment-status UI). Assigned barber may
+      // read ONLY once paymentStatus == 'paid' -- an unpaid payment intent is not
+      // yet a booking the barber is entitled to see (payment-first ownership).
+      // Admin (backend) read is unrestricted.
+      allow read: if (
+        isOwner(resource.data.customerId)
+        || (
+          isOwner(resource.data.barberId)
+          && 'paymentStatus' in resource.data
+          && resource.data.paymentStatus == 'paid'
+        )
+        || isAdmin()
+      );
 
-      // Customer creates booking with initial status strictly 'pending'
-      allow create: if isSignedIn()
-        && request.resource.data.customerId == uid()
-        && request.resource.data.status == 'pending'
-        && request.resource.data.totalPrice >= 0;
+      // Scheduled booking creation is trusted-backend-only (Vercel API via Admin SDK,
+      // which bypasses these rules). Direct client creation is denied so that slot
+      // holds, server-calculated pricing, and payment-first ownership cannot be
+      // forged from the client.
+      allow create: if false;
 
       // Status transitions & immutable fields enforcement
       allow update: if (
@@ -224,17 +277,27 @@ service cloud.firestore {
     match /reviews/{reviewId} {
       allow read: if true;
 
-      // Customer can create review only for completed booking belonging to themselves with rating 1-5
+      // Customer can create review only for their own completed booking with rating 1-5
+      // Verified directly against the referenced booking document (not backend-trusted-only,
+      // since this is a direct client write)
       allow create: if isSignedIn()
         && request.resource.data.customerId == uid()
         && request.resource.data.rating >= 1
         && request.resource.data.rating <= 5
-        && get(/databases/$(database)/documents/bookings/$(request.resource.data.bookingId)).data.status == 'completed'
-        && get(/databases/$(database)/documents/bookings/$(request.resource.data.bookingId)).data.customerId == uid();
+        && request.resource.data.bookingId is string
+        && get(/databases/$(database)/documents/bookings/$(request.resource.data.bookingId)).data.customerId == uid()
+        && get(/databases/$(database)/documents/bookings/$(request.resource.data.bookingId)).data.barberId == request.resource.data.barberId
+        && get(/databases/$(database)/documents/bookings/$(request.resource.data.bookingId)).data.status == 'completed';
 
-      allow update: if isOwner(resource.data.barberId) // Barber reply
-        || isOwner(resource.data.customerId)
-        || isAdmin();
+      // Customer cannot modify their review after creation; barber can only add/update reply
+      allow update: if (
+        isOwner(resource.data.barberId)
+        && request.resource.data.customerId == resource.data.customerId
+        && request.resource.data.barberId == resource.data.barberId
+        && request.resource.data.bookingId == resource.data.bookingId
+        && request.resource.data.rating == resource.data.rating
+      )
+      || isAdmin();
 
       allow delete: if isAdmin();
     }
@@ -256,29 +319,49 @@ service cloud.firestore {
     // 9. COLLECTION: conversations (Real-Time Chat)
     // =========================================================================
     match /conversations/{conversationId} {
-      // Only participants (customer or barber) can read conversation
+      // Only participants (customer or barber) can read conversation. Chat is
+      // explicitly out of scope for Admin (see docs/agent/business-rules.md:
+      // "Admin: No chat access") -- Admin gets no client-level read bypass here.
       allow read: if (
-        isOwner(resource.data.customerId) 
-        || isOwner(resource.data.barberId) 
-        || isAdmin()
+        isOwner(resource.data.customerId)
+        || isOwner(resource.data.barberId)
       );
 
-      // Backend SDK only can create/update conversations
-      allow create, update, delete: if false;
+      // Conversation creation stays backend-only (payment-gated, see
+      // POST /api/bookings/:bookingId/chat). Deletion stays backend/admin-only.
+      allow create, delete: if false;
+
+      // Sending a message (see chat.repository.ts sendMessage) atomically updates
+      // conversation metadata -- lastMessage/lastMessageAt/lastSenderId/unread
+      // counts -- in the SAME transaction as the message write. Firestore
+      // transactions are all-or-nothing, so participants need a real update path
+      // here or every real chat send fails. Only metadata may change; every
+      // structural/identity field must stay exactly equal to its current value, so
+      // this can never be used to add participants, reassign ownership, or reopen a
+      // closed conversation.
+      allow update: if (
+        (isOwner(resource.data.customerId) || isOwner(resource.data.barberId))
+        && request.resource.data.customerId == resource.data.customerId
+        && request.resource.data.barberId == resource.data.barberId
+        && request.resource.data.bookingId == resource.data.bookingId
+        && request.resource.data.participants == resource.data.participants
+        && request.resource.data.status == resource.data.status
+        && request.resource.data.createdAt == resource.data.createdAt
+      ) || isAdmin();
     }
 
     // =========================================================================
     // 9a. COLLECTION: messages (append-only, participant-only)
     // =========================================================================
     match /conversations/{conversationId}/messages/{messageId} {
-      // Only participants can read messages
+      // Only participants can read messages (Admin: No chat access -- see the
+      // parent conversations match block)
       allow read: if (
         isOwner(get(/databases/$(database)/documents/conversations/$(conversationId)).data.customerId)
         || isOwner(get(/databases/$(database)/documents/conversations/$(conversationId)).data.barberId)
-        || isAdmin()
       );
 
-      // Only the sender can create messages
+      // Only conversation participants can create messages
       allow create: if (
         isSignedIn()
         && request.resource.data.senderId == uid()
@@ -286,6 +369,10 @@ service cloud.firestore {
         && request.resource.data.text is string
         && request.resource.data.text.size() > 0
         && request.resource.data.text.size() <= 1000
+        && (
+          uid() == get(/databases/$(database)/documents/conversations/$(conversationId)).data.customerId
+          || uid() == get(/databases/$(database)/documents/conversations/$(conversationId)).data.barberId
+        )
       );
 
       // No updates or deletes allowed (append-only)
@@ -302,7 +389,14 @@ service cloud.firestore {
 
       match /replies/{replyId} {
         allow read: if isOwner(get(/databases/$(database)/documents/supportTickets/$(ticketId)).data.customerId) || isAdmin();
-        allow create: if isSignedIn();
+        // Only the ticket owner or admin can add replies
+        allow create: if (
+          isSignedIn()
+          && (
+            uid() == get(/databases/$(database)/documents/supportTickets/$(ticketId)).data.customerId
+            || isAdmin()
+          )
+        );
       }
     }
 

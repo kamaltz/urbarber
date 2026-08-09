@@ -150,10 +150,18 @@ async function runRulesTests() {
       );
     });
 
-    // 9. Customer can create their own pending booking
-    await test('9. Customer can create their own pending booking', async () => {
+    // Isolation boundary: bookings are trusted-backend-only (Admin SDK bypasses rules).
+    // Clear before this group so no residue from the users/barbers groups above can
+    // interfere with rule-propagation timing for the assertions below.
+    await testEnv.clearFirestore();
+
+    // 9. Scheduled booking creation is trusted-backend-only; direct client create is DENIED
+    // Legacy client-side bookingRepository.createBooking() has zero production call sites
+    // (verified via repo-wide search) and is superseded by POST /api/payments/create
+    // (Vercel backend, Admin SDK). Client Firestore create must stay denied.
+    await test('9. Customer CANNOT create a booking directly (trusted-backend-only)', async () => {
       const custDb = testEnv.authenticatedContext('cust1', { app_role: 'customer' }).firestore();
-      await assertSucceeds(
+      await assertFails(
         custDb.collection('bookings').doc('book1').set({
           customerId: 'cust1',
           barberId: 'barb1',
@@ -163,7 +171,7 @@ async function runRulesTests() {
       );
     });
 
-    // 10. Customer cannot create an accepted or completed booking
+    // 10. Customer cannot create an accepted or completed booking (also trusted-backend-only)
     await test('10. Customer cannot create an accepted or completed booking', async () => {
       const custDb = testEnv.authenticatedContext('cust1', { app_role: 'customer' }).firestore();
       await assertFails(
@@ -221,16 +229,99 @@ async function runRulesTests() {
       );
     });
 
-    // 13. Unrelated barber cannot read or update a booking
+    // 13. Unrelated barber cannot read or update a booking (self-contained fixture,
+    // independent of test 11's book3, so this test is order-independent)
     await test('13. Unrelated barber cannot read or update a booking', async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('bookings').doc('book_unrelated').set({
+          customerId: 'cust1',
+          barberId: 'barb1',
+          status: 'pending',
+          paymentStatus: 'paid',
+          createdAt: '2026-01-01',
+        });
+      });
+
       const foreignBarbDb = testEnv.authenticatedContext('barb2', { app_role: 'barber' }).firestore();
-      await assertFails(foreignBarbDb.collection('bookings').doc('book3').get());
+      await assertFails(foreignBarbDb.collection('bookings').doc('book_unrelated').get());
       await assertFails(
-        foreignBarbDb.collection('bookings').doc('book3').update({
+        foreignBarbDb.collection('bookings').doc('book_unrelated').update({
           status: 'accepted',
         })
       );
     });
+
+    // Payment-first booking visibility (Batch 09D-S final blocker):
+    // unpaid payment intents must never be readable by the assigned barber.
+    await testEnv.clearFirestore();
+
+    // 13b. Customer can read their own UNPAID payment intent
+    await test('13b. Customer can read own unpaid payment intent', async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('bookings').doc('book_intent').set({
+          customerId: 'cust1',
+          barberId: 'barb1',
+          status: 'pending',
+          // no paymentStatus field at all -- matches the real payment-intent shape
+          // created by POST /api/payments/create before Midtrans confirmation
+          createdAt: '2026-01-01',
+        });
+      });
+
+      const custDb = testEnv.authenticatedContext('cust1', { app_role: 'customer' }).firestore();
+      await assertSucceeds(custDb.collection('bookings').doc('book_intent').get());
+    });
+
+    // 13c. Assigned barber CANNOT read an unpaid payment intent
+    await test('13c. Assigned barber cannot read unpaid payment intent', async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('bookings').doc('book_intent2').set({
+          customerId: 'cust1',
+          barberId: 'barb1',
+          status: 'pending',
+          paymentStatus: 'pending',
+          createdAt: '2026-01-01',
+        });
+      });
+
+      const barb1Db = testEnv.authenticatedContext('barb1', { app_role: 'barber' }).firestore();
+      await assertFails(barb1Db.collection('bookings').doc('book_intent2').get());
+    });
+
+    // 13d. Assigned barber CAN read a paid, finalized booking
+    await test('13d. Assigned barber can read a paid finalized booking', async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('bookings').doc('book_finalized').set({
+          customerId: 'cust1',
+          barberId: 'barb1',
+          status: 'pending',
+          paymentStatus: 'paid',
+          createdAt: '2026-01-01',
+        });
+      });
+
+      const barb1Db = testEnv.authenticatedContext('barb1', { app_role: 'barber' }).firestore();
+      await assertSucceeds(barb1Db.collection('bookings').doc('book_finalized').get());
+    });
+
+    // 13e. Unrelated barber CANNOT read a paid booking that isn't theirs
+    await test('13e. Unrelated barber cannot read a paid booking', async () => {
+      const barb2Db = testEnv.authenticatedContext('barb2', { app_role: 'barber' }).firestore();
+      await assertFails(barb2Db.collection('bookings').doc('book_finalized').get());
+    });
+
+    // 13f. Unrelated customer CANNOT read another customer's booking (paid or not)
+    await test("13f. Unrelated customer cannot read another customer's booking", async () => {
+      const cust2Db = testEnv.authenticatedContext('cust2', { app_role: 'customer' }).firestore();
+      await assertFails(cust2Db.collection('bookings').doc('book_finalized').get());
+      await assertFails(cust2Db.collection('bookings').doc('book_intent2').get());
+    });
+
+    // Isolation boundary: reviews group verifies get()-based booking ownership/status
+    // checks. Clear so no residual booking/review docs from earlier groups can mask
+    // a rule regression, and so rule-propagation from the barbers/bookings groups
+    // above has fully settled before these assertions run.
+    await testEnv.clearFirestore();
 
     // 14. Customer can review their own completed booking
     await test('14. Customer can review their own completed booking', async () => {
@@ -274,18 +365,30 @@ async function runRulesTests() {
       );
     });
 
-    // 16. Customer cannot review another customer's booking
+    // 16. Customer cannot review another customer's booking (self-contained fixture,
+    // independent of test 14's book_completed, so this test is order-independent)
     await test("16. Customer cannot review another customer's booking", async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('bookings').doc('book_completed_foreign').set({
+          customerId: 'cust1',
+          barberId: 'barb1',
+          status: 'completed',
+        });
+      });
+
       const cust2Db = testEnv.authenticatedContext('cust2', { app_role: 'customer' }).firestore();
       await assertFails(
         cust2Db.collection('reviews').doc('rev3').set({
-          bookingId: 'book_completed',
+          bookingId: 'book_completed_foreign',
           customerId: 'cust2',
           barberId: 'barb1',
           rating: 5,
         })
       );
     });
+
+    // Isolation boundary: favorites group is independent of the reviews fixtures above.
+    await testEnv.clearFirestore();
 
     // 17. Customer can manage only their own favorites
     await test('17. Customer can manage only their own favorites', async () => {
@@ -334,10 +437,21 @@ async function runRulesTests() {
       await assertSucceeds(cust1Db.collection('payments').doc('pay1').get());
     });
 
-    // 20. Customer cannot read another customer's payment document
+    // 20. Customer cannot read another customer's payment document (self-contained
+    // fixture, independent of test 19's pay1, so this test is order-independent)
     await test("20. Customer cannot read another customer's payment document", async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('payments').doc('pay1_foreign').set({
+          bookingId: 'pay1_foreign',
+          customerId: 'cust1',
+          barberId: 'barb1',
+          status: 'pending',
+          grossAmount: 50000,
+        });
+      });
+
       const cust2Db = testEnv.authenticatedContext('cust2', { app_role: 'customer' }).firestore();
-      await assertFails(cust2Db.collection('payments').doc('pay1').get());
+      await assertFails(cust2Db.collection('payments').doc('pay1_foreign').get());
     });
 
     // 21. Client cannot create or write payment document directly
@@ -439,9 +553,19 @@ async function runRulesTests() {
     });
 
     // 26. Customer cannot read another customer's paymentRequests document
+    // (self-contained fixture, independent of test 25's req1, so this test is
+    // order-independent)
     await test("26. Customer cannot read another customer's paymentRequests document", async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('paymentRequests').doc('req1_foreign').set({
+          requestId: 'req1_foreign',
+          customerId: 'cust1',
+          status: 'completed',
+        });
+      });
+
       const cust2Db = testEnv.authenticatedContext('cust2', { app_role: 'customer' }).firestore();
-      await assertFails(cust2Db.collection('paymentRequests').doc('req1').get());
+      await assertFails(cust2Db.collection('paymentRequests').doc('req1_foreign').get());
     });
 
     // 27. Barber can read their own barber profile
@@ -481,6 +605,36 @@ async function runRulesTests() {
           status: 'active',
           createdAt: '2026-01-01',
         })
+      );
+    });
+
+    // 38. Real onboarding flow: barber profile created without verified/ratingAverage set yet
+    // must not let the barber introduce those fields themselves on their first write to them.
+    await test('38. Barber cannot self-introduce verified/ratingAverage on a profile that never had them set', async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('barbers').doc('barb4').set({
+          uid: 'barb4',
+          userId: 'barb4',
+          shopName: 'Barb Four Shop',
+        });
+      });
+
+      const barb4Db = testEnv.authenticatedContext('barb4', { app_role: 'barber' }).firestore();
+
+      await assertSucceeds(
+        barb4Db.collection('barbers').doc('barb4').update({
+          shopDescription: 'Draft profile update, no authoritative fields touched',
+        })
+      );
+
+      await assertFails(
+        barb4Db.collection('barbers').doc('barb4').update({ verified: true })
+      );
+      await assertFails(
+        barb4Db.collection('barbers').doc('barb4').update({ ratingAverage: 5 })
+      );
+      await assertFails(
+        barb4Db.collection('barbers').doc('barb4').update({ verificationStatus: 'approved' })
       );
     });
 
@@ -587,6 +741,140 @@ async function runRulesTests() {
           verificationStatus: 'approved',
         })
       );
+    });
+
+    // 37. Real onboarding flow: barber can save draft updates on a doc that has never had
+    // verificationStatus set (matches actual saveProfileDraft/uploadVerificationDocument
+    // client behavior, which never sets this field), but still cannot introduce it as approved.
+    await test('37. Barber can update a draft doc with no verificationStatus field yet, but cannot introduce it as approved', async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('barberRegistrations').doc('barb3').set({
+          barberId: 'barb3',
+          ownerName: 'Barb Three',
+        });
+      });
+
+      const barb3Db = testEnv.authenticatedContext('barb3', { app_role: 'barber' }).firestore();
+      await assertSucceeds(
+        barb3Db.collection('barberRegistrations').doc('barb3').update({
+          documentPaths: { ktp: 'barb3/verifications/1.pdf' },
+          documentsCompleted: true,
+        })
+      );
+
+      await assertFails(
+        barb3Db.collection('barberRegistrations').doc('barb3').update({
+          verificationStatus: 'approved',
+        })
+      );
+    });
+
+    // Batch 09E regression: sendMessage() atomically updates conversation metadata
+    // (lastMessage/unread counts) in the same transaction as the message write.
+    // Firestore transactions are all-or-nothing, so participants need a real update
+    // path -- but it must never allow mutating structural/identity fields.
+    await test('39. Participant can update conversation metadata fields (lastMessage, unread counts) when sending a message', async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('conversations').doc('conv1').set({
+          bookingId: 'conv1',
+          customerId: 'cust1',
+          barberId: 'barb1',
+          participants: ['cust1', 'barb1'],
+          status: 'active',
+          createdAt: '2026-01-01',
+          customerUnreadCount: 0,
+          barberUnreadCount: 0,
+        });
+      });
+
+      const custDb = testEnv.authenticatedContext('cust1', { app_role: 'customer' }).firestore();
+      await assertSucceeds(
+        custDb.collection('conversations').doc('conv1').update({
+          lastMessage: 'Halo',
+          lastMessageAt: '2026-01-02',
+          lastSenderId: 'cust1',
+          updatedAt: '2026-01-02',
+          barberUnreadCount: 1,
+        })
+      );
+
+      const barbDb = testEnv.authenticatedContext('barb1', { app_role: 'barber' }).firestore();
+      await assertSucceeds(
+        barbDb.collection('conversations').doc('conv1').update({
+          lastMessage: 'Hai balik',
+          customerUnreadCount: 1,
+        })
+      );
+
+      const outsiderDb = testEnv.authenticatedContext('rando', { app_role: 'customer' }).firestore();
+      await assertFails(
+        outsiderDb.collection('conversations').doc('conv1').update({ lastMessage: 'intruder' })
+      );
+    });
+
+    // 40. Structural/identity fields on a conversation remain immutable from the
+    // client even for a legitimate participant -- this is the guard that keeps
+    // test 39's metadata-update allowance from being usable to hijack a conversation.
+    await test('40. Conversation participants/customerId/barberId/status/bookingId/createdAt cannot be mutated by a participant', async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('conversations').doc('conv2').set({
+          bookingId: 'conv2',
+          customerId: 'cust2',
+          barberId: 'barb2',
+          participants: ['cust2', 'barb2'],
+          status: 'active',
+          createdAt: '2026-01-01',
+        });
+      });
+
+      const custDb = testEnv.authenticatedContext('cust2', { app_role: 'customer' }).firestore();
+
+      await assertFails(
+        custDb.collection('conversations').doc('conv2').update({
+          participants: ['cust2', 'barb2', 'intruder'],
+        })
+      );
+      await assertFails(
+        custDb.collection('conversations').doc('conv2').update({ barberId: 'intruder' })
+      );
+      await assertFails(
+        custDb.collection('conversations').doc('conv2').update({ customerId: 'intruder' })
+      );
+      await assertFails(
+        custDb.collection('conversations').doc('conv2').update({ status: 'closed' })
+      );
+      await assertFails(
+        custDb.collection('conversations').doc('conv2').update({ bookingId: 'different-booking' })
+      );
+      await assertFails(
+        custDb.collection('conversations').doc('conv2').update({ createdAt: '2026-02-02' })
+      );
+    });
+
+    // 41. Chat is explicitly out of scope for Admin (docs/agent/business-rules.md:
+    // "Admin: No chat access"). Admin must not gain ordinary client-level read
+    // access to a conversation or its messages just from app_role=admin.
+    await test('41. Admin has no client-level read access to conversations or messages', async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('conversations').doc('conv3').set({
+          bookingId: 'conv3',
+          customerId: 'cust3',
+          barberId: 'barb3',
+          participants: ['cust3', 'barb3'],
+          status: 'active',
+          createdAt: '2026-01-01',
+        });
+        await context.firestore().collection('conversations').doc('conv3').collection('messages').doc('msg1').set({
+          senderId: 'cust3',
+          text: 'Halo',
+          type: 'text',
+          createdAt: '2026-01-01',
+        });
+      });
+
+      const adminDb = testEnv.authenticatedContext('admin1', { app_role: 'admin' }).firestore();
+      await assertFails(adminDb.collection('conversations').doc('conv3').get());
+      await assertFails(adminDb.collection('conversations').doc('conv3').collection('messages').doc('msg1').get());
     });
 
   } finally {

@@ -34,6 +34,21 @@ export interface DashboardMetrics {
 }
 
 // Barber Registration
+// Canonical document types actually written by the mobile upload flow
+// (src/app/(barber-onboarding)/documents.tsx + barber-registration.service.ts),
+// matching backend/vercel/src/admin/admin.types.ts's AllowedDocType. Kept as a small
+// local type/constant here rather than importing across the apps/admin <-> backend
+// package boundary, since the two are deployed independently.
+export type AllowedDocType = 'ktp' | 'business_license' | 'certificate';
+
+export const DOCUMENT_TYPE_LABELS: Record<AllowedDocType, string> = {
+  ktp: 'KTP',
+  business_license: 'Izin Usaha',
+  certificate: 'Sertifikat',
+};
+
+export const ALL_DOCUMENT_TYPES: AllowedDocType[] = ['ktp', 'business_license', 'certificate'];
+
 export interface AdminBarberRegistration {
   barberId: string;
   ownerName: string;
@@ -46,7 +61,9 @@ export interface AdminBarberRegistration {
   reviewedAt?: string;
   reviewedBy?: string;
   rejectionReason?: string;
-  documents: Record<string, { url: string; uploadedAt: string }>;
+  // Presence-only map; the Admin browser never receives or needs raw storage paths.
+  // A signed URL is requested on demand via getDocumentUrl(barberId, documentType).
+  documentsAvailable?: Record<AllowedDocType, boolean>;
 }
 
 // User Management
@@ -282,9 +299,14 @@ export class AdminApiClient {
 
   /**
    * POST /api/admin/barber-registrations/document-url
-   * Get signed URL for verification document
+   * Get signed URL for verification document.
+   * Sends ONLY barberId + documentType -- never a raw storage path. The backend
+   * resolves the authoritative path from Firestore itself.
    */
-  static async getDocumentUrl(barberId: string, documentType: string): Promise<{ url: string; expiresAt: string }> {
+  static async getDocumentUrl(
+    barberId: string,
+    documentType: AllowedDocType
+  ): Promise<{ url: string; expiresAt: string }> {
     const response = await this.request<ApiResponse<{ url: string; expiresAt: string }>>(
       `/api/admin/barber-registrations/document-url`,
       { method: 'POST', body: JSON.stringify({ barberId, documentType }) }

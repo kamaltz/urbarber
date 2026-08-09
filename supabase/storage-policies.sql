@@ -5,7 +5,9 @@
 --   1. Create public (public-media) and private (private-documents) storage buckets.
 --   2. Configure Row Level Security (RLS) on storage.objects for Firebase Auth JWTs.
 --   3. Restrict file writes strictly to the user's own Firebase UID folder ({firebaseUid}/...).
---   4. Allow platform administrators (app_role = 'admin') to read private verification documents.
+--   4. Private verification documents are readable ONLY by their owner via the client SDK.
+--      Admin access goes exclusively through the trusted Vercel backend's server client
+--      (SUPABASE_SECRET_KEY), which issues short-lived signed URLs -- see Policy 5 below.
 --
 -- How to apply:
 --   Run this file in the Supabase Dashboard -> SQL Editor.
@@ -50,6 +52,7 @@ DROP POLICY IF EXISTS "Authenticated Upload to public-media" ON storage.objects;
 DROP POLICY IF EXISTS "Authenticated Update in public-media" ON storage.objects;
 DROP POLICY IF EXISTS "Authenticated Delete in public-media" ON storage.objects;
 DROP POLICY IF EXISTS "Owner or Admin Read Access for private-documents" ON storage.objects;
+DROP POLICY IF EXISTS "Owner Read Access for private-documents" ON storage.objects;
 DROP POLICY IF EXISTS "Owner Upload to private-documents" ON storage.objects;
 DROP POLICY IF EXISTS "Owner Update in private-documents" ON storage.objects;
 DROP POLICY IF EXISTS "Owner Delete in private-documents" ON storage.objects;
@@ -106,16 +109,19 @@ USING (
 -- 4. RLS POLICIES FOR PRIVATE-DOCUMENTS BUCKET
 -- ----------------------------------------------------------------------------
 
--- Policy 5: File owner (matching UID folder) OR Admin (app_role = 'admin') can read private documents
-CREATE POLICY "Owner or Admin Read Access for private-documents"
+-- Policy 5: ONLY the file owner (matching UID folder) can read private documents
+-- directly via the client SDK. Batch 09D-2A: removed the "OR app_role = 'admin'"
+-- clause -- Admin document access now goes exclusively through the trusted Vercel
+-- backend (service-role client, see backend/vercel/src/lib/supabase-admin.ts),
+-- which generates short-lived signed URLs after validating the request server-side.
+-- The service-role key used by that backend bypasses RLS entirely by design, so it
+-- does not need (and must not rely on) a client-facing admin-read policy.
+CREATE POLICY "Owner Read Access for private-documents"
 ON storage.objects FOR SELECT
 TO authenticated
 USING (
   bucket_id = 'private-documents'
-  AND (
-    (storage.foldername(name))[1] = (auth.jwt() ->> 'sub')
-    OR (auth.jwt() ->> 'app_role' = 'admin')
-  )
+  AND (storage.foldername(name))[1] = (auth.jwt() ->> 'sub')
 );
 
 -- Policy 6: Only the file owner can upload files to private-documents inside their own Firebase UID folder

@@ -53,7 +53,7 @@ PAYMENT_RETURN_BASE_URL=https://urbarber.vercel.app
 
 # Optional: Supabase Storage (for private document access in Batch 06)
 SUPABASE_URL=<supabase-project-url>
-SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
+SUPABASE_SECRET_KEY=<supabase-server-secret-key>
 SUPABASE_PRIVATE_BUCKET=private-documents
 ```
 
@@ -131,7 +131,7 @@ Production:  https://admin.urbarber.vercel.app  (or custom domain)
 
 - ❌ Commit `.env` or `.env.local` files
 - ❌ Expose FIREBASE_PRIVATE_KEY in apps/admin
-- ❌ Expose SUPABASE_SERVICE_ROLE_KEY anywhere in frontend
+- ❌ Expose SUPABASE_SECRET_KEY anywhere in frontend
 - ❌ Use hardcoded API URLs (use environment variables)
 - ❌ Log or console.log Firebase tokens
 

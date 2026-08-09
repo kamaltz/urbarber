@@ -19,6 +19,7 @@
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { z } from 'zod';
+import { computeAvailability } from '../src/bookings/availability.js';
 import { getSlotLockId } from '../src/bookings/slot-lock.js';
 import { authenticateRequest } from '../src/lib/auth-middleware.js';
 import { handleCors } from '../src/lib/cors.js';
@@ -50,7 +51,7 @@ type RouteHandler = (ctx: RouteContext) => Promise<void>;
 async function handleInitializeAccount(ctx: RouteContext): Promise<void> {
   const { req, res } = ctx;
 
-  if (handleCors(req, res)) return;
+  if (!handleCors(req, res)) return;
 
   if (req.method !== 'POST') {
     res.status(405).json({ error: { code: 'METHOD_NOT_ALLOWED', message: 'Method tidak diizinkan.' } });
@@ -115,6 +116,7 @@ async function handleInitializeAccount(ctx: RouteContext): Promise<void> {
           status: userData.status || 'active',
         },
       });
+      return;
     }
 
     // Create new user profile
@@ -167,7 +169,7 @@ async function handleInitializeAccount(ctx: RouteContext): Promise<void> {
 async function handleBarberRegistrationSubmit(ctx: RouteContext): Promise<void> {
   const { req, res } = ctx;
 
-  if (handleCors(req, res)) return;
+  if (!handleCors(req, res)) return;
 
   if (req.method !== 'POST') {
     res.status(405).json({ error: { code: 'METHOD_NOT_ALLOWED', message: 'Method tidak diizinkan.' } });
@@ -203,58 +205,97 @@ async function handleBarberRegistrationSubmit(ctx: RouteContext): Promise<void> 
   const uid = decodedToken.uid;
 
   try {
-    const { legalName, businessName, license, categories, phone, address, schedule, documents } = req.body || {};
+    // The real onboarding client (barber-registration.service.ts) writes the draft
+    // directly to Firestore (barberRegistrations/{uid}, barbers/{uid}) via saveProfileDraft
+    // and uploadVerificationDocument before ever calling this endpoint, and sends no body
+    // here at all. This endpoint's job is to promote that existing draft to 'pending' --
+    // not to accept a fresh payload the client never had fields for.
+    const regRef = db.collection('barberRegistrations').doc(uid);
+    const barberRef = db.collection('barbers').doc(uid);
+    const userRef = db.collection('users').doc(uid);
 
-    // Validate basic fields
-    if (!legalName || !businessName || !license || !Array.isArray(categories) || categories.length === 0) {
-      res.status(400).json({
-        error: {
-          code: 'INVALID_ARGUMENT',
-          message: 'legalName, businessName, license, dan categories[] harus diisi.',
-        },
-      });
+    type SubmitResult =
+      | { error: { status: number; code: string; message: string } }
+      | { success: true; submittedAt: string };
+
+    const result = await db.runTransaction<SubmitResult>(async tx => {
+      const regSnap = await tx.get(regRef);
+
+      if (!regSnap.exists) {
+        return {
+          error: {
+            status: 400,
+            code: 'REGISTRATION_NOT_STARTED',
+            message: 'Draf pendaftaran barber belum dibuat. Lengkapi profil dan dokumen terlebih dahulu.',
+          },
+        };
+      }
+
+      const regData = regSnap.data() || {};
+
+      if (regData.verificationStatus === 'pending' || regData.verificationStatus === 'approved') {
+        return {
+          error: {
+            status: 409,
+            code: 'ALREADY_REGISTERED',
+            message: 'Pendaftaran barber sudah dalam proses atau sudah disetujui.',
+          },
+        };
+      }
+
+      const ownerName = typeof regData.ownerName === 'string' ? regData.ownerName.trim() : '';
+      const phoneNumber = typeof regData.phoneNumber === 'string' ? regData.phoneNumber.trim() : '';
+      if (!ownerName || !phoneNumber) {
+        return {
+          error: {
+            status: 400,
+            code: 'REGISTRATION_INCOMPLETE',
+            message: 'Profil barber (nama pemilik dan nomor telepon) belum lengkap.',
+          },
+        };
+      }
+
+      const documentPaths = regData.documentPaths || {};
+      if (!documentPaths.ktp) {
+        return {
+          error: {
+            status: 400,
+            code: 'DOCUMENTS_INCOMPLETE',
+            message: 'Dokumen KTP verifikasi wajib diunggah sebelum submit.',
+          },
+        };
+      }
+
+      const businessName = (typeof regData.shopName === 'string' && regData.shopName.trim()) || ownerName;
+      const timestamp = new Date().toISOString();
+
+      tx.set(regRef, {
+        verificationStatus: 'pending',
+        onboardingStatus: 'submitted',
+        businessName,
+        submittedAt: timestamp,
+        updatedAt: timestamp,
+      }, { merge: true });
+
+      tx.set(barberRef, {
+        verificationStatus: 'pending',
+        onboardingStatus: 'submitted',
+        businessName,
+        updatedAt: timestamp,
+      }, { merge: true });
+
+      tx.set(userRef, {
+        status: 'pending_verification',
+        updatedAt: timestamp,
+      }, { merge: true });
+
+      return { success: true as const, submittedAt: timestamp };
+    });
+
+    if ('error' in result) {
+      res.status(result.error.status).json({ error: { code: result.error.code, message: result.error.message } });
+      return;
     }
-
-    // Check if barber already exists or has pending registration
-    const barberSnap = await db.collection('barbers').doc(uid).get();
-    if (barberSnap.exists) {
-      res.status(409).json({
-        error: {
-          code: 'ALREADY_EXISTS',
-          message: 'Pendaftaran barber sudah ada untuk akun ini.',
-        },
-      });
-    }
-
-    const registrationRef = db.collection('barberRegistrations').doc(uid);
-    const regSnap = await registrationRef.get();
-
-    if (regSnap.exists && regSnap.data()?.verificationStatus !== 'rejected') {
-      res.status(409).json({
-        error: {
-          code: 'ALREADY_REGISTERED',
-          message: 'Pendaftaran barber sudah dalam proses atau sudah disetujui.',
-        },
-      });
-    }
-
-    const timestamp = new Date().toISOString();
-    const registrationData = {
-      uid,
-      legalName,
-      businessName,
-      license,
-      categories,
-      phone: phone || null,
-      address: address || null,
-      schedule: schedule || {},
-      documents: documents || {},
-      verificationStatus: 'pending',
-      submittedAt: timestamp,
-      updatedAt: timestamp,
-    };
-
-    await registrationRef.set(registrationData);
 
     res.status(201).json({
       success: true,
@@ -262,7 +303,7 @@ async function handleBarberRegistrationSubmit(ctx: RouteContext): Promise<void> 
       registration: {
         uid,
         verificationStatus: 'pending',
-        submittedAt: timestamp,
+        submittedAt: result.submittedAt,
       },
     });
   } catch (err: any) {
@@ -957,6 +998,73 @@ async function handleInitializeChat(ctx: RouteContext, bookingId: string): Promi
 }
 
 // ============================================================================
+// Route Handlers: Availability (Batch 09D-S P0)
+// ============================================================================
+
+const availabilityQuerySchema = z.object({
+  barberId: z.string({ required_error: 'barberId wajib diisi.' }).min(1),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Format tanggal harus YYYY-MM-DD'),
+  serviceDurationMinutes: z.coerce.number().int().positive().max(600).optional(),
+  isHomeService: z
+    .union([z.literal('true'), z.literal('false')])
+    .optional()
+    .transform((v) => v === 'true'),
+});
+
+/**
+ * GET /api/bookings/availability
+ * Public, unauthenticated (mirrors public barber-profile/schedule browsing).
+ * Returns ONLY {barberId, date, slots: [{time, available}]} -- never customer
+ * identity, bookingId, address, notes, payment, or tracking data. Distinguishes
+ * AVAILABLE / TEMPORARILY_HELD / FINALIZED internally via computeAvailability(),
+ * but the boolean-only response never reveals which case applies or who holds it.
+ */
+async function handleGetAvailability(ctx: RouteContext): Promise<void> {
+  const { req, res } = ctx;
+
+  if (!handleCors(req, res, ['GET', 'OPTIONS'])) return;
+
+  const url = new URL(req.url || '/', 'http://localhost');
+  const parseResult = availabilityQuerySchema.safeParse({
+    barberId: url.searchParams.get('barberId') || undefined,
+    date: url.searchParams.get('date') || undefined,
+    serviceDurationMinutes: url.searchParams.get('serviceDurationMinutes') || undefined,
+    isHomeService: url.searchParams.get('isHomeService') || undefined,
+  });
+
+  if (!parseResult.success) {
+    res.status(400).json({
+      error: {
+        code: 'INVALID_ARGUMENT',
+        message: parseResult.error.issues.map((i) => i.message).join(', '),
+      },
+    });
+    return;
+  }
+
+  const { barberId, date, serviceDurationMinutes, isHomeService } = parseResult.data;
+
+  try {
+    const result = await computeAvailability(barberId, date, {
+      serviceDurationMinutes,
+      isHomeService,
+    });
+
+    if (result.error) {
+      res.status(200).json({ success: true, barberId, date, slots: [], error: result.error });
+      return;
+    }
+
+    res.status(200).json({ success: true, barberId, date, slots: result.slots });
+  } catch (err: any) {
+    console.error('[Bookings/availability] Error:', err.message);
+    res.status(500).json({
+      error: { code: 'INTERNAL_SERVER_ERROR', message: 'Terjadi kesalahan internal.' },
+    });
+  }
+}
+
+// ============================================================================
 // Router
 // ============================================================================
 
@@ -970,6 +1078,9 @@ const routes: Record<string, Record<string, RouteHandler>> = {
     '/api/barber/bookings/tracking/start': handleBarberTrackingStart,
     '/api/barber/bookings/tracking/stop': handleBarberTrackingStop,
     '/api/bookings/cancel': handleCancelBooking,
+  },
+  'GET': {
+    '/api/bookings/availability': handleGetAvailability,
   },
 };
 
@@ -990,7 +1101,9 @@ async function router(ctx: RouteContext): Promise<void> {
   if (!handler) {
     // Check if OPTIONS is requested (CORS preflight)
     if (method === 'OPTIONS') {
-      if (!handleCors(ctx.req, res, ['POST', 'OPTIONS'])) return;
+      const allowedMethods = Object.keys(routes).filter((m) => routes[m]?.[pathname]);
+      allowedMethods.push('OPTIONS');
+      if (!handleCors(ctx.req, res, allowedMethods.length > 1 ? allowedMethods : ['POST', 'OPTIONS'])) return;
       res.status(204).end();
       return;
     }

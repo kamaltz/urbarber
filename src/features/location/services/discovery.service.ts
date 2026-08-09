@@ -46,7 +46,7 @@ export const discoveryService = {
           const q = query(
             barbersRef,
             where('verificationStatus', '==', 'approved'),
-            where('status', '==', 'active'),
+            where('listingStatus', '==', 'active'),
             where('geohash', '>=', b[0]),
             where('geohash', '<=', b[1])
           );
@@ -66,7 +66,7 @@ export const discoveryService = {
           const fallbackQuery = query(
             barbersRef,
             where('verificationStatus', '==', 'approved'),
-            where('status', '==', 'active')
+            where('listingStatus', '==', 'active')
           );
           const fallbackSnap = await getDocs(fallbackQuery);
           for (const docSnap of fallbackSnap.docs) {

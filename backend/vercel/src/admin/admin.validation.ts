@@ -9,7 +9,10 @@ export const MAX_CATEGORY_DESCRIPTION_LENGTH = 500;
 export const MAX_PAGE_SIZE = 100;
 export const DEFAULT_PAGE_SIZE = 20;
 
-export const ALLOWED_DOC_TYPES = new Set(['ktp', 'selfie_with_ktp', 'business_permit']);
+// Must match the document types actually written by the mobile upload flow
+// (src/app/(barber-onboarding)/documents.tsx + barber-registration.service.ts),
+// which are the only real keys that ever exist under barberRegistrations/{uid}.documentPaths.
+export const ALLOWED_DOC_TYPES = new Set(['ktp', 'business_license', 'certificate']);
 export const ALLOWED_TARGET_STATUSES = new Set(['active', 'suspended']);
 
 /**
@@ -64,6 +67,19 @@ export function validateDocumentType(docType: unknown): { valid: boolean; messag
  */
 export function assertPathFromFirestore(firestorePath: string | undefined): boolean {
   return typeof firestorePath === 'string' && firestorePath.length > 0;
+}
+
+/**
+ * Verify an authoritative Firestore-resolved storage path is well-formed and belongs
+ * to the expected barber's own UID namespace, even though it originates server-side.
+ * Firestore data is not trusted blindly -- this guards against a corrupted/malicious
+ * documentPaths entry pointing outside the barber's own folder.
+ */
+export function validateStoragePathNamespace(storagePath: string, barberId: string): boolean {
+  if (!storagePath || storagePath.trim() !== storagePath) return false;
+  if (storagePath.includes('..') || storagePath.startsWith('/')) return false;
+  const firstSegment = storagePath.split('/')[0];
+  return firstSegment === barberId;
 }
 
 /**

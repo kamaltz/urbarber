@@ -80,14 +80,14 @@ export const customerRepository = {
       const barbersRef = collection(firestore, 'barbers');
       let q = firestoreQuery(
         barbersRef,
-        where('status', '==', 'active'),
+        where('listingStatus', '==', 'active'),
         where('verified', '==', true)
       );
 
       if (filters?.categoryId) {
         q = firestoreQuery(
           barbersRef,
-          where('status', '==', 'active'),
+          where('listingStatus', '==', 'active'),
           where('verified', '==', true),
           where('serviceTypes', 'array-contains', filters.categoryId)
         );

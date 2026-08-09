@@ -16,9 +16,8 @@ import {
   where,
 } from 'firebase/firestore';
 import { firestore } from '@/lib/firebase';
-import { barberRepository } from '@/features/barbers/repository/barber.repository';
-import { generateTimeSlots } from '@/features/barbers/utils/slot-generator';
 import { mapLegacyBookingStatus, BookingStatus } from '@/types/domain';
+import { availabilityApiService } from '../api/availability-api.service';
 import { Booking, BookingReview, CouponCode, TimeSlotAvailability } from '../types/booking';
 
 class BookingRepository {
@@ -111,10 +110,15 @@ class BookingRepository {
   }
 
   /**
-   * Get available time slots for a specific date and barber
-  /**
    * Get available time slots for a specific date and barber.
-   * Enforces explicit schedule confirmation rules (Section B) and pure slot generation (Section C).
+   *
+   * Batch 09D-S P0 fix: previously ran a direct client Firestore query
+   * (where('barberId','==',barberId) across ALL of that barber's bookings), which is
+   * incompatible with participant-only booking read rules and could leak other
+   * customers' booking documents. Availability is now computed by the trusted Vercel
+   * backend (GET /api/bookings/availability), which returns only {time, available}
+   * pairs -- schedule confirmation checks, working-hours resolution, and slot
+   * generation all happen server-side via the Admin SDK.
    */
   async getAvailableSlots(
     barberId: string,
@@ -124,87 +128,23 @@ class BookingRepository {
     try {
       if (!barberId || !date) return { date, slots: [] };
 
-      // 1. Fetch barber schedule document
-      const scheduleDoc = await barberRepository.getBarberSchedule(barberId);
+      const result = await availabilityApiService.getAvailability(barberId, date, options);
 
-      // Section B: A missing or unconfirmed schedule MUST return SCHEDULE_NOT_CONFIGURED
-      if (!scheduleDoc || !scheduleDoc.isConfirmed || !scheduleDoc.isConfigured) {
-        return {
-          date,
-          slots: [],
-          error: 'SCHEDULE_NOT_CONFIGURED',
-        };
-      }
-
-      // 2. Fetch barber profile for acceptingNewBookings & homeServiceTravelBufferMinutes
-      const profile = await barberRepository.getBarberProfile(barberId);
-      const acceptingNewBookings = profile?.acceptingNewBookings ?? true;
-      const travelBufferMinutes = profile?.homeServiceTravelBufferMinutes || 15;
-
-      // 3. Map date string (YYYY-MM-DD) to day of week in English
-      const [year, month, day] = date.split('-').map(Number);
-      const d = new Date(year, month - 1, day);
-      const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-      const dayOfWeek = dayNames[d.getDay()];
-
-      const dayConfig = scheduleDoc.schedule.find(
-        (s) => s.dayOfWeek.toLowerCase() === dayOfWeek.toLowerCase()
-      );
-
-      const workingHours = dayConfig
-        ? {
-            isOpen: dayConfig.isOpen,
-            openTime: dayConfig.startTime || dayConfig.openTime || '09:00',
-            closeTime: dayConfig.endTime || dayConfig.closeTime || '21:00',
-          }
-        : { isOpen: true, openTime: '09:00', closeTime: '21:00' };
-
-      // 4. Query existing active bookings for this barber & date
-      let existingBookings: any[] = [];
-      try {
-        const qBookings = query(
-          collection(firestore, 'bookings'),
-          where('barberId', '==', barberId),
-          where('status', 'in', ['pending', 'accepted', 'in_progress'])
-        );
-
-        const bookingsSnap = await getDocs(qBookings);
-        existingBookings = bookingsSnap.docs
-          .map((docSnap) => {
-            const bData = docSnap.data();
-            const bDate = bData.date || bData.bookingDate || bData.scheduledAt?.split('T')?.[0];
-            if (bDate !== date) return null;
-            return {
-              startTime: bData.startTime || bData.scheduledTime || '00:00',
-              durationMinutes: bData.durationMinutes || options?.serviceDurationMinutes || 45,
-              status: bData.status,
-            };
-          })
-          .filter(Boolean) as any[];
-      } catch (err: any) {
+      if (!result.success) {
         if (__DEV__) {
-          console.warn('[BookingRepository getAvailableSlots active bookings query warning]', err?.code || err?.message || err);
+          console.warn('[BookingRepository getAvailableSlots API error]', result.error.code, result.error.message);
         }
+        return { date, slots: [] };
       }
 
-      // 5. Generate slots using pure slot generator engine
-      const generatedSlots = generateTimeSlots({
-        date,
-        workingHours,
-        serviceDurationMinutes: options?.serviceDurationMinutes || 45,
-        slotIntervalMinutes: 30,
-        unavailableDates: scheduleDoc.unavailableDates || [],
-        existingBookings,
-        homeServiceTravelBufferMinutes: travelBufferMinutes,
-        acceptingNewBookings,
-        isHomeService: options?.isHomeService || false,
-        timeZone: 'Asia/Jakarta',
-      });
+      if (result.data.error) {
+        return { date, slots: [], error: result.data.error };
+      }
 
       return {
         date,
-        slots: generatedSlots.map((s) => ({
-          id: s.id,
+        slots: result.data.slots.map((s) => ({
+          id: `slot-${date}-${s.time}`,
           time: s.time,
           available: s.available,
         })),

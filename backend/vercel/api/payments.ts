@@ -15,7 +15,7 @@ import { config } from '../src/config/index.js';
 import { authenticateRequest } from '../src/lib/auth-middleware.js';
 import { handleCors } from '../src/lib/cors.js';
 import { db } from '../src/lib/firebase-admin.js';
-import { mapMidtransStatus, shouldReleaseSlot } from '../src/payments/status-mapper.js';
+import { reconcilePaymentSync } from '../src/payments/sync-reconciliation.js';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const midtransClient = require('midtrans-client');
@@ -104,8 +104,10 @@ async function handleCreatePayment(ctx: RouteContext): Promise<void> {
       return;
     }
 
-    // Get service details for pricing
-    const serviceSnap = await db.collection('services').doc(serviceId).get();
+    // Get service details for pricing. Real services are created by barbers into
+    // barberServices/{serviceId} (see src/features/barbers/repository/barber.repository.ts) --
+    // there is no separate top-level "services" collection.
+    const serviceSnap = await db.collection('barberServices').doc(serviceId).get();
     if (!serviceSnap.exists) {
       res.status(404).json({
         error: { code: 'SERVICE_NOT_FOUND', message: 'Layanan tidak ditemukan.' },
@@ -114,6 +116,16 @@ async function handleCreatePayment(ctx: RouteContext): Promise<void> {
     }
 
     const serviceData = serviceSnap.data() || {};
+
+    // The service must actually belong to the barber the customer is booking --
+    // otherwise price/duration could be sourced from an unrelated barber's listing.
+    if (serviceData.barberId !== barberId) {
+      res.status(404).json({
+        error: { code: 'SERVICE_NOT_FOUND', message: 'Layanan tidak ditemukan.' },
+      });
+      return;
+    }
+
     const price = serviceData.price || 0;
 
     // Lock the slot
@@ -173,21 +185,18 @@ async function handleCreatePayment(ctx: RouteContext): Promise<void> {
     });
 
     const orderId = `URB-${bookingId}`;
-    const transactionDetails = {
-      order_id: orderId,
-      gross_amount: Math.round(price),
-    };
 
-    const customerDetails = {
+    // Midtrans Snap createTransaction requires transaction_details/customer_details
+    // as nested objects -- they must not be spread at the top level.
+    const transactionData = {
+      transaction_details: {
+        order_id: orderId,
+        gross_amount: Math.round(price),
+      },
       customer_details: {
         email: authUser.email || customerId,
         customer_id: customerId,
       },
-    };
-
-    const transactionData = {
-      ...transactionDetails,
-      ...customerDetails,
     };
 
     try {
@@ -205,7 +214,10 @@ async function handleCreatePayment(ctx: RouteContext): Promise<void> {
         currency: 'IDR',
         method: 'midtrans_sandbox',
         status: 'initiated',
-        transactionId: transaction.transaction_id,
+        // Snap's createTransaction response only returns { token, redirect_url } --
+        // transaction_id isn't assigned by Midtrans until a payment attempt occurs
+        // (visible later via webhook/Get Status), so it may legitimately be absent here.
+        transactionId: transaction.transaction_id || null,
         createdAt: timestamp,
         updatedAt: timestamp,
         paymentUrl,
@@ -306,38 +318,25 @@ async function handleSyncPayment(ctx: RouteContext): Promise<void> {
       serverKey: config.midtransServerKey,
     });
 
-    const transactionId = paymentData.transactionId;
-    if (!transactionId) {
+    // Snap's createTransaction never returns a transaction_id (only Midtrans assigns
+    // one once a payment attempt occurs), so orderId -- known from creation, and
+    // accepted by Midtrans's Get Status API just like transaction_id -- is the
+    // reliable lookup key here (matches the webhook's reconciliation, which also
+    // queries by orderId).
+    const orderId = paymentData.orderId || paymentData.transactionId;
+    if (!orderId) {
       res.status(400).json({
-        error: { code: 'INVALID_STATE', message: 'Transaction ID tidak ditemukan.' },
+        error: { code: 'INVALID_STATE', message: 'Order ID tidak ditemukan.' },
       });
       return;
     }
 
-    const midtransStatus = await snap.transaction.status(transactionId);
-    const mappedStatus = mapMidtransStatus(midtransStatus.transaction_status);
+    const midtransStatus = await snap.transaction.status(orderId);
 
-    const timestamp = new Date().toISOString();
-    const updateData: Record<string, any> = {
-      status: mappedStatus,
-      transactionStatus: midtransStatus.transaction_status,
-      updatedAt: timestamp,
-    };
-
-    if (mappedStatus === 'paid') {
-      updateData.paidAt = timestamp;
-
-      // Update booking with payment status (payment-first principle)
-      // Booking stays 'pending' until barber accepts it
-      await bookingRef.update({ paymentStatus: 'paid', updatedAt: timestamp });
-    } else if (shouldReleaseSlot(mappedStatus)) {
-      // Release slot for cancelled/expired payments
-      const slotLockId = getSlotLockId(bookingData.barberId, bookingData.date, bookingData.startTime);
-      await db.collection('slotLocks').doc(slotLockId).delete();
-      await bookingRef.update({ status: 'cancelled', updatedAt: timestamp });
-    }
-
-    await paymentRef.update(updateData);
+    // Reconciliation logic (fraud_status-aware status mapping, slot finalization,
+    // sync-bug-corruption recovery) lives in sync-reconciliation.ts -- see Batch
+    // 09E-P0 for the incident this guards against.
+    const { mappedStatus } = await reconcilePaymentSync(bookingId, bookingData, paymentData, midtransStatus);
 
     res.status(200).json({
       success: true,

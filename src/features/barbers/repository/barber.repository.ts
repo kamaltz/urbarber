@@ -224,17 +224,25 @@ export const barberRepository = {
     try {
       if (!barberId) return [];
 
+      // Payment-first visibility: an assigned barber may only read bookings once
+      // paymentStatus == 'paid' (enforced by firestore.rules); an unpaid payment
+      // intent must never appear in the barber's booking list. Firestore requires
+      // this filter in the query itself -- a rule-incompatible query is rejected
+      // wholesale, not silently missing rows, but the filter must not be applied
+      // only in JS after the fact.
       let q;
       if (status) {
         q = query(
           collection(firestore, 'bookings'),
           where('barberId', '==', barberId),
+          where('paymentStatus', '==', 'paid'),
           where('status', '==', status),
         );
       } else {
         q = query(
           collection(firestore, 'bookings'),
           where('barberId', '==', barberId),
+          where('paymentStatus', '==', 'paid'),
         );
       }
 
@@ -369,9 +377,11 @@ export const barberRepository = {
     try {
       if (!barberId) return { total: 0, completed: 0, pending: 0, cancelled: 0 };
 
+      // Payment-first visibility: see comment in getBarberBookings above.
       const q = query(
         collection(firestore, 'bookings'),
         where('barberId', '==', barberId),
+        where('paymentStatus', '==', 'paid'),
       );
 
       const snapshot = await getDocs(q);
@@ -543,9 +553,11 @@ export const barberRepository = {
         };
       }
 
+      // Payment-first visibility: see comment in getBarberBookings above.
       const q = query(
         collection(firestore, 'bookings'),
         where('barberId', '==', barberId),
+        where('paymentStatus', '==', 'paid'),
       );
 
       const snapshot = await getDocs(q);
