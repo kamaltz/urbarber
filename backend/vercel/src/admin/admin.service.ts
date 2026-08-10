@@ -15,6 +15,7 @@ import type {
     AdminBarberSummary,
     AdminBookingRecord,
     AdminCategory,
+    AdminTransaction,
     AdminUserRecord,
     ApproveBarberResult,
     CategoryCreateRequest,
@@ -26,6 +27,19 @@ import type {
     SignedUrlResult,
     UpdateUserStatusResult
 } from './admin.types.js';
+
+/**
+ * Converts a Firestore Timestamp (or already-string legacy value) to an ISO
+ * string for the Admin browser. Firestore Timestamp objects serialize to
+ * `{ _seconds, _nanoseconds }` over JSON, not a parseable date, so passing
+ * one through unconverted silently breaks `new Date(...)` on the frontend.
+ */
+function toIsoStringSafe(value: any): string | undefined {
+  if (!value) return undefined;
+  if (typeof value === 'string') return value;
+  if (typeof value.toDate === 'function') return value.toDate().toISOString();
+  return undefined;
+}
 
 /**
  * Get real platform metrics for admin dashboard.
@@ -103,10 +117,25 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
       .orderBy('createdAt', 'desc')
       .limit(5)
       .get();
-    const recentBookings = recentBookingSnap.docs.map(d => ({
-      id: d.id,
-      ...d.data(),
-    } as AdminBookingRecord));
+    // Explicit safe DTO -- raw Firestore booking docs store `totalPrice`, not
+    // `price`, and have no `bookingId` field (the doc ID is authoritative), so a
+    // blind spread here would silently omit fields the Admin UI depends on.
+    const recentBookings: AdminBookingRecord[] = recentBookingSnap.docs.map(d => {
+      const data = d.data();
+      return {
+        bookingId: d.id,
+        customerId: data.customerId,
+        barberId: data.barberId,
+        serviceId: data.serviceId,
+        status: data.status,
+        paymentMethod: data.paymentMethod,
+        paymentStatus: data.paymentStatus,
+        price: data.totalPrice || 0,
+        date: data.date,
+        startTime: data.startTime,
+        createdAt: data.createdAt,
+      };
+    });
 
     return {
       totalActiveCustomers,
@@ -959,35 +988,35 @@ export interface TransactionMonitoringFilters {
 export async function getTransactionsList(
   filters: TransactionMonitoringFilters = {},
   params: PaginationParams = {}
-): Promise<PaginationResult<any>> {
+): Promise<PaginationResult<AdminTransaction>> {
   try {
     const pageSize = Math.min(params.pageSize || 20, 100);
 
     // For cash_on_service, read from bookings with paymentMethod='cash_on_service'
     // For midtrans_sandbox, read from payments collection
 
-    const items: any[] = [];
-    let hasMore = false;
+    const items: (Omit<AdminTransaction, 'createdAt' | 'paidAt'> & { createdAt?: any; paidAt?: any })[] = [];
 
-    // Get cash transactions
+    // Get cash transactions. Only paymentMethod + orderBy(createdAt) is applied
+    // at the Firestore level -- that pair has a composite index
+    // (bookings: paymentMethod ASC, createdAt DESC). Status is intentionally
+    // filtered in-memory below rather than added as a second .where() here,
+    // since every additional provider+status combination would otherwise need
+    // its own dedicated composite index.
     if (!filters.provider || filters.provider === 'cash_on_service') {
-      let cashQuery: any = db.collection('bookings')
+      const cashDocs = await db.collection('bookings')
         .where('paymentMethod', '==', 'cash_on_service')
-        .orderBy('createdAt', 'desc');
-
-      if (filters.status && filters.status !== 'not_required') {
-        cashQuery = cashQuery.where('paymentStatus', '==', filters.status);
-      }
-
-      const cashDocs = await cashQuery.limit(pageSize).get();
+        .orderBy('createdAt', 'desc')
+        .limit(pageSize)
+        .get();
       items.push(
         ...cashDocs.docs.map((doc: DocumentSnapshot) => {
           const data = doc.data();
           return {
             transactionId: `cash-${doc.id}`,
             bookingId: doc.id,
-            provider: 'cash_on_service',
-            environment: 'cash',
+            provider: 'cash_on_service' as const,
+            environment: 'cash' as const,
             grossAmount: data?.totalPrice || 0,
             status: 'not_required',
             createdAt: data?.createdAt,
@@ -997,25 +1026,23 @@ export async function getTransactionsList(
       );
     }
 
-    // Get Midtrans Sandbox transactions
+    // Get Midtrans Sandbox transactions. Same reasoning as above: only
+    // environment + orderBy(createdAt) is applied at the Firestore level
+    // (payments: environment ASC, createdAt DESC).
     if (!filters.provider || filters.provider === 'midtrans_sandbox') {
-      let midtransQuery: any = db.collection('payments')
+      const midtransDocs = await db.collection('payments')
         .where('environment', '==', 'sandbox')
-        .orderBy('createdAt', 'desc');
-
-      if (filters.status) {
-        midtransQuery = midtransQuery.where('status', '==', filters.status);
-      }
-
-      const midtransDocs = await midtransQuery.limit(pageSize).get();
+        .orderBy('createdAt', 'desc')
+        .limit(pageSize)
+        .get();
       items.push(
         ...midtransDocs.docs.map((doc: DocumentSnapshot) => {
           const data = doc.data();
           return {
             transactionId: data?.transactionId || doc.id,
             bookingId: data?.bookingId,
-            provider: 'midtrans_sandbox',
-            environment: 'sandbox',
+            provider: 'midtrans_sandbox' as const,
+            environment: 'sandbox' as const,
             orderId: data?.orderId,
             grossAmount: data?.grossAmount || 0,
             status: data?.status,
@@ -1031,15 +1058,29 @@ export async function getTransactionsList(
       );
     }
 
-    // Sort combined results by createdAt desc
+    // Sort combined results by createdAt desc (raw Firestore Timestamps support toMillis()).
     items.sort((a, b) => {
       const aTime = a.createdAt?.toMillis?.() || 0;
       const bTime = b.createdAt?.toMillis?.() || 0;
       return bTime - aTime;
     });
 
-    const paginatedItems = items.slice(0, pageSize);
-    hasMore = items.length > pageSize;
+    // Status is applied here, across both providers, rather than as a Firestore
+    // filter (see above). This is a page-local filter -- because it runs after
+    // each provider query is already capped at `pageSize`, a heavily-filtered
+    // status may return fewer than pageSize items even when more matching
+    // records exist further back in either collection. Acceptable for an
+    // admin monitoring view; never a 500.
+    const filtered = filters.status
+      ? items.filter((item) => item.status === filters.status)
+      : items;
+
+    const hasMore = filtered.length > pageSize;
+    const paginatedItems: AdminTransaction[] = filtered.slice(0, pageSize).map((item) => ({
+      ...item,
+      createdAt: toIsoStringSafe(item.createdAt),
+      paidAt: item.paidAt ? toIsoStringSafe(item.paidAt) : undefined,
+    }));
 
     return {
       items: paginatedItems,

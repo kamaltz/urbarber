@@ -90,16 +90,14 @@ export interface AdminBarberRecord {
 // ============================================================================
 
 export interface AdminBookingRecord {
-  id: string;
+  bookingId: string;
   customerId: string;
-  customerId_displayName?: string;
   barberId: string;
-  barberId_displayName?: string;
   serviceId?: string;
   status: string;
   paymentMethod?: string;
   paymentStatus?: string;
-  totalPrice: number;
+  price: number;
   date: string;
   startTime: string;
   createdAt?: any;
@@ -142,16 +140,16 @@ export interface DashboardMetrics {
 // ============================================================================
 
 export interface AdminTransaction {
-  bookingId: string;
+  transactionId: string;
+  bookingId?: string;
+  provider: 'cash_on_service' | 'midtrans_sandbox';
+  environment: 'cash' | 'sandbox';
   orderId?: string;
-  provider: 'cash_on_service' | 'midtrans_sandbox' | 'midtrans_production';
-  environment: 'sandbox' | 'production';
   grossAmount: number;
   status: string;
   paymentType?: string;
-  transactionId?: string;
-  createdAt?: any;
-  paidAt?: any;
+  createdAt?: string;
+  paidAt?: string;
 }
 
 // ============================================================================

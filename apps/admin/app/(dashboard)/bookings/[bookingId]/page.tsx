@@ -1,6 +1,7 @@
 'use client';
 
 import { AdminApiClient, type AdminBookingDetail } from '@/lib/api-client';
+import { shortId } from '@/lib/format';
 import { useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
@@ -69,7 +70,7 @@ export default function BookingDetailPage() {
   return (
     <div style={{ padding: '2rem' }}>
       <h1 style={{ fontSize: '1.875rem', fontWeight: 'bold', marginBottom: '2rem' }}>
-        Booking Detail: {booking.bookingId.slice(0, 8)}...
+        Booking Detail: {shortId(booking.bookingId)}
       </h1>
 
       <div

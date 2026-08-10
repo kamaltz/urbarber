@@ -2,6 +2,7 @@
 
 import { useAdminAuth } from '@/features/auth/AdminAuthProvider';
 import { AdminApiClient, type DashboardMetrics } from '@/lib/api-client';
+import { shortId } from '@/lib/format';
 import { useEffect, useState } from 'react';
 
 export default function DashboardPage() {
@@ -258,7 +259,7 @@ export default function DashboardPage() {
                 {metrics.recentBookings.map((booking) => (
                   <tr key={booking.bookingId} style={{ borderBottom: '1px solid #f3f4f6' }}>
                     <td style={{ padding: '0.75rem', color: '#1f2937', fontSize: '0.875rem' }}>
-                      {booking.bookingId.slice(0, 8)}...
+                      {shortId(booking.bookingId)}
                     </td>
                     <td style={{ padding: '0.75rem', color: '#1f2937' }}>
                       {new Date(booking.date).toLocaleDateString('id-ID')}

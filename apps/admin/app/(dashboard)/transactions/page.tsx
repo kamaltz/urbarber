@@ -1,6 +1,7 @@
 'use client';
 
 import { AdminApiClient, type AdminTransaction } from '@/lib/api-client';
+import { shortId } from '@/lib/format';
 import { useEffect, useState } from 'react';
 
 export default function TransactionsPage() {
@@ -161,10 +162,10 @@ export default function TransactionsPage() {
               {transactions.map((tx) => (
                 <tr key={tx.transactionId} style={{ borderBottom: '1px solid #E5E7EB' }}>
                   <td style={{ padding: '1rem', fontSize: '0.875rem', fontFamily: 'monospace' }}>
-                    {tx.transactionId.slice(0, 8)}...
+                    {shortId(tx.transactionId)}
                   </td>
                   <td style={{ padding: '1rem', fontSize: '0.875rem' }}>
-                    {tx.bookingId ? tx.bookingId.slice(0, 8) + '...' : '-'}
+                    {shortId(tx.bookingId)}
                   </td>
                   <td style={{ padding: '1rem' }}>
                     {tx.provider === 'cash_on_service' ? 'Cash' : 'Midtrans'}

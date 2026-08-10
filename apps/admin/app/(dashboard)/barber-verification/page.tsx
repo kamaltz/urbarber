@@ -2,9 +2,8 @@
 
 import { useAdminAuth } from '@/features/auth/AdminAuthProvider';
 import { AdminApiClient, type AdminBarberRegistration } from '@/lib/api-client';
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
-
-type ModalState = null | { type: 'detail'; barberId: string } | { type: 'reject'; barberId: string; businessName: string };
 
 export default function BarberVerificationPage() {
   const { admin } = useAdminAuth();
@@ -12,9 +11,6 @@ export default function BarberVerificationPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('pending');
-  const [modal, setModal] = useState<ModalState>(null);
-  const [rejectReason, setRejectReason] = useState('');
-  const [actionLoading, setActionLoading] = useState(false);
 
   const loadRegistrations = async (filterValue?: typeof filter) => {
     try {
@@ -33,38 +29,6 @@ export default function BarberVerificationPage() {
   useEffect(() => {
     loadRegistrations();
   }, [filter]);
-
-  const handleApprove = async (barberId: string) => {
-    try {
-      setActionLoading(true);
-      await AdminApiClient.approveBarber(barberId);
-      setModal(null);
-      loadRegistrations();
-    } catch (err: any) {
-      alert(err.message || 'Gagal menyetujui barber');
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const handleReject = async (barberId: string) => {
-    if (!rejectReason.trim()) {
-      alert('Alasan penolakan tidak boleh kosong');
-      return;
-    }
-
-    try {
-      setActionLoading(true);
-      await AdminApiClient.rejectBarber(barberId, rejectReason);
-      setModal(null);
-      setRejectReason('');
-      loadRegistrations();
-    } catch (err: any) {
-      alert(err.message || 'Gagal menolak barber');
-    } finally {
-      setActionLoading(false);
-    }
-  };
 
   if (loading && registrations.length === 0) {
     return (
@@ -192,21 +156,22 @@ export default function BarberVerificationPage() {
                       </span>
                     </td>
                     <td style={{ padding: '1rem' }}>
-                      <button
-                        onClick={() => setModal({ type: 'detail', barberId: reg.barberId })}
+                      <Link
+                        href={`/barber-verification/${reg.barberId}`}
                         style={{
+                          display: 'inline-block',
                           padding: '0.375rem 0.75rem',
                           borderRadius: '0.375rem',
                           border: '1px solid #e5e7eb',
                           backgroundColor: 'white',
                           color: '#3b82f6',
-                          cursor: 'pointer',
+                          textDecoration: 'none',
                           fontSize: '0.875rem',
                           fontWeight: '500',
                         }}
                       >
                         Detail
-                      </button>
+                      </Link>
                     </td>
                   </tr>
                 ))}
@@ -215,104 +180,6 @@ export default function BarberVerificationPage() {
           </div>
         )}
       </div>
-
-      {/* Modal */}
-      {modal && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
-          <div style={{ backgroundColor: 'white', borderRadius: '0.75rem', maxWidth: '500px', width: '90vw', padding: '2rem', boxShadow: '0 20px 25px rgba(0,0,0,0.15)' }}>
-            {modal.type === 'detail' ? (
-              <>
-                <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', marginBottom: '1rem', color: '#1f2937' }}>
-                  Detail Registrasi
-                </h2>
-                {/* Detail content would be rendered here */}
-                <div style={{ marginBottom: '1.5rem', color: '#6b7280', fontSize: '0.875rem' }}>
-                  Loading detail...
-                </div>
-                <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
-                  <button
-                    onClick={() => setModal(null)}
-                    style={{
-                      padding: '0.5rem 1rem',
-                      borderRadius: '0.375rem',
-                      border: '1px solid #e5e7eb',
-                      backgroundColor: 'white',
-                      color: '#1f2937',
-                      cursor: 'pointer',
-                      fontSize: '0.875rem',
-                      fontWeight: '500',
-                    }}
-                  >
-                    Tutup
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', marginBottom: '1rem', color: '#1f2937' }}>
-                  Tolak Registrasi
-                </h2>
-                <p style={{ color: '#6b7280', marginBottom: '1rem' }}>
-                  Berikan alasan penolakan untuk {modal.businessName}:
-                </p>
-                <textarea
-                  value={rejectReason}
-                  onChange={(e) => setRejectReason(e.target.value)}
-                  placeholder="Masukkan alasan penolakan..."
-                  style={{
-                    width: '100%',
-                    padding: '0.75rem',
-                    borderRadius: '0.375rem',
-                    border: '1px solid #e5e7eb',
-                    fontFamily: 'inherit',
-                    fontSize: '0.875rem',
-                    marginBottom: '1rem',
-                    minHeight: '100px',
-                    boxSizing: 'border-box',
-                  }}
-                />
-                <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
-                  <button
-                    onClick={() => {
-                      setModal(null);
-                      setRejectReason('');
-                    }}
-                    style={{
-                      padding: '0.5rem 1rem',
-                      borderRadius: '0.375rem',
-                      border: '1px solid #e5e7eb',
-                      backgroundColor: 'white',
-                      color: '#1f2937',
-                      cursor: 'pointer',
-                      fontSize: '0.875rem',
-                      fontWeight: '500',
-                    }}
-                  >
-                    Batal
-                  </button>
-                  <button
-                    onClick={() => handleReject(modal.barberId)}
-                    disabled={actionLoading}
-                    style={{
-                      padding: '0.5rem 1rem',
-                      borderRadius: '0.375rem',
-                      border: 'none',
-                      backgroundColor: '#ef4444',
-                      color: 'white',
-                      cursor: actionLoading ? 'not-allowed' : 'pointer',
-                      fontSize: '0.875rem',
-                      fontWeight: '500',
-                      opacity: actionLoading ? 0.6 : 1,
-                    }}
-                  >
-                    {actionLoading ? 'Proses...' : 'Tolak'}
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

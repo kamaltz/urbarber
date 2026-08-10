@@ -1,6 +1,7 @@
 'use client';
 
 import { AdminApiClient, type AdminBookingSummary } from '@/lib/api-client';
+import { shortId } from '@/lib/format';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
@@ -176,7 +177,7 @@ export default function BookingsPage() {
               {bookings.map((booking) => (
                 <tr key={booking.bookingId} style={{ borderBottom: '1px solid #E5E7EB' }}>
                   <td style={{ padding: '1rem', fontSize: '0.875rem', fontFamily: 'monospace' }}>
-                    {booking.bookingId.slice(0, 8)}...
+                    {shortId(booking.bookingId)}
                   </td>
                   <td style={{ padding: '1rem' }}>{booking.customerName}</td>
                   <td style={{ padding: '1rem' }}>{booking.barberName}</td>
