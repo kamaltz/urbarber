@@ -1072,6 +1072,141 @@ async function runRulesTests() {
       );
     });
 
+    // 50-58. Geo bounds hardening (BATCH 10B-5A): latitude/longitude must be numeric and
+    // within valid Earth bounds [-90,90]/[-180,180] whenever location+geohash actually change.
+    async function seedGeoBoundsBarber(docId) {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('barbers').doc(docId).set({
+          uid: docId,
+          userId: docId,
+          shopName: 'Geo Bounds Shop',
+          verificationStatus: 'approved',
+        });
+      });
+      return testEnv.authenticatedContext(docId, { app_role: 'barber' }).firestore();
+    }
+
+    await test('50. Barber setting latitude = 90 (boundary) with paired geohash is allowed', async () => {
+      const barbDb = await seedGeoBoundsBarber('barb_geo_lat90');
+      await assertSucceeds(
+        barbDb.collection('barbers').doc('barb_geo_lat90').update({
+          location: { latitude: 90, longitude: 100 },
+          geohash: 'upper00',
+        })
+      );
+    });
+
+    await test('51. Barber setting latitude = -90 (boundary) with paired geohash is allowed', async () => {
+      const barbDb = await seedGeoBoundsBarber('barb_geo_latm90');
+      await assertSucceeds(
+        barbDb.collection('barbers').doc('barb_geo_latm90').update({
+          location: { latitude: -90, longitude: 100 },
+          geohash: 'lower00',
+        })
+      );
+    });
+
+    await test('52. Barber setting longitude = 180 (boundary) with paired geohash is allowed', async () => {
+      const barbDb = await seedGeoBoundsBarber('barb_geo_lon180');
+      await assertSucceeds(
+        barbDb.collection('barbers').doc('barb_geo_lon180').update({
+          location: { latitude: 10, longitude: 180 },
+          geohash: 'right00',
+        })
+      );
+    });
+
+    await test('53. Barber setting longitude = -180 (boundary) with paired geohash is allowed', async () => {
+      const barbDb = await seedGeoBoundsBarber('barb_geo_lonm180');
+      await assertSucceeds(
+        barbDb.collection('barbers').doc('barb_geo_lonm180').update({
+          location: { latitude: 10, longitude: -180 },
+          geohash: 'left0000',
+        })
+      );
+    });
+
+    await test('54. Barber setting latitude = 999 (out of bounds) is denied even with a paired geohash', async () => {
+      const barbDb = await seedGeoBoundsBarber('barb_geo_lat999');
+      await assertFails(
+        barbDb.collection('barbers').doc('barb_geo_lat999').update({
+          location: { latitude: 999, longitude: 100 },
+          geohash: 'badgeo01',
+        })
+      );
+    });
+
+    await test('55. Barber setting latitude < -90 is denied', async () => {
+      const barbDb = await seedGeoBoundsBarber('barb_geo_latlow');
+      await assertFails(
+        barbDb.collection('barbers').doc('barb_geo_latlow').update({
+          location: { latitude: -91, longitude: 100 },
+          geohash: 'badgeo02',
+        })
+      );
+    });
+
+    await test('56. Barber setting longitude > 180 is denied', async () => {
+      const barbDb = await seedGeoBoundsBarber('barb_geo_lonhigh');
+      await assertFails(
+        barbDb.collection('barbers').doc('barb_geo_lonhigh').update({
+          location: { latitude: 10, longitude: 181 },
+          geohash: 'badgeo03',
+        })
+      );
+    });
+
+    await test('57. Barber setting longitude < -180 is denied', async () => {
+      const barbDb = await seedGeoBoundsBarber('barb_geo_lonlow');
+      await assertFails(
+        barbDb.collection('barbers').doc('barb_geo_lonlow').update({
+          location: { latitude: 10, longitude: -181 },
+          geohash: 'badgeo04',
+        })
+      );
+    });
+
+    await test('58. Barber setting a non-numeric latitude (string) is denied', async () => {
+      const barbDb = await seedGeoBoundsBarber('barb_geo_latstr');
+      await assertFails(
+        barbDb.collection('barbers').doc('barb_geo_latstr').update({
+          location: { latitude: '10', longitude: 100 },
+          geohash: 'badgeo05',
+        })
+      );
+    });
+
+    await test('59. Barber setting an empty-string geohash paired with valid location is denied', async () => {
+      const barbDb = await seedGeoBoundsBarber('barb_geo_emptyhash');
+      await assertFails(
+        barbDb.collection('barbers').doc('barb_geo_emptyhash').update({
+          location: { latitude: 10, longitude: 100 },
+          geohash: '',
+        })
+      );
+    });
+
+    await test('60. Barber setting serviceRadiusKm within supported range (1-50) is allowed', async () => {
+      const barbDb = await seedGeoBoundsBarber('barb_geo_radiusok');
+      await assertSucceeds(
+        barbDb.collection('barbers').doc('barb_geo_radiusok').update({ serviceRadiusKm: 25 })
+      );
+    });
+
+    await test('61. Barber setting serviceRadiusKm above the supported maximum (50) is denied', async () => {
+      const barbDb = await seedGeoBoundsBarber('barb_geo_radiushigh');
+      await assertFails(
+        barbDb.collection('barbers').doc('barb_geo_radiushigh').update({ serviceRadiusKm: 500 })
+      );
+    });
+
+    await test('62. Barber setting serviceRadiusKm below the supported minimum (1) is denied', async () => {
+      const barbDb = await seedGeoBoundsBarber('barb_geo_radiuslow');
+      await assertFails(
+        barbDb.collection('barbers').doc('barb_geo_radiuslow').update({ serviceRadiusKm: 0 })
+      );
+    });
+
   } finally {
     await testEnv.cleanup();
     console.log(`\nTest Execution Complete: ${passed} Passed, ${failed} Failed.\n`);

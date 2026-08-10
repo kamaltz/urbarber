@@ -36,6 +36,20 @@ service cloud.firestore {
       return isSignedIn() && appRole() == 'customer';
     }
 
+    // Validates a barber-owned location+geohash pair: location must be a map with
+    // numeric latitude/longitude within valid Earth bounds, geohash a non-empty string.
+    function isValidBarberGeo() {
+      return request.resource.data.location is map
+        && request.resource.data.location.latitude is number
+        && request.resource.data.location.latitude >= -90.0
+        && request.resource.data.location.latitude <= 90.0
+        && request.resource.data.location.longitude is number
+        && request.resource.data.location.longitude >= -180.0
+        && request.resource.data.location.longitude <= 180.0
+        && request.resource.data.geohash is string
+        && request.resource.data.geohash.size() > 0;
+    }
+
     // =========================================================================
     // 1. COLLECTION: users
     // =========================================================================
@@ -109,6 +123,23 @@ service cloud.firestore {
         && (
           (request.resource.data.get('location', null) != resource.data.get('location', null))
           == (request.resource.data.get('geohash', null) != resource.data.get('geohash', null))
+        )
+        // If location/geohash are actually changing, the new pair must be within valid
+        // Earth bounds and non-empty -- an unrelated update that leaves both untouched
+        // is unaffected by this check.
+        && (
+          request.resource.data.get('location', null) == resource.data.get('location', null)
+          || isValidBarberGeo()
+        )
+        // serviceRadiusKm, when changing, must stay within the app's supported discovery
+        // radius range (see src/config/map.config.ts minRadiusKm/maxRadiusKm).
+        && (
+          request.resource.data.get('serviceRadiusKm', null) == resource.data.get('serviceRadiusKm', null)
+          || (
+            request.resource.data.serviceRadiusKm is number
+            && request.resource.data.serviceRadiusKm >= 1
+            && request.resource.data.serviceRadiusKm <= 50
+          )
         )
       ) || isAdmin();
 
