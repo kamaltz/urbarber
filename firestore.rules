@@ -93,10 +93,23 @@ service cloud.firestore {
         isOwner(barberId)
         && request.resource.data.get('verificationStatus', null) == resource.data.get('verificationStatus', null)
         && request.resource.data.get('verified', null) == resource.data.get('verified', null)
+        // listingStatus is trusted-backend/Admin-authoritative (approve/reject/suspend/
+        // reactivate). A Barber's own "open/closed" preference is acceptingNewBookings,
+        // which is intentionally NOT in this denylist.
+        && request.resource.data.get('listingStatus', null) == resource.data.get('listingStatus', null)
         && request.resource.data.get('ratingAverage', null) == resource.data.get('ratingAverage', null)
         && request.resource.data.get('ratingCount', null) == resource.data.get('ratingCount', null)
         && request.resource.data.get('createdAt', null) == resource.data.get('createdAt', null)
         && request.resource.data.get('userId', null) == resource.data.get('userId', null)
+        // location and geohash must be created/changed together, never independently -- a
+        // client can never leave stale coordinates paired with a stale geohash (or vice
+        // versa). A normal update that touches neither field is unaffected (both sides
+        // report "unchanged"). This does not verify the geohash mathematically matches
+        // the coordinates, only that both sides of the pair move together.
+        && (
+          (request.resource.data.get('location', null) != resource.data.get('location', null))
+          == (request.resource.data.get('geohash', null) != resource.data.get('geohash', null))
+        )
       ) || isAdmin();
 
       allow delete: if isAdmin();

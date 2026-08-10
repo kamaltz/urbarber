@@ -8,6 +8,7 @@ import { barberRepository } from '@/features/barbers/repository/barber.repositor
 import type { BarberProfile } from '@/features/barbers/types/barber';
 import { uploadService } from '@/features/storage/services/upload.service';
 import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, Image, RefreshControl, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
@@ -28,6 +29,7 @@ export default function BarberProfileScreen() {
   const [uploading, setUploading] = useState<boolean>(false);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [savingLocation, setSavingLocation] = useState<boolean>(false);
 
   const fetchProfile = useCallback(async () => {
     if (!barberId) return;
@@ -129,6 +131,44 @@ export default function BarberProfileScreen() {
       Alert.alert('Error', err?.message || 'Terjadi kesalahan sistem.');
     } finally {
       setUploading(false);
+    }
+  };
+
+  /**
+   * Saves the Barber's static shop/service location using a single foreground
+   * location fetch -- not booking tracking, no continuous updates, no background
+   * permission. location + geohash are always written together from the same
+   * coordinates via barberRepository.updateBarberLocation.
+   */
+  const handleUpdateLocation = async () => {
+    setSavingLocation(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Izin Ditolak', 'Izin lokasi dibutuhkan untuk menyimpan lokasi barbershop.');
+        return;
+      }
+
+      const position = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+
+      const res = await barberRepository.updateBarberLocation(barberId, {
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        shopAddress: shopAddress.trim() || profile?.shopAddress || '',
+      });
+
+      if (res.success) {
+        Alert.alert('Sukses', 'Lokasi barbershop berhasil disimpan.');
+        fetchProfile();
+      } else {
+        Alert.alert('Gagal', res.error?.message || 'Gagal menyimpan lokasi.');
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err?.message || 'Gagal mendapatkan lokasi saat ini.');
+    } finally {
+      setSavingLocation(false);
     }
   };
 
@@ -260,6 +300,35 @@ export default function BarberProfileScreen() {
               🔒 Field Terlindungi: Role ({user?.role || 'barber'}), Status (Active), dan Status Verifikasi (Approved) hanya dapat diubah oleh Sistem/Admin.
             </Text>
           </View>
+        </AppCard>
+
+        {/* Shop Location */}
+        <AppCard className="mb-6 p-4 gap-3">
+          <Text className="font-bold text-slate-900 text-base border-b border-slate-100 pb-2">
+            Lokasi Barbershop
+          </Text>
+
+          {profile?.location ? (
+            <Text className="text-xs text-slate-600">
+              📍 Lokasi tersimpan ({profile.location.latitude.toFixed(4)}, {profile.location.longitude.toFixed(4)})
+            </Text>
+          ) : (
+            <Text className="text-xs text-amber-700">
+              Lokasi belum diatur. Barbershop tidak akan muncul di pencarian terdekat Pelanggan sampai lokasi disimpan.
+            </Text>
+          )}
+
+          <Text className="text-xs text-slate-500">
+            Gunakan lokasi Anda saat ini sebagai lokasi barbershop. Ini hanya diambil sekali saat Anda menekan tombol -- bukan pelacakan berkelanjutan.
+          </Text>
+
+          <AppButton
+            label={savingLocation ? 'Mengambil Lokasi...' : 'Gunakan Lokasi Saat Ini'}
+            onPress={handleUpdateLocation}
+            variant="secondary"
+            disabled={savingLocation}
+            className="w-full"
+          />
         </AppCard>
 
         <AppButton

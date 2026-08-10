@@ -176,6 +176,9 @@ export const MOCK_CUSTOMER_EXPLORE_DATA: CustomerExploreData = {
   nearbyBarbers: MOCK_NEARBY_BARBERS,
   categoryChips: MOCK_CATEGORY_CHIPS,
   sliderPosition: 0,
+  locationMode: 'default_area',
+  queryOutcome: 'ok',
+  searchCenter: { latitude: -7.2278, longitude: 107.9087 },
 };
 
 export const MOCK_FAVORITE_BARBERS: BarberSuggestion[] = [

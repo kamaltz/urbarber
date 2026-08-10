@@ -49,7 +49,7 @@
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "verificationStatus", "order": "ASCENDING" },
-        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "listingStatus", "order": "ASCENDING" },
         { "fieldPath": "geohash", "order": "ASCENDING" }
       ]
     },

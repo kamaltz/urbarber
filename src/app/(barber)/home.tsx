@@ -97,20 +97,25 @@ export default function BarberHomeScreen() {
     .filter((b) => b.status === 'accepted' || b.status === 'in_progress')
     .slice(0, 5);
 
+  /**
+   * "Status Toko" is the Barber's own open/closed-for-bookings preference, not the
+   * Admin-controlled listing approval state -- it must only ever write
+   * acceptingNewBookings, never listingStatus (verificationStatus/verified/
+   * listingStatus are trusted-backend/Admin-only, enforced by Firestore rules).
+   */
   const handleToggleStoreStatus = async (value: boolean) => {
     if (!barberId || !profile) return;
-    const newStatus = value ? 'active' : 'inactive';
-    setProfile((prev) => (prev ? { ...prev, listingStatus: newStatus as any } : null));
+    setProfile((prev) => (prev ? { ...prev, acceptingNewBookings: value } : null));
     try {
-      await barberRepository.updateBarberProfile(barberId, { listingStatus: newStatus } as any);
+      await barberRepository.toggleAcceptingNewBookings(barberId, value);
     } catch (err) {
-      console.warn('Failed to update listing status:', err);
+      console.warn('Failed to update accepting-new-bookings status:', err);
     }
   };
 
   if (loading && !refreshing) return <Loading />;
 
-  const isStoreOpen = profile?.listingStatus === 'active' || (profile?.status as string) === 'active';
+  const isStoreOpen = profile?.acceptingNewBookings ?? true;
 
   return (
     <SafeAreaView className="flex-1 bg-slate-50">

@@ -54,7 +54,25 @@ export interface NearbyBarber {
   distance: string;
   rating: number;
   reviewCount?: number;
+  latitude?: number;
+  longitude?: number;
 }
+
+/**
+ * 'granted': using the Customer's real current position.
+ * 'default_area': foreground location wasn't available/granted, so results are
+ *   centered on a fixed default area -- must be shown to the Customer as such,
+ *   never presented as their live location.
+ */
+export type DiscoveryLocationMode = 'granted' | 'default_area';
+
+/**
+ * 'ok' / 'zero_results': the discovery query ran successfully (zero results is a
+ *   legitimate outcome, not an error).
+ * 'query_failed': the query infrastructure failed (e.g. missing Firestore index) --
+ *   must be shown as a degraded state, never silently presented as "no barbers".
+ */
+export type DiscoveryQueryOutcome = 'ok' | 'zero_results' | 'query_failed';
 
 export interface PublicBarberSummary {
   id: string;
@@ -112,6 +130,9 @@ export interface CustomerExploreData {
   nearbyBarbers: NearbyBarber[];
   categoryChips: CategoryChip[];
   sliderPosition: number;
+  locationMode: DiscoveryLocationMode;
+  queryOutcome: DiscoveryQueryOutcome;
+  searchCenter: { latitude: number; longitude: number };
 }
 
 export interface CustomerFavoritesData {

@@ -3,6 +3,7 @@
  * Data access layer for customer profile, discovery, categories, and favorites
  */
 
+import { MAP_CONFIG } from '@/config/map.config';
 import { firebaseAuth, firestore } from '@/lib/firebase';
 import { withTimeout } from '@/lib/promise';
 import {
@@ -25,10 +26,16 @@ import type {
   CustomerHomeData,
   CustomerNotification,
   CustomerProfile,
+  DiscoveryQueryOutcome,
   PublicBarberSummary,
   RecentSearch,
   UpdateProfileData,
 } from '../types/customer';
+
+const DEFAULT_DISCOVERY_CENTER = {
+  latitude: MAP_CONFIG.defaultViewport.latitude,
+  longitude: MAP_CONFIG.defaultViewport.longitude,
+};
 
 function isOfflineError(error: unknown) {
   if (!error || typeof error !== 'object') return false;
@@ -175,19 +182,23 @@ export const customerRepository = {
   },
 
   /**
-   * Search barbers with debounced text matching, category filter, and geohash discovery
+   * Search barbers with debounced text matching, category filter, and geohash discovery.
+   * When filters.latitude/longitude are omitted, results are centered on a fixed
+   * default area (Garut) rather than the Customer's real position -- callers must
+   * surface `locationMode` so the UI never presents that as live GPS.
    */
   async searchBarbers(
     customerId: string,
     query: string,
-    filters?: { category?: string; location?: string; latitude?: number; longitude?: number }
+    filters?: { category?: string; latitude?: number; longitude?: number }
   ): Promise<CustomerExploreData | null> {
     try {
-      const lat = filters?.latitude || -7.2278;
-      const lng = filters?.longitude || 107.9087;
+      const hasRealLocation = typeof filters?.latitude === 'number' && typeof filters?.longitude === 'number';
+      const lat = hasRealLocation ? (filters!.latitude as number) : DEFAULT_DISCOVERY_CENTER.latitude;
+      const lng = hasRealLocation ? (filters!.longitude as number) : DEFAULT_DISCOVERY_CENTER.longitude;
 
       const { discoveryService } = await import('@/features/location/services/discovery.service');
-      const nearbyResults = await discoveryService.searchNearbyBarbers({
+      const { results: nearbyResults, queryStatus } = await discoveryService.searchNearbyBarbers({
         latitude: lat,
         longitude: lng,
         radiusKm: 25,
@@ -211,6 +222,8 @@ export const customerRepository = {
         distance: r.formattedDistance,
         rating: 4.8,
         reviewCount: 12,
+        latitude: r.barber.location?.latitude,
+        longitude: r.barber.location?.longitude,
       }));
 
       const first = nearbyResults[0]?.barber;
@@ -236,6 +249,9 @@ export const customerRepository = {
             serviceTags: [],
           };
 
+      const queryOutcome: DiscoveryQueryOutcome =
+        queryStatus === 'error' ? 'query_failed' : nearbyResults.length === 0 ? 'zero_results' : 'ok';
+
       return {
         userId: customerId,
         searchQuery: query,
@@ -244,6 +260,9 @@ export const customerRepository = {
         nearbyBarbers,
         categoryChips,
         sliderPosition: 0,
+        locationMode: hasRealLocation ? 'granted' : 'default_area',
+        queryOutcome,
+        searchCenter: { latitude: lat, longitude: lng },
       };
     } catch (error: any) {
       if (__DEV__ && !isOfflineError(error)) {

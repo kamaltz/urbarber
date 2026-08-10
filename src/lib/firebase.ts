@@ -1,3 +1,4 @@
+import ReactNativeAsyncStorage from "@react-native-async-storage/async-storage";
 import { getApp, getApps, initializeApp } from "firebase/app";
 import {
   browserLocalPersistence,
@@ -6,6 +7,12 @@ import {
   indexedDBLocalPersistence,
   initializeAuth,
 } from "firebase/auth";
+// getReactNativePersistence exists in the RN build at runtime (Metro resolves the
+// package.json "react-native" field), but firebase's published types always resolve
+// through the top-level "types" export condition, which points at the web-only public
+// API surface and omits this RN-only helper -- a known firebase-js-sdk typing gap.
+// @ts-expect-error -- getReactNativePersistence has no published type in this resolution
+import { getReactNativePersistence } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getFunctions } from "firebase/functions";
 import { Platform } from "react-native";
@@ -36,8 +43,11 @@ export const firebaseApp =
   getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
 /**
- * Initialize Firebase Auth with web persistence fallbacks
- * Prevents "Database is closing/hidden" IndexedDB browser crashes
+ * Initialize Firebase Auth with platform-appropriate persistence.
+ * Web: IndexedDB with browser-storage fallbacks (prevents "Database is closing/hidden" crashes).
+ * Native: AsyncStorage, so sessions survive app/Metro reloads instead of defaulting to memory-only.
+ * Falls back to getAuth() if initializeAuth() was already called for this app instance
+ * (e.g. Fast Refresh re-evaluating this module).
  */
 export const firebaseAuth = (() => {
   if (Platform.OS === "web") {
@@ -54,7 +64,13 @@ export const firebaseAuth = (() => {
     }
   }
 
-  return getAuth(firebaseApp);
+  try {
+    return initializeAuth(firebaseApp, {
+      persistence: getReactNativePersistence(ReactNativeAsyncStorage),
+    });
+  } catch {
+    return getAuth(firebaseApp);
+  }
 })();
 
 export const firestore = getFirestore(firebaseApp);

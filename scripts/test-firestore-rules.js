@@ -877,6 +877,201 @@ async function runRulesTests() {
       await assertFails(adminDb.collection('conversations').doc('conv3').collection('messages').doc('msg1').get());
     });
 
+    // 42. A normal profile update that touches neither location nor geohash must remain
+    // allowed on a legacy barber document that has no location/geohash at all -- geo
+    // fields must not become mandatory on every update.
+    await test('42. Barber profile update not touching location/geohash succeeds on a barber with no geo data yet', async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('barbers').doc('barb_geo1').set({
+          uid: 'barb_geo1',
+          userId: 'barb_geo1',
+          shopName: 'No Geo Yet Shop',
+          verificationStatus: 'approved',
+        });
+      });
+
+      const barbDb = testEnv.authenticatedContext('barb_geo1', { app_role: 'barber' }).firestore();
+      await assertSucceeds(
+        barbDb.collection('barbers').doc('barb_geo1').update({
+          shopDescription: 'Updated description, no geo fields touched',
+        })
+      );
+    });
+
+    // 43. Changing location without also supplying a matching geohash update must be denied,
+    // so a client can never leave a stale geohash paired with new coordinates.
+    await test('43. Barber updating location without geohash is denied', async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('barbers').doc('barb_geo2').set({
+          uid: 'barb_geo2',
+          userId: 'barb_geo2',
+          shopName: 'Geo Pair Shop',
+          verificationStatus: 'approved',
+          location: { latitude: -7.0, longitude: 107.0 },
+          geohash: 'qqguqp7',
+        });
+      });
+
+      const barbDb = testEnv.authenticatedContext('barb_geo2', { app_role: 'barber' }).firestore();
+      await assertFails(
+        barbDb.collection('barbers').doc('barb_geo2').update({
+          location: { latitude: -7.5, longitude: 107.5 },
+        })
+      );
+    });
+
+    // 44. Changing geohash without also supplying a matching location update must be denied,
+    // so a client can never leave stale coordinates paired with a new geohash.
+    await test('44. Barber updating geohash without location is denied', async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('barbers').doc('barb_geo3').set({
+          uid: 'barb_geo3',
+          userId: 'barb_geo3',
+          shopName: 'Geo Pair Shop 2',
+          verificationStatus: 'approved',
+          location: { latitude: -7.0, longitude: 107.0 },
+          geohash: 'qqguqp7',
+        });
+      });
+
+      const barbDb = testEnv.authenticatedContext('barb_geo3', { app_role: 'barber' }).firestore();
+      await assertFails(
+        barbDb.collection('barbers').doc('barb_geo3').update({
+          geohash: 'qqguqp8',
+        })
+      );
+    });
+
+    // 45. Updating location and geohash together (both derived from the same coordinates by
+    // the client) is allowed -- this is the real Barber "save current location" flow.
+    await test('45. Barber updating location and geohash together succeeds', async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('barbers').doc('barb_geo4').set({
+          uid: 'barb_geo4',
+          userId: 'barb_geo4',
+          shopName: 'Geo Pair Shop 3',
+          verificationStatus: 'approved',
+        });
+      });
+
+      const barbDb = testEnv.authenticatedContext('barb_geo4', { app_role: 'barber' }).firestore();
+      await assertSucceeds(
+        barbDb.collection('barbers').doc('barb_geo4').update({
+          location: { latitude: -7.2278, longitude: 107.9087 },
+          geohash: 'qqguqp7z',
+        })
+      );
+    });
+
+    // 46. A. The Barber's own "Status Toko" (open/closed) toggle only ever needs to change
+    // acceptingNewBookings, and that alone must remain allowed in both directions.
+    await test('46. Barber changing acceptingNewBookings only is allowed in both directions', async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('barbers').doc('barb_listing1').set({
+          uid: 'barb_listing1',
+          userId: 'barb_listing1',
+          shopName: 'Listing Authority Shop 1',
+          verificationStatus: 'approved',
+          listingStatus: 'active',
+          acceptingNewBookings: true,
+        });
+      });
+
+      const barbDb = testEnv.authenticatedContext('barb_listing1', { app_role: 'barber' }).firestore();
+      await assertSucceeds(barbDb.collection('barbers').doc('barb_listing1').update({ acceptingNewBookings: false }));
+      await assertSucceeds(barbDb.collection('barbers').doc('barb_listing1').update({ acceptingNewBookings: true }));
+    });
+
+    // 47. B/C/D. listingStatus is trusted-backend/Admin-authoritative (set only by the
+    // approve/reject/suspend/reactivate flows in backend/vercel/src/admin/admin.service.ts).
+    // A Barber must never be able to self-activate, self-deactivate, or self-unsuspend
+    // their own listing directly against Firestore.
+    await test('47. Barber changing listingStatus directly is denied regardless of direction', async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('barbers').doc('barb_listing2').set({
+          uid: 'barb_listing2',
+          userId: 'barb_listing2',
+          shopName: 'Listing Authority Shop 2',
+          verificationStatus: 'approved',
+          listingStatus: 'active',
+        });
+      });
+
+      const barbDb = testEnv.authenticatedContext('barb_listing2', { app_role: 'barber' }).firestore();
+      // B. active -> inactive
+      await assertFails(barbDb.collection('barbers').doc('barb_listing2').update({ listingStatus: 'inactive' }));
+
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('barbers').doc('barb_listing3').set({
+          uid: 'barb_listing3',
+          userId: 'barb_listing3',
+          shopName: 'Listing Authority Shop 3',
+          verificationStatus: 'approved',
+          listingStatus: 'inactive',
+        });
+      });
+      const barb3Db = testEnv.authenticatedContext('barb_listing3', { app_role: 'barber' }).firestore();
+      // C. inactive -> active
+      await assertFails(barb3Db.collection('barbers').doc('barb_listing3').update({ listingStatus: 'active' }));
+
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('barbers').doc('barb_listing4').set({
+          uid: 'barb_listing4',
+          userId: 'barb_listing4',
+          shopName: 'Listing Authority Shop 4',
+          verificationStatus: 'approved',
+          listingStatus: 'suspended',
+        });
+      });
+      const barb4Db = testEnv.authenticatedContext('barb_listing4', { app_role: 'barber' }).firestore();
+      // D. suspended -> active
+      await assertFails(barb4Db.collection('barbers').doc('barb_listing4').update({ listingStatus: 'active' }));
+    });
+
+    // 48. E. A Barber cannot smuggle a listingStatus change through by bundling it with a
+    // legitimate acceptingNewBookings change in the same write.
+    await test('48. Barber cannot change listingStatus by bundling it with acceptingNewBookings in the same request', async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('barbers').doc('barb_listing5').set({
+          uid: 'barb_listing5',
+          userId: 'barb_listing5',
+          shopName: 'Listing Authority Shop 5',
+          verificationStatus: 'approved',
+          listingStatus: 'inactive',
+          acceptingNewBookings: false,
+        });
+      });
+
+      const barbDb = testEnv.authenticatedContext('barb_listing5', { app_role: 'barber' }).firestore();
+      await assertFails(
+        barbDb.collection('barbers').doc('barb_listing5').update({
+          acceptingNewBookings: true,
+          listingStatus: 'active',
+        })
+      );
+    });
+
+    // 49. F. The trusted/admin path (app_role=admin) retains the ability to perform the
+    // real listing-state transitions (approve/suspend/reactivate) that
+    // backend/vercel/src/admin/admin.service.ts performs -- exercised here via the rules'
+    // own `|| isAdmin()` allowance, matching the rule as written.
+    await test('49. Admin-role context can still change listingStatus', async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('barbers').doc('barb_listing6').set({
+          uid: 'barb_listing6',
+          userId: 'barb_listing6',
+          shopName: 'Listing Authority Shop 6',
+          verificationStatus: 'approved',
+          listingStatus: 'active',
+        });
+      });
+
+      const adminDb = testEnv.authenticatedContext('admin1', { app_role: 'admin' }).firestore();
+      await assertSucceeds(
+        adminDb.collection('barbers').doc('barb_listing6').update({ listingStatus: 'suspended' })
+      );
+    });
+
   } finally {
     await testEnv.cleanup();
     console.log(`\nTest Execution Complete: ${passed} Passed, ${failed} Failed.\n`);

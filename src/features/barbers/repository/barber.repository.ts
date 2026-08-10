@@ -4,7 +4,9 @@
  */
 
 import { getDefaultWeeklySchedule } from '../constants/schedule.constants';
+import { getGeohash, validateCoordinates } from '@/features/location/utils/geo.utils';
 import { firestore } from '@/lib/firebase';
+import { withTimeout } from '@/lib/promise';
 import { mapLegacyBookingStatus, BookingStatus } from '@/types/domain';
 import {
     addDoc,
@@ -42,7 +44,11 @@ export const barberRepository = {
       if (!barberId) return null;
 
       const docRef = doc(firestore, 'barbers', barberId);
-      const snapshot = await getDoc(docRef);
+      const snapshot = await withTimeout(
+        getDoc(docRef),
+        10_000,
+        'Loading the barber profile timed out',
+      );
 
       if (!snapshot.exists()) {
         return null;
@@ -692,7 +698,10 @@ export const barberRepository = {
         return { success: false, error: { message: 'Missing location data' } };
       }
 
-      const { getGeohash } = await import('@/features/location/utils/geo.utils');
+      if (!validateCoordinates(locationData.latitude, locationData.longitude)) {
+        return { success: false, error: { message: 'Koordinat lokasi tidak valid.' } };
+      }
+
       const geohash = getGeohash(locationData.latitude, locationData.longitude);
 
       const updatePayload: any = {

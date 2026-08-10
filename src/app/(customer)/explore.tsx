@@ -5,10 +5,12 @@ import { Avatar } from '@/components/ui/Avatar';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Loading } from '@/components/ui/Loading';
 import { Rating } from '@/components/ui/Rating';
+import { MAP_CONFIG } from '@/config/map.config';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { useCustomerSearch } from '@/features/customer/hooks/use-customer-search';
+import { Camera, Map, Marker } from '@maplibre/maplibre-react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useCallback } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -30,25 +32,99 @@ export default function ExploreScreen() {
     error,
     searchQuery,
     selectedCategory,
+    locationUiStatus,
+    requestLocation,
     onSearchQueryChange,
     onCategorySelect,
     clearSearch,
     refresh,
   } = useCustomerSearch(customerId, initialCategory);
 
+  const [selectedBarberId, setSelectedBarberId] = useState<string | undefined>();
+
   const handleBarberPress = useCallback((barberId: string) => {
+    setSelectedBarberId(barberId);
     router.push({
       pathname: '/(customer)/barber/[barberId]',
       params: { barberId },
     });
   }, []);
 
+  const barberMarkers = useMemo(
+    () =>
+      (exploreData?.nearbyBarbers || []).filter(
+        (b) => typeof b.latitude === 'number' && typeof b.longitude === 'number'
+      ),
+    [exploreData?.nearbyBarbers]
+  );
+
+  const center = exploreData?.searchCenter || {
+    latitude: MAP_CONFIG.defaultViewport.latitude,
+    longitude: MAP_CONFIG.defaultViewport.longitude,
+  };
+  // Only remount the camera (and reset its viewport) when coordinates actually
+  // change -- exploreData.searchCenter is a fresh object on every fetch, so keying
+  // on its identity would re-jump the map on every keystroke.
+  const cameraKey = `${center.latitude.toFixed(4)},${center.longitude.toFixed(4)}`;
+  const showCustomerMarker = exploreData?.locationMode === 'granted';
+  const showDefaultAreaNotice = exploreData?.locationMode === 'default_area' && locationUiStatus !== 'requesting';
+
   return (
     <CustomerScreen
       title="Cari Barber"
-      description="Temukan barber terpercaya dan terverifikasi di Garut."
+      description="Temukan barber terpercaya dan terverifikasi di sekitar Anda."
       showTabs
     >
+      {/* Default-area notice: never let this look like the Customer's real location */}
+      {showDefaultAreaNotice ? (
+        <View className="mb-4 rounded-xl bg-amber-50 border border-amber-200 p-3">
+          <Text className="text-xs font-semibold text-amber-900">
+            Menampilkan barber di sekitar area default (Garut), bukan lokasi Anda saat ini.
+          </Text>
+          <AppButton
+            label="Gunakan Lokasi Saya"
+            onPress={requestLocation}
+            variant="secondary"
+            fullWidth={false}
+            className="mt-2 self-start"
+          />
+        </View>
+      ) : null}
+
+      {/* Map */}
+      <View className="mb-4 h-64 overflow-hidden rounded-2xl border border-slate-200">
+        <Map mapStyle={MAP_CONFIG.styleUrl} style={{ flex: 1 }}>
+          <Camera
+            key={cameraKey}
+            initialViewState={{
+              center: [center.longitude, center.latitude],
+              zoom: MAP_CONFIG.defaultViewport.zoom,
+            }}
+          />
+
+          {showCustomerMarker ? (
+            <Marker lngLat={[center.longitude, center.latitude]} id="customer-location">
+              <View className="h-4 w-4 rounded-full border-2 border-white bg-blue-600" />
+            </Marker>
+          ) : null}
+
+          {barberMarkers.map((barber) => (
+            <Marker
+              key={barber.barberId}
+              lngLat={[barber.longitude as number, barber.latitude as number]}
+              id={`barber-${barber.barberId}`}
+              onPress={() => handleBarberPress(barber.barberId)}
+            >
+              <View
+                className={`h-5 w-5 rounded-full border-2 border-white ${
+                  selectedBarberId === barber.barberId ? 'bg-[#D2691E]' : 'bg-slate-900'
+                }`}
+              />
+            </Marker>
+          ))}
+        </Map>
+      </View>
+
       {/* Search Input Box */}
       <View className="mb-4">
         <View className="flex-row items-center rounded-xl bg-white px-3.5 py-2.5 border border-slate-200 shadow-sm">
@@ -128,6 +204,13 @@ export default function ExploreScreen() {
           <Text className="text-xs text-red-600 text-center mb-3">{error}</Text>
           <AppButton label="Coba Lagi" onPress={refresh} variant="secondary" />
         </View>
+      ) : exploreData?.queryOutcome === 'query_failed' ? (
+        <EmptyState
+          title="Gagal Memuat Data Barber"
+          description="Terjadi gangguan saat mengambil data. Silakan coba lagi."
+          actionLabel="Coba Lagi"
+          onActionPress={refresh}
+        />
       ) : exploreData?.nearbyBarbers && exploreData.nearbyBarbers.length > 0 ? (
         <View className="gap-3">
           <Text className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
@@ -137,7 +220,7 @@ export default function ExploreScreen() {
             <AppCard
               key={barber.barberId || `explore-barber-${idx}`}
               onPress={() => handleBarberPress(barber.barberId)}
-              className="p-4"
+              className={`p-4 ${selectedBarberId === barber.barberId ? 'border-[#D2691E]' : ''}`}
             >
               <View className="flex-row items-center gap-3">
                 <Avatar
@@ -178,7 +261,7 @@ export default function ExploreScreen() {
           description={
             searchQuery || selectedCategory
               ? 'Coba ubah kata kunci pencarian atau pilih kategori lain.'
-              : 'Belum ada data barber aktif yang terdaftar di Firestore.'
+              : 'Belum ada Barber aktif di sekitar area ini.'
           }
           actionLabel={searchQuery || selectedCategory ? 'Bersihkan Filter' : 'Muat Ulang'}
           onActionPress={searchQuery || selectedCategory ? clearSearch : refresh}
