@@ -106,13 +106,32 @@ async function handleInitializeAccount(ctx: RouteContext): Promise<void> {
 
     if (userSnap.exists) {
       const userData = userSnap.data() || {};
+      const storedRole = userData.role;
+      // Only customer/barber are ever self-healed through this public endpoint --
+      // an unexpected stored role (e.g. admin, set out-of-band) must never be
+      // echoed into a claim grant here, so it falls back to the validated request.
+      const effectiveRole: 'customer' | 'barber' =
+        storedRole === 'customer' || storedRole === 'barber' ? storedRole : requestedRole;
+
+      // Self-heal accounts provisioned before custom claims were assigned here --
+      // Supabase Storage RLS and Firestore rules' appRole() both read these claims
+      // from the ID token, not from the users/{uid} Firestore document.
+      if (decodedToken.role !== 'authenticated' || decodedToken.app_role !== effectiveRole) {
+        const existingUser = await adminAuth.getUser(uid);
+        await adminAuth.setCustomUserClaims(uid, {
+          ...(existingUser.customClaims || {}),
+          role: 'authenticated',
+          app_role: effectiveRole,
+        });
+      }
+
       res.status(200).json({
         success: true,
         message: 'Akun sudah diinisialisasi',
         user: {
           uid,
           email,
-          role: userData.role || requestedRole,
+          role: effectiveRole,
           status: userData.status || 'active',
         },
       });
@@ -137,6 +156,11 @@ async function handleInitializeAccount(ctx: RouteContext): Promise<void> {
     };
 
     await userRef.set(newUserData);
+
+    // Firebase Auth custom claims are the authoritative role signal for Supabase
+    // Storage RLS (auth.jwt() ->> 'role'/'app_role') and Firestore rules' appRole() --
+    // both read the ID token, not the users/{uid} Firestore document.
+    await adminAuth.setCustomUserClaims(uid, { role: 'authenticated', app_role: requestedRole });
 
     res.status(201).json({
       success: true,
