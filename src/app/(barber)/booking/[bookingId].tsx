@@ -7,6 +7,8 @@ import { useAuth } from '@/features/auth/hooks/use-auth';
 import { barberRepository } from '@/features/barbers/repository/barber.repository';
 import { barberApiService } from '@/features/barbers/services/barber-api.service';
 import type { BarberBooking } from '@/features/barbers/types/barber';
+import type { BookingTracking } from '@/features/bookings/types/booking';
+import { trackingService } from '@/features/location/services/tracking.service';
 import { formatCurrency } from '@/utils/formatters';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
@@ -22,6 +24,10 @@ export default function BarberBookingDetailScreen() {
   const [mutating, setMutating] = useState<boolean>(false);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [tracking, setTracking] = useState<BookingTracking | null>(null);
+  const isHomeService =
+    (booking as any)?.serviceLocationType === 'customer_home' ||
+    (booking as any)?.bookingType === 'home';
 
   const fetchDetail = useCallback(async () => {
     if (!barberId || !bookingId) return;
@@ -39,6 +45,30 @@ export default function BarberBookingDetailScreen() {
       setRefreshing(false);
     }
   }, [barberId, bookingId]);
+
+  useEffect(() => {
+    if (!bookingId) return;
+    return trackingService.subscribeToTracking(bookingId, (data) => setTracking(data));
+  }, [bookingId]);
+
+  // Recovery path for a process/navigation interruption between authoritative
+  // booking completion and the terminal tracking write.
+  useEffect(() => {
+    if (
+      booking?.status !== 'completed' ||
+      !isHomeService ||
+      !tracking ||
+      tracking.trackingStatus === 'stopped'
+    ) {
+      return;
+    }
+
+    void trackingService.stopBarberTracking(bookingId).then((result) => {
+      if (!result.success) {
+        setError(result.error || 'Layanan selesai, tetapi tracking belum dapat dihentikan.');
+      }
+    });
+  }, [booking?.status, bookingId, isHomeService, tracking]);
 
   useEffect(() => {
     let isMounted = true;
@@ -122,21 +152,58 @@ export default function BarberBookingDetailScreen() {
         {
           text: label,
           onPress: async () => {
+            if (
+              targetStatus === 'in_progress' &&
+              isHomeService &&
+              tracking?.trackingStatus !== 'arrived'
+            ) {
+              Alert.alert(
+                'Urutan tracking belum lengkap',
+                'Catat keberangkatan dan kedatangan sebelum memulai layanan di rumah pelanggan.',
+              );
+              return;
+            }
             setMutating(true);
             setError(null);
             const res = await barberApiService.updateBookingStatus(bookingId, targetStatus);
-            setMutating(false);
 
             if (res.success) {
+              if (targetStatus === 'completed' && isHomeService) {
+                const trackingResult = await trackingService.stopBarberTracking(bookingId);
+                if (!trackingResult.success) {
+                  setMutating(false);
+                  Alert.alert(
+                    'Layanan selesai, tracking belum berhenti',
+                    trackingResult.error || 'Coba buka ulang detail booking untuk menghentikan tracking.',
+                  );
+                  fetchDetail();
+                  return;
+                }
+              }
+              setMutating(false);
               Alert.alert('Sukses', `Status layanan berhasil diperbarui.`);
               fetchDetail();
             } else {
+              setMutating(false);
               Alert.alert('Gagal', res.error?.message || 'Gagal memperbarui status layanan.');
             }
           },
         },
       ]
     );
+  };
+
+  const handleTrackingAction = async (action: 'start' | 'arrive') => {
+    setMutating(true);
+    const result =
+      action === 'start'
+        ? await trackingService.startBarberTracking(bookingId)
+        : await trackingService.markBarberArrived(bookingId);
+    setMutating(false);
+
+    if (!result.success) {
+      Alert.alert('Gagal', result.error || 'Gagal memperbarui tracking.');
+    }
   };
 
   if (loading && !refreshing) return <Loading />;
@@ -302,7 +369,31 @@ export default function BarberBookingDetailScreen() {
               </View>
             ) : null}
 
-            {booking.status === 'accepted' ? (
+            {booking.status === 'accepted' && isHomeService && !tracking ? (
+              <View className="mt-2">
+                <AppButton
+                  label={mutating ? 'Memproses...' : 'Berangkat ke Lokasi'}
+                  onPress={() => handleTrackingAction('start')}
+                  variant="primary"
+                  disabled={mutating}
+                  className="w-full bg-emerald-600"
+                />
+              </View>
+            ) : null}
+
+            {booking.status === 'accepted' && isHomeService && tracking?.trackingStatus === 'en_route' ? (
+              <View className="mt-2">
+                <AppButton
+                  label={mutating ? 'Memproses...' : 'Tandai Sudah Sampai'}
+                  onPress={() => handleTrackingAction('arrive')}
+                  variant="primary"
+                  disabled={mutating}
+                  className="w-full bg-sky-600"
+                />
+              </View>
+            ) : null}
+
+            {booking.status === 'accepted' && (!isHomeService || tracking?.trackingStatus === 'arrived') ? (
               <View className="mt-2">
                 <AppButton
                   label={mutating ? 'Memproses...' : 'Mulai Layanan (In Progress)'}

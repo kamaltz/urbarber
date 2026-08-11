@@ -1,43 +1,104 @@
 /**
  * Foreground Location Tracking Service
- * Manages watchPositionAsync foreground GPS tracking for barbers and Firestore real-time subscriptions for customers.
+ * Manages Barber GPS writes and participant-scoped Firestore subscriptions.
  */
 
-import { doc, onSnapshot, setDoc, Timestamp } from 'firebase/firestore';
 import * as Location from 'expo-location';
-import { firestore } from '@/lib/firebase';
-import { BookingTracking } from '@/features/bookings/types/booking';
+import { doc, getDoc, onSnapshot, setDoc, Timestamp, updateDoc } from 'firebase/firestore';
 
-export const STALE_LOCATION_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes
+import type { BookingTracking } from '@/features/bookings/types/booking';
+import { firebaseAuth, firestore } from '@/lib/firebase';
+import {
+  buildTrackingStartPayload,
+  buildTrackingTransitionPayload,
+  mapTrackingDocument,
+  type TrackingCoordinates,
+  type TrackingParticipants,
+} from './tracking.model';
 
-export interface LocationUpdatePayload {
-  latitude: number;
-  longitude: number;
-  accuracy?: number;
-  heading?: number;
-  speed?: number;
+export const STALE_LOCATION_THRESHOLD_MS = 2 * 60 * 1000;
+const MIN_WRITE_INTERVAL_MS = 5000;
+
+export type LocationUpdatePayload = TrackingCoordinates;
+
+interface TrackingBookingData {
+  customerId?: unknown;
+  barberId?: unknown;
+  status?: unknown;
+  paymentStatus?: unknown;
+  serviceLocationType?: unknown;
+  bookingType?: unknown;
 }
 
 class TrackingService {
   private activeWatcher: Location.LocationSubscription | null = null;
   private currentBookingId: string | null = null;
   private lastWriteTimestamp = 0;
-  private MIN_WRITE_INTERVAL_MS = 5000; // Throttle Firestore writes to at most once per 5 seconds
 
-  /**
-   * Start foreground location tracking for assigned barber on an active home-service booking
-   */
+  private clearWatcher() {
+    if (this.activeWatcher) {
+      try {
+        this.activeWatcher.remove();
+      } catch {
+        // The native subscription may already be removed during teardown.
+      }
+      this.activeWatcher = null;
+    }
+    this.currentBookingId = null;
+  }
+
+  private async resolveParticipants(bookingId: string): Promise<TrackingParticipants> {
+    const authenticatedBarberId = firebaseAuth.currentUser?.uid;
+    if (!authenticatedBarberId) throw new Error('Pengguna tidak terautentikasi.');
+
+    const bookingSnapshot = await getDoc(doc(firestore, 'bookings', bookingId));
+    if (!bookingSnapshot.exists()) throw new Error('Booking tidak ditemukan.');
+
+    const booking = bookingSnapshot.data() as TrackingBookingData;
+    if (booking.barberId !== authenticatedBarberId) {
+      throw new Error('Booking ini tidak ditugaskan kepada akun Barber yang aktif.');
+    }
+    if (typeof booking.customerId !== 'string' || !booking.customerId) {
+      throw new Error('Identitas pelanggan pada booking tidak valid.');
+    }
+    if (booking.paymentStatus !== 'paid' || booking.status !== 'accepted') {
+      throw new Error('Tracking hanya dapat dimulai untuk booking diterima dan sudah dibayar.');
+    }
+    if (booking.serviceLocationType !== 'customer_home' && booking.bookingType !== 'home') {
+      throw new Error('Tracking hanya tersedia untuk layanan di rumah pelanggan.');
+    }
+
+    return {
+      bookingId,
+      customerId: booking.customerId,
+      barberId: authenticatedBarberId,
+    };
+  }
+
+  private toCoordinates(location: Location.LocationObject): TrackingCoordinates {
+    const { latitude, longitude, accuracy, heading, speed } = location.coords;
+    return {
+      latitude,
+      longitude,
+      accuracy: accuracy ?? undefined,
+      heading: heading ?? undefined,
+      speed: speed ?? undefined,
+    };
+  }
+
+  /** Start the canonical inactive -> en_route transition and foreground watcher. */
   async startBarberTracking(
     bookingId: string,
-    customerId: string,
-    barberId: string,
-    onLocationUpdate?: (payload: LocationUpdatePayload) => void
+    onLocationUpdate?: (payload: LocationUpdatePayload) => void,
   ): Promise<{ success: boolean; error?: string }> {
     try {
-      // 1. Clean up any existing active watcher
-      await this.stopBarberTracking();
+      if (this.currentBookingId && this.currentBookingId !== bookingId) {
+        await this.stopBarberTracking(this.currentBookingId);
+      } else {
+        this.clearWatcher();
+      }
 
-      // 2. Check foreground location permission
+      const participants = await this.resolveParticipants(bookingId);
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         return {
@@ -46,80 +107,59 @@ class TrackingService {
         };
       }
 
+      // Persist an initial, rule-complete document before reporting success. This
+      // avoids waiting for the first native watcher callback on a physical device.
+      const initialLocation = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      const initialPayload = this.toCoordinates(initialLocation);
+      await setDoc(
+        doc(firestore, 'bookingTracking', bookingId),
+        buildTrackingStartPayload(participants, initialPayload, Timestamp.now()),
+        { merge: true },
+      );
+      onLocationUpdate?.(initialPayload);
+      this.lastWriteTimestamp = Date.now();
       this.currentBookingId = bookingId;
 
-      // 3. Start watchPositionAsync with balanced accuracy
       this.activeWatcher = await Location.watchPositionAsync(
         {
           accuracy: Location.Accuracy.Balanced,
-          timeInterval: 5000,
+          timeInterval: MIN_WRITE_INTERVAL_MS,
           distanceInterval: 10,
         },
-        async (location: Location.LocationObject) => {
-          const { latitude, longitude, accuracy, heading, speed } = location.coords;
-          const payload: LocationUpdatePayload = {
-            latitude,
-            longitude,
-            accuracy: accuracy || undefined,
-            heading: heading || undefined,
-            speed: speed || undefined,
-          };
+        (location) => {
+          const payload = this.toCoordinates(location);
+          onLocationUpdate?.(payload);
 
-          if (onLocationUpdate) {
-            onLocationUpdate(payload);
-          }
-
-          // Throttle Firestore updates
           const now = Date.now();
-          if (now - this.lastWriteTimestamp >= this.MIN_WRITE_INTERVAL_MS) {
+          if (now - this.lastWriteTimestamp >= MIN_WRITE_INTERVAL_MS) {
             this.lastWriteTimestamp = now;
-            await this.updateTrackingLocation(bookingId, customerId, barberId, payload);
+            void this.updateTrackingLocation(bookingId, payload);
           }
-        }
+        },
       );
 
       return { success: true };
     } catch (error: any) {
+      this.clearWatcher();
       if (__DEV__) {
         console.warn('[TrackingService startBarberTracking Error]', error?.message || error);
       }
-      return {
-        success: false,
-        error: error?.message || 'Gagal memulai pelacakan lokasi.',
-      };
+      return { success: false, error: error?.message || 'Gagal memulai pelacakan lokasi.' };
     }
   }
 
-  /**
-   * Directly write throttled GPS update to bookingTracking/{bookingId}
-   */
-  private async updateTrackingLocation(
-    bookingId: string,
-    customerId: string,
-    barberId: string,
-    payload: LocationUpdatePayload
-  ) {
+  /** Refresh coordinates without changing trackingStatus. */
+  private async updateTrackingLocation(bookingId: string, payload: LocationUpdatePayload) {
     try {
-      const docRef = doc(firestore, 'bookingTracking', bookingId);
-      await setDoc(
-        docRef,
-        {
-          bookingId,
-          customerId,
-          barberId,
-          trackingStatus: 'en_route',
-          isActive: true,
-          location: {
-            latitude: payload.latitude,
-            longitude: payload.longitude,
-          },
-          accuracy: payload.accuracy || null,
-          heading: payload.heading || null,
-          speed: payload.speed || null,
-          updatedAt: Timestamp.now(),
-        },
-        { merge: true }
-      );
+      await updateDoc(doc(firestore, 'bookingTracking', bookingId), {
+        location: { latitude: payload.latitude, longitude: payload.longitude },
+        accuracy: payload.accuracy ?? null,
+        heading: payload.heading ?? null,
+        speed: payload.speed ?? null,
+        updatedAt: Timestamp.now(),
+      });
     } catch (error: any) {
       if (__DEV__) {
         console.warn('[TrackingService updateTrackingLocation Error]', error?.message || error);
@@ -127,73 +167,99 @@ class TrackingService {
     }
   }
 
-  /**
-   * Stop foreground tracking watcher for barber
-   */
-  async stopBarberTracking(): Promise<void> {
-    if (this.activeWatcher) {
-      try {
-        this.activeWatcher.remove();
-      } catch (err) {
-        // Ignore removal error
-      }
-      this.activeWatcher = null;
+  async markBarberArrived(bookingId: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      await this.resolveParticipants(bookingId);
+      const trackingRef = doc(firestore, 'bookingTracking', bookingId);
+      const snapshot = await getDoc(trackingRef);
+      if (!snapshot.exists()) throw new Error('Tracking keberangkatan belum dimulai.');
+
+      const current = mapTrackingDocument(bookingId, snapshot.data()).tracking.trackingStatus;
+      await updateDoc(
+        trackingRef,
+        buildTrackingTransitionPayload(current, 'arrived', Timestamp.now()),
+      );
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error?.message || 'Gagal mencatat kedatangan.' };
     }
-    this.currentBookingId = null;
+  }
+
+  /** Stop native updates and persist the terminal tracking state. */
+  async stopBarberTracking(bookingId?: string): Promise<{ success: boolean; error?: string }> {
+    const targetBookingId = bookingId || this.currentBookingId;
+    this.clearWatcher();
+    if (!targetBookingId) return { success: true };
+
+    try {
+      const trackingRef = doc(firestore, 'bookingTracking', targetBookingId);
+      const snapshot = await getDoc(trackingRef);
+      if (!snapshot.exists()) return { success: true };
+
+      const current = mapTrackingDocument(targetBookingId, snapshot.data()).tracking.trackingStatus;
+      if (current === 'stopped') return { success: true };
+      await updateDoc(
+        trackingRef,
+        buildTrackingTransitionPayload(current, 'stopped', Timestamp.now()),
+      );
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error?.message || 'Gagal menghentikan pelacakan.' };
+    }
   }
 
   /**
-   * Real-time listener for customer order tracking
+   * Subscribe to bookingTracking/{bookingId}. The returned cleanup is idempotent,
+   * and the listener self-releases after receiving terminal `stopped` state.
    */
   subscribeToTracking(
     bookingId: string,
-    onData: (tracking: BookingTracking | null, isStale: boolean) => void
+    onData: (tracking: BookingTracking | null, isStale: boolean) => void,
   ): () => void {
     if (!bookingId) {
       onData(null, false);
       return () => {};
     }
 
-    const docRef = doc(firestore, 'bookingTracking', bookingId);
-    const unsubscribe = onSnapshot(
-      docRef,
-      (docSnap) => {
-        if (!docSnap.exists()) {
+    let unsubscribeSnapshot: (() => void) | null = null;
+    let stopAfterAttach = false;
+    const cleanup = () => {
+      unsubscribeSnapshot?.();
+      unsubscribeSnapshot = null;
+    };
+
+    unsubscribeSnapshot = onSnapshot(
+      doc(firestore, 'bookingTracking', bookingId),
+      (snapshot) => {
+        if (!snapshot.exists()) {
           onData(null, false);
           return;
         }
 
-        const data = docSnap.data();
-        const updatedAtDate = data.updatedAt?.toDate?.() || new Date();
-        const isStale = Date.now() - updatedAtDate.getTime() > STALE_LOCATION_THRESHOLD_MS;
-
-        const tracking: BookingTracking = {
-          bookingId: data.bookingId,
-          customerId: data.customerId,
-          barberId: data.barberId,
-          trackingStatus: data.trackingStatus || 'inactive',
-          isActive: !!data.isActive,
-          location: data.location,
-          accuracy: data.accuracy,
-          heading: data.heading,
-          speed: data.speed,
-          startedAt: data.startedAt?.toDate?.()?.toISOString(),
-          updatedAt: updatedAtDate.toISOString(),
-          stoppedAt: data.stoppedAt?.toDate?.()?.toISOString(),
-          expiresAt: data.expiresAt?.toDate?.()?.toISOString(),
-        };
-
-        onData(tracking, isStale);
+        try {
+          const mapped = mapTrackingDocument(bookingId, snapshot.data());
+          onData(mapped.tracking, mapped.isStale);
+          if (mapped.tracking.trackingStatus === 'stopped') {
+            if (unsubscribeSnapshot) cleanup();
+            else stopAfterAttach = true;
+          }
+        } catch (error: any) {
+          if (__DEV__) {
+            console.warn('[TrackingService invalid tracking snapshot]', error?.message || error);
+          }
+          onData(null, true);
+        }
       },
       (error) => {
         if (__DEV__) {
           console.warn('[TrackingService subscribeToTracking Error]', error?.message || error);
         }
         onData(null, true);
-      }
+      },
     );
 
-    return unsubscribe;
+    if (stopAfterAttach) cleanup();
+    return cleanup;
   }
 }
 

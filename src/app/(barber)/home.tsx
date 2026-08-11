@@ -332,19 +332,13 @@ export default function BarberHomeScreen() {
                   {isHome && b.status === 'accepted' && (
                     <View className="mt-3 pt-3 border-t border-slate-100 flex-row justify-end gap-2">
                       <TouchableOpacity
-                        onPress={async (e) => {
+                        onPress={(e) => {
                           e.stopPropagation();
-                          const { trackingService } = await import('@/features/location/services/tracking.service');
-                          const res = await trackingService.startBarberTracking(b.bookingId, b.customerId, barberId);
-                          if (res.success) {
-                            alert('Berhasil memulai pelacakan lokasi keberangkatan.');
-                          } else {
-                            alert(res.error || 'Gagal memulai pelacakan.');
-                          }
+                          router.push(`/(barber)/booking/${b.bookingId}` as any);
                         }}
                         className="rounded-lg bg-emerald-600 px-3 py-1.5"
                       >
-                        <Text className="text-xs font-bold text-white">🛵 Berangkat ke Lokasi</Text>
+                        <Text className="text-xs font-bold text-white">🛵 Kelola Perjalanan</Text>
                       </TouchableOpacity>
                     </View>
                   )}

@@ -86,6 +86,7 @@ export interface BookingTracking {
   heading?: number;
   speed?: number;
   startedAt?: string;
+  arrivedAt?: string;
   updatedAt?: string;
   stoppedAt?: string;
   expiresAt?: string;
