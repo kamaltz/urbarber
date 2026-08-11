@@ -92,14 +92,26 @@ export default function LoginScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 16 : 0}>
         <ScrollView className="flex-1" contentContainerStyle={{ flexGrow: 1 }}>
-          <View className="flex-1 px-[18px] pt-14">
+          <View className="flex-1 px-6 pt-8 pb-6">
             <View className="flex-1">
+              {/* Brand Header Icon Badge */}
+              <View className="mb-6 flex-row items-center gap-3">
+                <View className="h-12 w-12 items-center justify-center rounded-2xl bg-[#363062] shadow-sm">
+                  <Text className="text-xl text-[#D2691E]">✂</Text>
+                </View>
+                <View className="rounded-full bg-[#EDEFFB] px-3 py-1">
+                  <Text className="text-xs font-bold tracking-wider text-[#363062]">
+                    URBARBER
+                  </Text>
+                </View>
+              </View>
+
               <AuthHeaderBlock
                 title="Masuk"
-                description="Masukkan email Anda untuk memulai"
+                description="Masukkan email dan password Anda untuk mengakses layanan URBarber."
               />
 
-              <View className="mt-12 gap-6">
+              <View className="mt-8 gap-5">
                 <AppInput
                   label="Email"
                   placeholder="nama@example.com"
@@ -121,47 +133,67 @@ export default function LoginScreen() {
                 />
 
                 {error ? (
-                  <Text className="text-center text-sm text-rose-600">{error}</Text>
+                  <View className="rounded-xl bg-rose-50 p-3 border border-rose-200">
+                    <Text className="text-center text-xs font-medium text-rose-700">{error}</Text>
+                  </View>
                 ) : null}
+
+                <View className="items-end">
+                  <Pressable onPress={handleForgotPassword} className="py-1">
+                    <Text className="text-sm font-semibold text-[#D2691E]">
+                      Lupa Password?
+                    </Text>
+                  </Pressable>
+                </View>
 
                 <AppButton
                   label="Masuk"
                   loading={isLoading}
                   disabled={!isFormValid}
                   onPress={handleLogin}
-                  className="h-[54px] bg-slate-900 rounded-lg"
+                  className="h-[54px] rounded-xl bg-[#D2691E] active:bg-[#b85a19]"
                 />
-
-                <Pressable onPress={handleForgotPassword}>
-                  <Text className="text-center text-[#D2691E] font-semibold text-sm">
-                    Lupa Password?
-                  </Text>
-                </Pressable>
-
-                <View className="flex-row items-center justify-between mt-2">
-                  <Pressable onPress={handleRegister}>
-                    <Text className="text-[#D2691E] font-semibold text-sm">
-                      Daftar Pelanggan
-                    </Text>
-                  </Pressable>
-
-                  <Text className="text-slate-300">|</Text>
-
-                  <Pressable onPress={handleRegisterBarber}>
-                    <Text className="text-[#D2691E] font-semibold text-sm">
-                      Daftar Mitra Barber
-                    </Text>
-                  </Pressable>
-                </View>
               </View>
             </View>
 
-            <View className="mt-8 mb-8">
+            {/* Social & Registration Links */}
+            <View className="mt-8 gap-6">
+              <View className="flex-row items-center gap-3">
+                <View className="flex-1 h-[1px] bg-slate-200" />
+                <Text className="text-xs font-medium text-slate-400">atau</Text>
+                <View className="flex-1 h-[1px] bg-slate-200" />
+              </View>
+
               <SocialLoginButton
                 provider="google"
                 onPress={handleGoogleLogin}
                 disabled={isLoading}
               />
+
+              <View className="rounded-2xl bg-slate-50 p-4 border border-slate-200/60">
+                <Text className="text-center text-xs text-slate-500 mb-3 font-medium">
+                  Belum punya akun? Daftar sebagai:
+                </Text>
+                <View className="flex-row items-center justify-center gap-3">
+                  <Pressable
+                    onPress={handleRegister}
+                    className="flex-1 items-center justify-center rounded-xl bg-white py-2.5 px-3 border border-slate-200 shadow-xs active:bg-slate-100"
+                  >
+                    <Text className="text-xs font-bold text-[#363062]">
+                      Pelanggan
+                    </Text>
+                  </Pressable>
+
+                  <Pressable
+                    onPress={handleRegisterBarber}
+                    className="flex-1 items-center justify-center rounded-xl bg-white py-2.5 px-3 border border-slate-200 shadow-xs active:bg-slate-100"
+                  >
+                    <Text className="text-xs font-bold text-[#D2691E]">
+                      Mitra Barber
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
             </View>
           </View>
         </ScrollView>
