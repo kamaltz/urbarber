@@ -6,9 +6,22 @@ import { useCallback, useEffect, useState } from 'react';
 import { bookingRepository } from '../repository/booking.repository';
 import { TimeSlotAvailability } from '../types/booking';
 
-export function useScheduleSelector(barberId: string) {
+/**
+ * Batch 10B-5D: the customer already picks (and must confirm) a date one
+ * screen earlier on booking/options -- forwarded here as `initialDate`. Prior
+ * to this fix that value was discarded and this hook always re-seeded
+ * `selectedDate` to today, so a customer testing outside today's remaining
+ * open hours would land on a slot list that was correctly generated but
+ * entirely in the past (all slots disabled) with no indication they needed
+ * to re-pick a date on this second screen.
+ */
+export function resolveInitialScheduleDate(initialDate: string | undefined, todayStr: string): string {
+  return initialDate || todayStr;
+}
+
+export function useScheduleSelector(barberId: string, initialDate?: string) {
   const todayStr = new Date().toISOString().split('T')[0];
-  const [selectedDate, setSelectedDate] = useState<string>(todayStr);
+  const [selectedDate, setSelectedDate] = useState<string>(resolveInitialScheduleDate(initialDate, todayStr));
   const [selectedTime, setSelectedTime] = useState<string>('');
   const [availableSlots, setAvailableSlots] = useState<TimeSlotAvailability | null>(null);
   const [loading, setLoading] = useState<boolean>(Boolean(barberId));

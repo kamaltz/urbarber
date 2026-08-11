@@ -20,13 +20,14 @@ import {
 } from 'react-native';
 
 export default function BookingScheduleScreen() {
-  const { barberId, barberName, serviceId, serviceName, servicePrice, bookingType } = useLocalSearchParams<{
+  const { barberId, barberName, serviceId, serviceName, servicePrice, bookingType, date } = useLocalSearchParams<{
     barberId: string;
     barberName: string;
     serviceId: string;
     serviceName: string;
     servicePrice: string;
     bookingType: 'home' | 'onsite';
+    date: string;
   }>();
 
   const price = parseInt(servicePrice || '50000', 10);
@@ -38,7 +39,7 @@ export default function BookingScheduleScreen() {
     loading,
     onDateSelect,
     onTimeSelect,
-  } = useScheduleSelector(barberId || '');
+  } = useScheduleSelector(barberId || '', date);
 
   const handleContinue = () => {
     if (!selectedDate || !selectedTime) {
