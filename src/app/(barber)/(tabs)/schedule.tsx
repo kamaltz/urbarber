@@ -1,5 +1,4 @@
 import { AppButton } from '@/components/ui/AppButton';
-import { AppCard } from '@/components/ui/AppCard';
 import { Header } from '@/components/ui/Header';
 import { Loading } from '@/components/ui/Loading';
 import { SymbolIcon } from '@/components/ui/SymbolIcon';
@@ -167,30 +166,31 @@ export default function BarberScheduleScreen() {
         className="flex-1 px-4 py-4"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}>
         {error ? (
-          <AppCard className="mb-4 bg-red-50 border-red-200">
-            <Text className="text-red-700 text-sm">{error}</Text>
+          <View className="mb-4 p-4 rounded-2xl bg-rose-50 border border-rose-200">
+            <Text className="text-rose-700 text-xs font-bold">{error}</Text>
             <AppButton label="Coba Lagi" onPress={fetchSchedule} variant="secondary" className="mt-2" />
-          </AppCard>
+          </View>
         ) : null}
 
-        <AppCard className="mb-6 p-4">
-          <Text className="font-bold text-slate-900 text-base mb-1">Jam Buka Mingguan</Text>
+        {/* Weekly Schedule Section */}
+        <View className="mb-5 p-5 rounded-2xl bg-white border border-slate-200/80 shadow-xs">
+          <Text className="font-bold text-[#363062] text-base mb-1">Jam Buka Mingguan</Text>
           <Text className="text-slate-500 text-xs mb-4">
-            Atur hari buka dan jam operasional untuk layanan pangkas rambut Anda.
+            Atur hari buka dan jam operasional untuk menerima janji pemesanan pangkas rambut.
           </Text>
 
           <View className="gap-3">
             {scheduleDays.map((day, idx) => (
               <View
                 key={day.dayOfWeek ? `sched-${day.dayOfWeek}` : `sched-day-${idx}`}
-                className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex-row items-center justify-between">
+                className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/70 flex-row items-center justify-between">
                 <View className="flex-row items-center gap-3">
                   <Switch
                     value={day.isOpen}
                     onValueChange={() => handleToggleDay(idx)}
-                    trackColor={{ false: '#cbd5e1', true: '#f59e0b' }}
+                    trackColor={{ false: '#cbd5e1', true: '#D2691E' }}
                   />
-                  <Text className="font-bold text-slate-900 text-sm min-w-[60px]">
+                  <Text className="font-bold text-[#363062] text-sm min-w-[60px]">
                     {DAY_LABELS[day.dayOfWeek]}
                   </Text>
                 </View>
@@ -202,43 +202,47 @@ export default function BarberScheduleScreen() {
                       onChangeText={(val) => handleTimeChange(idx, 'startTime', val)}
                       placeholder="09:00"
                       maxLength={5}
-                      className="bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-slate-900 text-xs font-semibold text-center w-16"
+                      className="bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-[#363062] text-xs font-bold text-center w-16 shadow-xs"
                     />
-                    <Text className="text-slate-400 text-xs">-</Text>
+                    <Text className="text-slate-400 text-xs font-bold">-</Text>
                     <TextInput
                       value={day.endTime || '20:00'}
                       onChangeText={(val) => handleTimeChange(idx, 'endTime', val)}
                       placeholder="20:00"
                       maxLength={5}
-                      className="bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-slate-900 text-xs font-semibold text-center w-16"
+                      className="bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-[#363062] text-xs font-bold text-center w-16 shadow-xs"
                     />
                   </View>
                 ) : (
-                  <View className="bg-slate-200 px-3 py-1 rounded-md">
-                    <Text className="text-slate-600 text-xs font-semibold">Tutup</Text>
+                  <View className="bg-slate-200/70 px-3 py-1 rounded-lg">
+                    <Text className="text-slate-500 text-xs font-bold">Tutup</Text>
                   </View>
                 )}
               </View>
             ))}
           </View>
-        </AppCard>
+        </View>
 
         {/* Tanggal Libur Khusus / Unavailable Dates */}
-        <AppCard className="mb-6 p-4">
-          <Text className="font-bold text-slate-900 text-base mb-1">Tanggal Libur Khusus</Text>
-          <Text className="text-slate-500 text-xs mb-3">
+        <View className="mb-6 p-5 rounded-2xl bg-white border border-slate-200/80 shadow-xs">
+          <Text className="font-bold text-[#363062] text-base mb-1">Tanggal Libur Khusus</Text>
+          <Text className="text-slate-500 text-xs mb-3.5">
             Tambahkan tanggal pengecualian libur (Format: YYYY-MM-DD).
           </Text>
 
-          <View className="flex-row gap-2 mb-3">
+          <View className="flex-row gap-2.5 mb-3.5">
             <TextInput
               value={newOffDate}
               onChangeText={setNewOffDate}
               placeholder="Contoh: 2026-08-17"
               maxLength={10}
-              className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-slate-900 text-xs"
+              className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-[#363062] text-xs font-medium"
             />
-            <AppButton label="+ Libur" onPress={handleAddOffDate} variant="secondary" className="px-3" />
+            <TouchableOpacity
+              onPress={handleAddOffDate}
+              className="rounded-xl bg-[#EDEFFB] px-4 justify-center items-center border border-[#363062]/20 active:bg-slate-200">
+              <Text className="text-xs font-bold text-[#363062]">+ Libur</Text>
+            </TouchableOpacity>
           </View>
 
           {unavailableDates.length === 0 ? (
@@ -246,8 +250,8 @@ export default function BarberScheduleScreen() {
           ) : (
             <View className="flex-row flex-wrap gap-2">
               {unavailableDates.map((dateStr, idx) => (
-                <View key={dateStr ? `off-${dateStr}` : `off-date-${idx}`} className="bg-red-50 border border-red-200 px-3 py-1.5 rounded-lg flex-row items-center gap-2">
-                  <Text className="text-red-800 text-xs font-semibold">{dateStr}</Text>
+                <View key={dateStr ? `off-${dateStr}` : `off-date-${idx}`} className="bg-rose-50 border border-rose-200 px-3 py-1.5 rounded-xl flex-row items-center gap-2">
+                  <Text className="text-rose-800 text-xs font-bold">{dateStr}</Text>
                   <TouchableOpacity onPress={() => handleRemoveOffDate(dateStr)}>
                     <SymbolIcon name="xmark" size={14} color="#991b1b" />
                   </TouchableOpacity>
@@ -255,15 +259,19 @@ export default function BarberScheduleScreen() {
               ))}
             </View>
           )}
-        </AppCard>
+        </View>
 
-        <AppButton
-          label={saving ? 'Menyimpan Jadwal...' : 'Simpan Jadwal Operasional'}
+        {/* Save Action Button */}
+        <TouchableOpacity
           onPress={handleSaveSchedule}
-          variant="primary"
           disabled={saving}
-          className="mb-8 w-full"
-        />
+          className={`h-13 items-center justify-center rounded-xl shadow-xs mb-8 ${
+            saving ? 'bg-slate-300' : 'bg-[#D2691E] active:bg-[#B05416]'
+          }`}>
+          <Text className="text-base font-bold text-white">
+            {saving ? 'Menyimpan Jadwal...' : 'Simpan Jadwal Operasional'}
+          </Text>
+        </TouchableOpacity>
       </ScrollView>
     </View>
   );

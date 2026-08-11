@@ -1,5 +1,4 @@
 import { AppButton } from '@/components/ui/AppButton';
-import { AppCard } from '@/components/ui/AppCard';
 import { Header } from '@/components/ui/Header';
 import { Loading } from '@/components/ui/Loading';
 import { SymbolIcon } from '@/components/ui/SymbolIcon';
@@ -185,60 +184,71 @@ export default function BarberServicesScreen() {
         className="flex-1 px-4 py-4"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}>
         {error ? (
-          <AppCard className="mb-4 bg-red-50 border-red-200">
-            <Text className="text-red-700 text-sm">{error}</Text>
+          <View className="mb-4 p-4 rounded-2xl bg-rose-50 border border-rose-200">
+            <Text className="text-rose-700 text-xs font-bold">{error}</Text>
             <AppButton label="Coba Lagi" onPress={fetchServices} variant="secondary" className="mt-2" />
-          </AppCard>
+          </View>
         ) : null}
 
+        {/* Section Header & Add CTA */}
         <View className="flex-row items-center justify-between mb-4">
           <View>
-            <Text className="font-bold text-slate-900 text-base">Daftar Layanan Master Barber</Text>
-            <Text className="text-slate-500 text-xs">Atur tarif harga dan durasi layanan</Text>
+            <Text className="font-bold text-[#363062] text-base">Katalog Layanan Master Barber</Text>
+            <Text className="text-slate-500 text-xs">Atur tarif harga & estimasi durasi cukur</Text>
           </View>
-          <AppButton label="+ Tambah Layanan" onPress={openAddModal} variant="primary" className="py-2 px-3" />
+          <TouchableOpacity
+            onPress={openAddModal}
+            className="rounded-xl bg-[#D2691E] px-3.5 py-2.5 shadow-xs active:bg-[#B05416]">
+            <Text className="text-xs font-bold text-white">+ Tambah Layanan</Text>
+          </TouchableOpacity>
         </View>
 
         {services.length === 0 ? (
-          <AppCard className="p-8 items-center justify-center my-6">
-            <SymbolIcon name="list.bullet" size={40} color="#94a3b8" />
-            <Text className="text-slate-700 font-bold text-base mt-3">Belum Ada Layanan</Text>
+          <View className="p-8 items-center justify-center my-6 rounded-2xl bg-white border border-slate-200/80 shadow-xs">
+            <View className="h-16 w-16 items-center justify-center rounded-2xl bg-[#EDEFFB] border border-[#363062]/10 mb-3">
+              <Text className="text-3xl">📜</Text>
+            </View>
+            <Text className="text-[#363062] font-bold text-base mt-1">Belum Ada Layanan</Text>
             <Text className="text-slate-500 text-xs text-center mt-1">
               Tambahkan layanan pangkas rambut atau perawatan pertama Anda.
             </Text>
-          </AppCard>
+          </View>
         ) : (
-          <View className="gap-3 mb-6">
+          <View className="gap-3.5 mb-8">
             {services.map((svc) => (
               <View
                 key={svc.serviceId}
-                className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex-row items-center justify-between">
+                className="bg-white p-4.5 rounded-2xl border border-slate-200/80 shadow-xs flex-row items-center justify-between">
                 <View className="flex-1 pr-3">
-                  <View className="flex-row items-center gap-2">
-                    <Text className="font-bold text-slate-900 text-base">{svc.name}</Text>
+                  <View className="flex-row items-center gap-2 flex-wrap">
+                    <Text className="font-bold text-[#363062] text-base">{svc.name}</Text>
                     <View
                       className={
-                        svc.isActive ? 'bg-emerald-100 px-2 py-0.5 rounded' : 'bg-slate-100 px-2 py-0.5 rounded'
+                        svc.isActive
+                          ? 'bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200'
+                          : 'bg-slate-100 px-2.5 py-0.5 rounded-full border border-slate-200'
                       }>
                       <Text
                         className={
                           svc.isActive
-                            ? 'text-emerald-800 text-[10px] font-semibold'
-                            : 'text-slate-600 text-[10px] font-semibold'
+                            ? 'text-emerald-800 text-[10px] font-bold'
+                            : 'text-slate-500 text-[10px] font-bold'
                         }>
-                        {svc.isActive ? 'Aktif' : 'Nonaktif'}
+                        {svc.isActive ? 'Aktif ✓' : 'Nonaktif'}
                       </Text>
                     </View>
                   </View>
                   {svc.description ? (
-                    <Text className="text-slate-500 text-xs mt-1">{svc.description}</Text>
+                    <Text className="text-slate-500 text-xs mt-1 leading-relaxed">{svc.description}</Text>
                   ) : null}
 
-                  <View className="flex-row items-center gap-4 mt-2">
-                    <Text className="font-extrabold text-amber-600 text-sm">
+                  <View className="flex-row items-center gap-3 mt-2.5">
+                    <Text className="font-extrabold text-[#D2691E] text-sm">
                       {formatCurrency(svc.price)}
                     </Text>
-                    <Text className="text-slate-500 text-xs">⏱ {svc.durationMinutes} Menit</Text>
+                    <View className="rounded-lg bg-[#EDEFFB] px-2.5 py-0.5">
+                      <Text className="text-[#363062] text-[11px] font-bold">⏱ {svc.durationMinutes} Menit</Text>
+                    </View>
                   </View>
                 </View>
 
@@ -246,12 +256,12 @@ export default function BarberServicesScreen() {
                   <Switch
                     value={svc.isActive}
                     onValueChange={() => handleToggleActive(svc)}
-                    trackColor={{ false: '#cbd5e1', true: '#f59e0b' }}
+                    trackColor={{ false: '#cbd5e1', true: '#D2691E' }}
                   />
                   <TouchableOpacity
                     onPress={() => openEditModal(svc)}
-                    className="bg-slate-100 py-1 px-3 rounded-lg">
-                    <Text className="text-slate-700 text-xs font-semibold">Edit</Text>
+                    className="bg-[#EDEFFB] border border-[#363062]/20 py-1.5 px-3.5 rounded-xl active:bg-slate-200">
+                    <Text className="text-[#363062] text-xs font-bold">Edit</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -262,77 +272,87 @@ export default function BarberServicesScreen() {
 
       {/* Add / Edit Service Modal */}
       <Modal visible={modalVisible} animationType="slide" transparent>
-        <View className="flex-1 bg-black/50 justify-end">
-          <View className="bg-white rounded-t-2xl p-6 gap-4">
-            <View className="flex-row items-center justify-between border-b border-slate-100 pb-3">
-              <Text className="font-bold text-slate-900 text-lg">
-                {editingService ? 'Edit Layanan' : 'Tambah Layanan Baru'}
+        <View className="flex-1 bg-black/60 justify-end">
+          <View className="bg-white rounded-t-[32px] p-6 gap-4 border-t border-white/20 shadow-lg">
+            <View className="flex-row items-center justify-between border-b border-slate-100 pb-3.5">
+              <Text className="font-bold text-[#363062] text-lg">
+                {editingService ? 'Edit Layanan Barber' : 'Tambah Layanan Baru'}
               </Text>
-              <TouchableOpacity onPress={() => setModalVisible(false)}>
-                <SymbolIcon name="xmark" size={20} color="#64748b" />
+              <TouchableOpacity
+                onPress={() => setModalVisible(false)}
+                className="h-8 w-8 items-center justify-center rounded-full bg-slate-100">
+                <SymbolIcon name="xmark" size={16} color="#363062" />
               </TouchableOpacity>
             </View>
 
             <View className="gap-1">
-              <Text className="text-xs font-semibold text-slate-700">Nama Layanan *</Text>
+              <Text className="text-xs font-bold text-[#363062] uppercase tracking-wider">Nama Layanan *</Text>
               <TextInput
                 value={name}
                 onChangeText={setName}
                 placeholder="Contoh: Potong Rambut Fade"
-                className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 text-sm"
+                placeholderTextColor="#94A3B8"
+                className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-[#363062] text-sm font-medium"
               />
             </View>
 
             <View className="gap-1">
-              <Text className="text-xs font-semibold text-slate-700">Deskripsi</Text>
+              <Text className="text-xs font-bold text-[#363062] uppercase tracking-wider">Deskripsi Layanan</Text>
               <TextInput
                 value={description}
                 onChangeText={setDescription}
-                placeholder="Penjelasan singkat layanan..."
+                placeholder="Penjelasan singkat layanan pangkas..."
+                placeholderTextColor="#94A3B8"
                 multiline
                 numberOfLines={3}
-                className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 text-sm h-20"
+                textAlignVertical="top"
+                className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-[#363062] text-sm font-medium h-20"
               />
             </View>
 
             <View className="flex-row gap-3">
               <View className="flex-1 gap-1">
-                <Text className="text-xs font-semibold text-slate-700">Harga (Rp) *</Text>
+                <Text className="text-xs font-bold text-[#363062] uppercase tracking-wider">Harga (Rp) *</Text>
                 <TextInput
                   value={priceStr}
                   onChangeText={setPriceStr}
                   placeholder="50000"
+                  placeholderTextColor="#94A3B8"
                   keyboardType="numeric"
-                  className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 text-sm"
+                  className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-[#363062] text-sm font-medium"
                 />
               </View>
 
               <View className="flex-1 gap-1">
-                <Text className="text-xs font-semibold text-slate-700">Durasi (Menit) *</Text>
+                <Text className="text-xs font-bold text-[#363062] uppercase tracking-wider">Durasi (Menit) *</Text>
                 <TextInput
                   value={durationStr}
                   onChangeText={setDurationStr}
                   placeholder="30"
+                  placeholderTextColor="#94A3B8"
                   keyboardType="numeric"
-                  className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 text-sm"
+                  className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-[#363062] text-sm font-medium"
                 />
               </View>
             </View>
 
-            <View className="flex-row gap-3 mt-2">
-              <AppButton
-                label="Batal"
+            <View className="flex-row gap-3 mt-2 mb-2">
+              <TouchableOpacity
                 onPress={() => setModalVisible(false)}
-                variant="secondary"
-                className="flex-1"
-              />
-              <AppButton
-                label={saving ? 'Menyimpan...' : 'Simpan Layanan'}
+                className="flex-1 h-13 items-center justify-center rounded-xl bg-slate-100 active:bg-slate-200">
+                <Text className="text-xs font-bold text-slate-700">Batal</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
                 onPress={handleSaveService}
-                variant="primary"
                 disabled={saving}
-                className="flex-1"
-              />
+                className={`flex-1 h-13 items-center justify-center rounded-xl shadow-xs ${
+                  saving ? 'bg-slate-300' : 'bg-[#D2691E] active:bg-[#B05416]'
+                }`}>
+                <Text className="text-xs font-bold text-white">
+                  {saving ? 'Menyimpan...' : 'Simpan Layanan'}
+                </Text>
+              </TouchableOpacity>
             </View>
           </View>
         </View>

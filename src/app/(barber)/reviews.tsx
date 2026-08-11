@@ -1,5 +1,4 @@
 import { AppButton } from '@/components/ui/AppButton';
-import { AppCard } from '@/components/ui/AppCard';
 import { Header } from '@/components/ui/Header';
 import { Loading } from '@/components/ui/Loading';
 import { SymbolIcon } from '@/components/ui/SymbolIcon';
@@ -72,13 +71,13 @@ export default function BarberReviewsScreen() {
 
   const renderStars = (rating: number) => {
     return (
-      <View className="flex-row gap-0.5">
+      <View className="flex-row gap-1">
         {[1, 2, 3, 4, 5].map((star) => (
           <SymbolIcon
             key={star}
             name="star.fill"
             size={14}
-            color={star <= rating ? '#f59e0b' : '#cbd5e1'}
+            color={star <= rating ? '#D2691E' : '#cbd5e1'}
           />
         ))}
       </View>
@@ -95,50 +94,65 @@ export default function BarberReviewsScreen() {
         className="flex-1 px-4 py-4"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}>
         {error ? (
-          <AppCard className="mb-4 bg-red-50 border-red-200">
-            <Text className="text-red-700 text-sm">{error}</Text>
+          <View className="mb-4 p-4 rounded-2xl bg-rose-50 border border-rose-200">
+            <Text className="text-rose-700 text-xs font-bold">{error}</Text>
             <AppButton label="Coba Lagi" onPress={fetchReviews} variant="secondary" className="mt-2" />
-          </AppCard>
+          </View>
         ) : null}
 
-        {/* Rating Summary Header */}
-        <AppCard className="mb-6 p-6 items-center bg-slate-900 border-0">
-          <Text className="text-amber-400 font-extrabold text-4xl">
+        {/* Rating Summary Header Card */}
+        <View className="mb-5 p-6 items-center bg-[#363062] rounded-2xl shadow-xs border border-slate-200/20">
+          <Text className="text-[#D2691E] font-extrabold text-4xl">
             {(profile as any)?.ratingAverage ? Number((profile as any).ratingAverage).toFixed(1) : '5.0'}
           </Text>
           <View className="mt-2">{renderStars(Math.round((profile as any)?.ratingAverage || 5))}</View>
-          <Text className="text-slate-400 text-xs mt-2">
-            Berdasarkan {(profile as any)?.reviewCount || reviews.length} ulasan pelanggan
-          </Text>
-        </AppCard>
+          <View className="mt-2.5 rounded-full bg-white/10 px-3 py-1 border border-white/15">
+            <Text className="text-slate-200 text-xs font-medium">
+              Berdasarkan {(profile as any)?.reviewCount || reviews.length} ulasan pelanggan
+            </Text>
+          </View>
+        </View>
 
-        {/* Reviews List */}
-        <Text className="font-bold text-slate-900 text-base mb-3">Daftar Ulasan Pelanggan</Text>
+        {/* Reviews List Header */}
+        <View className="flex-row items-center justify-between mb-3.5">
+          <Text className="font-bold text-[#363062] text-base">Daftar Ulasan Pelanggan</Text>
+          <View className="rounded-full bg-[#EDEFFB] px-2.5 py-0.5">
+            <Text className="text-[11px] font-bold text-[#363062]">{reviews.length} Ulasan</Text>
+          </View>
+        </View>
+
         {reviews.length === 0 ? (
-          <AppCard className="p-8 items-center justify-center my-4">
-            <SymbolIcon name="star" size={40} color="#94a3b8" />
-            <Text className="text-slate-700 font-bold text-base mt-3">Belum Ada Ulasan</Text>
+          <View className="p-8 items-center justify-center my-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs">
+            <View className="h-16 w-16 items-center justify-center rounded-2xl bg-[#EDEFFB] border border-[#363062]/10 mb-3">
+              <Text className="text-3xl">⭐</Text>
+            </View>
+            <Text className="text-[#363062] font-bold text-base mt-1">Belum Ada Ulasan</Text>
             <Text className="text-slate-500 text-xs text-center mt-1">
               Ulasan dari pelanggan setelah layanan selesai akan tampil di sini.
             </Text>
-          </AppCard>
+          </View>
         ) : (
           <View className="gap-3 mb-8">
             {reviews.map((rev) => (
-              <AppCard key={rev.reviewId || (rev as any).id} className="p-4 gap-2">
-                <View className="flex-row items-center justify-between border-b border-slate-100 pb-2">
-                  <Text className="font-bold text-slate-900 text-sm">
+              <View key={rev.reviewId || (rev as any).id} className="rounded-2xl bg-white p-4.5 border border-slate-200/80 shadow-xs gap-2">
+                <View className="flex-row items-center justify-between border-b border-slate-100 pb-2.5">
+                  <Text className="font-bold text-[#363062] text-sm">
                     {rev.customerName || 'Pelanggan'}
                   </Text>
                   {renderStars(rev.rating || 5)}
                 </View>
-                <Text className="text-slate-700 text-xs mt-1">
+                <Text className="text-slate-600 text-xs mt-1 leading-relaxed">
                   &quot;{rev.comment || 'Layanan sangat memuaskan!'}&quot;
                 </Text>
-                <Text className="text-slate-400 text-[10px] mt-1">
-                  {rev.createdAt ? new Date(rev.createdAt).toLocaleDateString('id-ID') : ''}
+                <Text className="text-slate-400 text-[10px] mt-1 font-medium">
+                  {rev.createdAt ? new Date(rev.createdAt).toLocaleDateString('id-ID', {
+                    weekday: 'short',
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric',
+                  }) : ''}
                 </Text>
-              </AppCard>
+              </View>
             ))}
           </View>
         )}
