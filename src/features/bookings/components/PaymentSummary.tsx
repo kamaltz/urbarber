@@ -1,7 +1,3 @@
-/**
- * Payment Summary Component - Shows payment breakdown
- */
-
 import { Text, View } from 'react-native';
 
 export type PaymentSummaryProps = {
@@ -18,7 +14,6 @@ const formatCurrency = (amount?: number | string | null): string => {
   if (!isFinite(num) || isNaN(num)) {
     return '0';
   }
-  // Format number according to Indonesian locale (without currency symbol)
   return new Intl.NumberFormat('id-ID').format(num);
 };
 
@@ -31,45 +26,49 @@ export function PaymentSummary({
   totalPrice = 0,
 }: PaymentSummaryProps) {
   return (
-    <View className="gap-3 rounded-lg bg-slate-50 p-4">
+    <View className="gap-3.5 rounded-2xl bg-white p-4.5 border border-slate-200/80 shadow-xs">
+      <Text className="text-xs font-bold text-[#363062] uppercase tracking-wider mb-0.5">
+        Rincian Pembayaran
+      </Text>
+
       {/* Subtotal */}
-      <View className="flex-row justify-between">
-        <Text className="text-slate-600">Subtotal Layanan</Text>
-        <Text className="font-semibold text-slate-900">Rp {formatCurrency(subtotal)}</Text>
+      <View className="flex-row justify-between items-center">
+        <Text className="text-xs font-medium text-slate-600">Subtotal Layanan</Text>
+        <Text className="text-sm font-bold text-[#363062]">Rp {formatCurrency(subtotal)}</Text>
       </View>
 
       {/* Travel Fee */}
       {travelFee ? (
-        <View className="flex-row justify-between border-t border-slate-200 pt-3">
-          <Text className="text-slate-600">Biaya Perjalanan</Text>
-          <Text className="font-semibold text-slate-900">Rp {formatCurrency(travelFee)}</Text>
+        <View className="flex-row justify-between items-center border-t border-slate-100 pt-2.5">
+          <Text className="text-xs font-medium text-slate-600">Biaya Perjalanan (Layanan Home)</Text>
+          <Text className="text-sm font-bold text-[#363062]">Rp {formatCurrency(travelFee)}</Text>
         </View>
       ) : null}
 
       {/* Handling Fee */}
       {handlingFee ? (
-        <View className="flex-row justify-between">
-          <Text className="text-slate-600">Biaya Layanan</Text>
-          <Text className="font-semibold text-slate-900">Rp {formatCurrency(handlingFee)}</Text>
+        <View className="flex-row justify-between items-center">
+          <Text className="text-xs font-medium text-slate-600">Biaya Layanan Platform</Text>
+          <Text className="text-sm font-bold text-[#363062]">Rp {formatCurrency(handlingFee)}</Text>
         </View>
       ) : null}
 
       {/* Discount */}
       {discount ? (
-        <View className="flex-row justify-between">
-          <Text className="text-slate-600">
+        <View className="flex-row justify-between items-center">
+          <Text className="text-xs font-medium text-slate-600">
             Diskon {couponCode ? `(${couponCode})` : ''}
           </Text>
-          <Text className="font-semibold text-green-600">
+          <Text className="text-sm font-bold text-emerald-600">
             -Rp {formatCurrency(discount)}
           </Text>
         </View>
       ) : null}
 
       {/* Total */}
-      <View className="flex-row justify-between border-t border-slate-200 pt-3">
-        <Text className="text-lg font-bold text-slate-900">Harga Total</Text>
-        <Text className="text-lg font-bold text-orange-600">
+      <View className="flex-row justify-between items-center border-t border-slate-200/80 pt-3 mt-1">
+        <Text className="text-base font-bold text-[#363062]">Total Pembayaran</Text>
+        <Text className="text-lg font-extrabold text-[#D2691E]">
           Rp {formatCurrency(totalPrice)}
         </Text>
       </View>

@@ -1,8 +1,3 @@
-/**
- * Booking Detail Screen
- * Shows active booking details and status
- */
-
 import { router, useLocalSearchParams } from 'expo-router';
 import {
     Alert,
@@ -48,13 +43,13 @@ export default function BookingDetailScreen() {
     return (
       <SafeAreaView className="flex-1 bg-white">
         <View className="flex-1 items-center justify-center px-4">
-          <Text className="text-center text-lg font-semibold text-slate-900">
+          <Text className="text-center text-lg font-semibold text-[#363062]">
             {error || 'Booking tidak ditemukan'}
           </Text>
           <AppButton
             label="Kembali"
             onPress={handleBack}
-            className="mt-6 h-12 rounded-lg px-8"
+            className="mt-6 h-12 rounded-xl px-8"
           />
         </View>
       </SafeAreaView>
@@ -70,33 +65,35 @@ export default function BookingDetailScreen() {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-white">
+    <SafeAreaView className="flex-1 bg-slate-50">
       <KeyboardAvoidingView
         className="flex-1"
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView className="flex-1" contentContainerStyle={{ flexGrow: 1 }}>
-          {/* Header */}
-          <View className="border-b border-slate-200 px-4 py-4">
-            <Pressable onPress={handleBack} className="flex-row items-center gap-2">
-              <Text className="text-2xl">←</Text>
-              <Text className="text-xl font-bold text-slate-900">Detail Pemesanan</Text>
+          {/* Top Bar Header */}
+          <View className="border-b border-slate-200 bg-white px-4 py-4 flex-row items-center justify-between shadow-xs">
+            <Pressable onPress={handleBack} className="flex-row items-center gap-2.5">
+              <View className="h-9 w-9 items-center justify-center rounded-full bg-slate-100">
+                <Text className="text-base font-bold text-[#363062]">←</Text>
+              </View>
+              <Text className="text-lg font-bold text-[#363062]">Detail Pemesanan</Text>
             </Pressable>
           </View>
 
-          <View className="gap-6 px-4 py-6">
+          <View className="gap-5 px-4 py-5">
             {/* Booking Header */}
             <BookingHeader shop={booking.shop ?? { name: 'URBarber Shop', address: '' }} />
 
             {/* Progress Tracker */}
-            <View className="rounded-lg bg-slate-50 p-4">
-              <ProgressTracker status={booking.status} />
-            </View>
+            <ProgressTracker status={booking.status} />
 
-            {/* Date & Time */}
-            <View className="gap-2">
-              <Text className="text-lg font-bold text-slate-900">📅 Tanggal & Waktu</Text>
-              <View className="rounded-lg bg-slate-50 p-4">
-                <Text className="font-semibold text-slate-900">
+            {/* Date & Time Container */}
+            <View className="rounded-2xl bg-white p-4.5 border border-slate-200/80 shadow-xs gap-2">
+              <Text className="text-xs font-bold text-[#363062] uppercase tracking-wider">
+                📅 Tanggal & Waktu Layanan
+              </Text>
+              <View className="rounded-xl bg-[#EDEFFB]/70 p-3 border border-[#363062]/10 mt-1">
+                <Text className="text-sm font-bold text-[#363062]">
                   {new Date(booking.scheduledAt).toLocaleDateString('id-ID', {
                     weekday: 'long',
                     year: 'numeric',
@@ -104,22 +101,26 @@ export default function BookingDetailScreen() {
                     day: 'numeric',
                   })}
                 </Text>
-                <Text className="mt-1 text-slate-600">{booking.scheduledTime}</Text>
+                <Text className="mt-1 text-xs text-slate-600 font-medium">Jam: {booking.scheduledTime}</Text>
               </View>
             </View>
 
-            {/* Barber Info */}
-            <View className="gap-2">
-              <Text className="text-lg font-bold text-slate-900">✂️ Master Barber</Text>
-              <View className="rounded-lg bg-slate-50 p-4">
-                <Text className="font-semibold text-slate-900">{booking.barber?.name || 'Master Barber'}</Text>
-                <Text className="mt-1 text-sm text-slate-600">{booking.barber?.specialization || 'Barber Profesional'}</Text>
+            {/* Barber Info Container */}
+            <View className="rounded-2xl bg-white p-4.5 border border-slate-200/80 shadow-xs gap-2">
+              <Text className="text-xs font-bold text-[#363062] uppercase tracking-wider">
+                ✂️ Master Barber
+              </Text>
+              <View className="rounded-xl bg-slate-50 p-3 border border-slate-200/60 mt-1">
+                <Text className="text-sm font-bold text-[#363062]">{booking.barber?.name || 'Master Barber'}</Text>
+                <Text className="mt-0.5 text-xs text-slate-500 font-medium">{booking.barber?.specialization || 'Barber Profesional'}</Text>
               </View>
             </View>
 
-            {/* Services */}
-            <View className="gap-2">
-              <Text className="text-lg font-bold text-slate-900">💇 Layanan yang Dipilih</Text>
+            {/* Services Container */}
+            <View className="rounded-2xl bg-white p-4.5 border border-slate-200/80 shadow-xs gap-3">
+              <Text className="text-xs font-bold text-[#363062] uppercase tracking-wider">
+                💇 Layanan yang Dipilih
+              </Text>
               <ServiceList services={booking.services ?? []} />
             </View>
 
@@ -134,10 +135,10 @@ export default function BookingDetailScreen() {
             />
 
             {/* Payment Status Banner */}
-            <View className="rounded-lg bg-slate-50 p-4 border border-slate-200 flex-row items-center justify-between">
+            <View className="rounded-2xl bg-white p-4.5 border border-slate-200/80 shadow-xs flex-row items-center justify-between">
               <View>
                 <Text className="text-xs text-slate-500 font-medium">Status Pembayaran</Text>
-                <Text className="text-sm font-bold text-slate-900 uppercase">
+                <Text className="text-sm font-bold text-[#363062] uppercase mt-0.5">
                   {booking.paymentStatus || 'Initiated'}
                 </Text>
               </View>
@@ -155,7 +156,7 @@ export default function BookingDetailScreen() {
                       },
                     })
                   }
-                  className="rounded-lg bg-[#D2691E] px-4 py-2"
+                  className="rounded-xl bg-[#D2691E] px-4 py-2.5 active:bg-[#B05416]"
                 >
                   <Text className="text-xs font-bold text-white">Bayar Sekarang</Text>
                 </Pressable>
@@ -163,11 +164,11 @@ export default function BookingDetailScreen() {
             </View>
 
             {/* Action Buttons */}
-            <View className="gap-3">
+            <View className="gap-3 mb-4">
               <View className="flex-row gap-3">
-                <Pressable className="flex-1 items-center gap-2 rounded-lg bg-slate-100 py-3">
-                  <Text className="text-2xl">🗺️</Text>
-                  <Text className="text-xs font-semibold text-slate-900">Peta</Text>
+                <Pressable className="flex-1 items-center gap-1.5 rounded-xl bg-white p-3 border border-slate-200/80 shadow-xs active:bg-slate-50">
+                  <Text className="text-xl">🗺️</Text>
+                  <Text className="text-xs font-bold text-[#363062]">Peta Navigasi</Text>
                 </Pressable>
 
                 <Pressable
@@ -179,22 +180,24 @@ export default function BookingDetailScreen() {
                     router.push(`/(customer)/chat/${booking.id}` as any);
                   }}
                   disabled={booking.paymentStatus !== 'paid'}
-                  className={`flex-1 items-center gap-2 rounded-lg py-3 ${
-                    booking.paymentStatus === 'paid' ? 'bg-slate-100' : 'bg-slate-300'
+                  className={`flex-1 items-center gap-1.5 rounded-xl p-3 border shadow-xs ${
+                    booking.paymentStatus === 'paid'
+                      ? 'bg-white border-slate-200/80 active:bg-slate-50'
+                      : 'bg-slate-100 border-slate-200 opacity-60'
                   }`}
                 >
-                  <Text className="text-2xl">💬</Text>
-                  <Text className={`text-xs font-semibold ${
-                    booking.paymentStatus === 'paid' ? 'text-slate-900' : 'text-slate-500'
-                  }`}>Chat</Text>
+                  <Text className="text-xl">💬</Text>
+                  <Text className={`text-xs font-bold ${
+                    booking.paymentStatus === 'paid' ? 'text-[#363062]' : 'text-slate-400'
+                  }`}>Chat Barber</Text>
                 </Pressable>
 
                 {['pending', 'accepted'].includes(booking.status) && (
                   <Pressable
                     onPress={handleCancel}
-                    className="flex-1 items-center gap-2 rounded-lg bg-red-100 py-3">
-                    <Text className="text-2xl">❌</Text>
-                    <Text className="text-xs font-semibold text-red-700">Batalkan</Text>
+                    className="flex-1 items-center gap-1.5 rounded-xl bg-rose-50 border border-rose-200 p-3 active:bg-rose-100">
+                    <Text className="text-xl">❌</Text>
+                    <Text className="text-xs font-bold text-rose-700">Batalkan</Text>
                   </Pressable>
                 )}
               </View>
