@@ -4,7 +4,9 @@
  */
 
 import { router, useLocalSearchParams } from 'expo-router';
+import { useState } from 'react';
 import {
+    ActivityIndicator,
     Alert,
     KeyboardAvoidingView,
     Platform,
@@ -22,11 +24,13 @@ import { PaymentSummary } from '@/features/bookings/components/PaymentSummary';
 import { ProgressTracker } from '@/features/bookings/components/ProgressTracker';
 import { ServiceList } from '@/features/bookings/components/ServiceList';
 import { useBookingDetail } from '@/features/bookings/hooks/use-booking-detail';
+import { chatRepository } from '@/features/chat/repository/chat.repository';
 
 export default function BookingDetailScreen() {
   const { bookingId } = useLocalSearchParams<{ bookingId: string }>();
 
   const { booking, loading, error, cancelBooking } = useBookingDetail(bookingId || '');
+  const [chatInitializing, setChatInitializing] = useState(false);
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -66,6 +70,23 @@ export default function BookingDetailScreen() {
     if (result.success) {
       alert('Booking berhasil dibatalkan');
       handleBack();
+    }
+  };
+
+  const handleOpenChat = async () => {
+    if (booking.paymentStatus !== 'paid') {
+      Alert.alert('Chat tidak tersedia', 'Selesaikan pembayaran untuk membuka chat.');
+      return;
+    }
+
+    setChatInitializing(true);
+    try {
+      const conversationId = await chatRepository.ensureConversation(booking.id);
+      router.push(`/(customer)/chat/${conversationId}` as any);
+    } catch (err: any) {
+      Alert.alert('Chat tidak tersedia', err?.message || 'Gagal membuka percakapan. Silakan coba lagi.');
+    } finally {
+      setChatInitializing(false);
     }
   };
 
@@ -171,19 +192,17 @@ export default function BookingDetailScreen() {
                 </Pressable>
 
                 <Pressable
-                  onPress={() => {
-                    if (booking.paymentStatus !== 'paid') {
-                      Alert.alert('Chat tidak tersedia', 'Selesaikan pembayaran untuk membuka chat.');
-                      return;
-                    }
-                    router.push(`/(customer)/chat/${booking.id}` as any);
-                  }}
-                  disabled={booking.paymentStatus !== 'paid'}
+                  onPress={handleOpenChat}
+                  disabled={booking.paymentStatus !== 'paid' || chatInitializing}
                   className={`flex-1 items-center gap-2 rounded-lg py-3 ${
                     booking.paymentStatus === 'paid' ? 'bg-slate-100' : 'bg-slate-300'
                   }`}
                 >
-                  <Text className="text-2xl">💬</Text>
+                  {chatInitializing ? (
+                    <ActivityIndicator size="small" color="#0f172a" />
+                  ) : (
+                    <Text className="text-2xl">💬</Text>
+                  )}
                   <Text className={`text-xs font-semibold ${
                     booking.paymentStatus === 'paid' ? 'text-slate-900' : 'text-slate-500'
                   }`}>Chat</Text>

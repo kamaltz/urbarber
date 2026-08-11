@@ -20,7 +20,12 @@ const db = getFirestore();
 
 const MESSAGES_LIMIT = 30;
 const MAX_MESSAGE_LENGTH = 1000;
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
+// Batch 10B-5G: this previously read EXPO_PUBLIC_API_BASE_URL, which is never
+// set anywhere (.env.local only defines EXPO_PUBLIC_PAYMENT_API_BASE_URL) --
+// every other backend client (payment-api.service.ts, barber-api.service.ts,
+// availability-api.service.ts, account-bootstrap.service.ts) already targets
+// the same trusted Vercel deployment via EXPO_PUBLIC_PAYMENT_API_BASE_URL.
+const API_BASE_URL = process.env.EXPO_PUBLIC_PAYMENT_API_BASE_URL || 'http://localhost:3000';
 
 export const chatRepository = {
   /**

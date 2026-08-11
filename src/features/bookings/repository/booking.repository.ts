@@ -16,11 +16,44 @@ import {
   where,
 } from 'firebase/firestore';
 import { firestore } from '@/lib/firebase';
-import { mapLegacyBookingStatus, BookingStatus } from '@/types/domain';
+import { BookingStatus } from '@/types/domain';
 import { availabilityApiService } from '../api/availability-api.service';
+import { mapRawBookingToDomain } from '../utils/map-booking';
 import { Booking, BookingReview, CouponCode, TimeSlotAvailability } from '../types/booking';
 
 class BookingRepository {
+  /**
+   * Resolves raw bookings/{id} documents into the canonical Booking domain
+   * shape, batch-fetching each unique barberId/serviceId once (barbers and
+   * barberServices docs are public-readable -- see firestore.rules) rather
+   * than per-booking, then mapping via mapRawBookingToDomain. See
+   * src/features/bookings/utils/map-booking.ts for why this resolution is
+   * necessary: the raw persisted shape has no shop/barber/services objects.
+   */
+  private async resolveBookingsDomain(raw: { id: string; data: Record<string, any> }[]): Promise<Booking[]> {
+    const barberIds = Array.from(new Set(raw.map((r) => r.data.barberId).filter((v): v is string => Boolean(v))));
+    const serviceIds = Array.from(new Set(raw.map((r) => r.data.serviceId).filter((v): v is string => Boolean(v))));
+
+    const [barberDocs, serviceDocs] = await Promise.all([
+      Promise.all(barberIds.map((id) => getDoc(doc(firestore, 'barbers', id)).catch(() => null))),
+      Promise.all(serviceIds.map((id) => getDoc(doc(firestore, 'barberServices', id)).catch(() => null))),
+    ]);
+
+    const barberMap = new Map<string, Record<string, any>>();
+    barberIds.forEach((id, i) => {
+      if (barberDocs[i]?.exists()) barberMap.set(id, barberDocs[i]!.data()!);
+    });
+
+    const serviceMap = new Map<string, Record<string, any>>();
+    serviceIds.forEach((id, i) => {
+      if (serviceDocs[i]?.exists()) serviceMap.set(id, serviceDocs[i]!.data()!);
+    });
+
+    return raw.map(({ id, data }) =>
+      mapRawBookingToDomain(id, data, barberMap.get(data.barberId), serviceMap.get(data.serviceId))
+    );
+  }
+
   /**
    * Get active bookings for a customer (pending, accepted, in_progress)
    */
@@ -35,14 +68,8 @@ class BookingRepository {
       );
 
       const snapshot = await getDocs(q);
-      return snapshot.docs.map((docSnap) => {
-        const data = docSnap.data();
-        return {
-          ...data,
-          id: docSnap.id,
-          status: mapLegacyBookingStatus(data.status),
-        } as Booking;
-      });
+      const raw = snapshot.docs.map((docSnap) => ({ id: docSnap.id, data: docSnap.data() }));
+      return await this.resolveBookingsDomain(raw);
     } catch (error: any) {
       if (__DEV__) {
         console.warn('[BookingRepository getActiveBookings Error]', error?.code, error?.message || error);
@@ -65,14 +92,8 @@ class BookingRepository {
       );
 
       const snapshot = await getDocs(q);
-      return snapshot.docs.map((docSnap) => {
-        const data = docSnap.data();
-        return {
-          ...data,
-          id: docSnap.id,
-          status: mapLegacyBookingStatus(data.status),
-        } as Booking;
-      });
+      const raw = snapshot.docs.map((docSnap) => ({ id: docSnap.id, data: docSnap.data() }));
+      return await this.resolveBookingsDomain(raw);
     } catch (error: any) {
       if (__DEV__) {
         console.warn('[BookingRepository getBookingHistory Error]', error?.code, error?.message || error);
@@ -95,12 +116,8 @@ class BookingRepository {
         return null;
       }
 
-      const data = snapshot.data();
-      return {
-        ...data,
-        id: snapshot.id,
-        status: mapLegacyBookingStatus(data.status),
-      } as Booking;
+      const [mapped] = await this.resolveBookingsDomain([{ id: snapshot.id, data: snapshot.data() }]);
+      return mapped;
     } catch (error: any) {
       if (__DEV__) {
         console.warn('[BookingRepository getBookingDetail Error]', error?.code, error?.message || error);

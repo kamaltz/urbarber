@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { chatRepository } from '../repository/chat.repository';
 import type { Message } from '../types';
 
-export function useChatMessages(bookingId: string) {
+export function useChatMessages(bookingId: string, enabled: boolean = true) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -12,6 +12,16 @@ export function useChatMessages(bookingId: string) {
 
   useEffect(() => {
     isMountedRef.current = true;
+
+    // Batch 10B-5G: the parent conversations/{bookingId} document must exist
+    // before this subscribes, or Firestore rules deny the read (the parent
+    // doc lookup inside the rule has nothing to check participants against).
+    // `enabled` stays false until useChatBootstrap confirms ensureConversation
+    // succeeded, so this never subscribes to a conversation that was never
+    // created.
+    if (!enabled || !bookingId) {
+      return;
+    }
 
     const unsubscribe = chatRepository.subscribeToMessages(
       bookingId,
@@ -35,7 +45,7 @@ export function useChatMessages(bookingId: string) {
       isMountedRef.current = false;
       unsubscribe();
     };
-  }, [bookingId]);
+  }, [bookingId, enabled]);
 
   const send = async (text: string) => {
     try {

@@ -7,10 +7,11 @@ import { useAuth } from '@/features/auth/hooks/use-auth';
 import { barberRepository } from '@/features/barbers/repository/barber.repository';
 import { barberApiService } from '@/features/barbers/services/barber-api.service';
 import type { BarberBooking } from '@/features/barbers/types/barber';
+import { chatRepository } from '@/features/chat/repository/chat.repository';
 import { formatCurrency } from '@/utils/formatters';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 
 export default function BarberBookingDetailScreen() {
   const { bookingId } = useLocalSearchParams<{ bookingId: string }>();
@@ -22,6 +23,7 @@ export default function BarberBookingDetailScreen() {
   const [mutating, setMutating] = useState<boolean>(false);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [chatInitializing, setChatInitializing] = useState<boolean>(false);
 
   const fetchDetail = useCallback(async () => {
     if (!barberId || !bookingId) return;
@@ -145,6 +147,23 @@ export default function BarberBookingDetailScreen() {
     // Batch 08: Use canonical 'paid' status for payment verification
     booking?.paymentStatus === 'paid';
 
+  const handleOpenChat = async () => {
+    if (!isPaid || !bookingId) {
+      Alert.alert('Chat tidak tersedia', 'Chat dapat dibuka setelah pelanggan menyelesaikan pembayaran.');
+      return;
+    }
+
+    setChatInitializing(true);
+    try {
+      const conversationId = await chatRepository.ensureConversation(bookingId);
+      router.push(`/(barber)/messages/${conversationId}` as any);
+    } catch (err: any) {
+      Alert.alert('Chat tidak tersedia', err?.message || 'Gagal membuka percakapan. Silakan coba lagi.');
+    } finally {
+      setChatInitializing(false);
+    }
+  };
+
   return (
     <View className="flex-1 bg-slate-50">
       <Header title="Detail Pesanan Pelanggan" />
@@ -229,19 +248,17 @@ export default function BarberBookingDetailScreen() {
 
             {/* Chat Button */}
             <Pressable
-              onPress={() => {
-                if (isPaid) {
-                  router.push(`/(barber)/messages/${bookingId}` as any);
-                } else {
-                  Alert.alert('Chat tidak tersedia', 'Chat dapat dibuka setelah pelanggan menyelesaikan pembayaran.');
-                }
-              }}
-              disabled={!isPaid}
+              onPress={handleOpenChat}
+              disabled={!isPaid || chatInitializing}
               className={`mx-0 px-4 py-3 rounded-lg flex-row items-center justify-center gap-2 ${
                 isPaid ? 'bg-[#D2691E]' : 'bg-slate-300'
               }`}
             >
-              <Text className="text-xl">💬</Text>
+              {chatInitializing ? (
+                <ActivityIndicator size="small" color={isPaid ? '#fff' : '#64748b'} />
+              ) : (
+                <Text className="text-xl">💬</Text>
+              )}
               <Text className={`font-semibold ${isPaid ? 'text-white' : 'text-slate-500'}`}>
                 Chat dengan Pelanggan
               </Text>

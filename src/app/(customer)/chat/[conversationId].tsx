@@ -1,4 +1,5 @@
 import { Avatar } from '@/components/ui/Avatar';
+import { useChatBootstrap } from '@/features/chat/hooks/use-chat-bootstrap';
 import { useChatMessages } from '@/features/chat/hooks/use-chat-messages';
 import { chatRepository } from '@/features/chat/repository/chat.repository';
 import { firebaseAuth } from '@/lib/firebase';
@@ -21,8 +22,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 export default function ChatRoomScreen() {
   const { conversationId } = useLocalSearchParams<{ conversationId: string }>();
   const bookingId = conversationId || '';
-  const { messages, loading, error, send, loadOlder, hasOlder } = useChatMessages(bookingId);
-  
+  const { ready: chatReady, error: bootstrapError } = useChatBootstrap(bookingId);
+  const { messages, loading, error, send, loadOlder, hasOlder } = useChatMessages(bookingId, chatReady);
+
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [barberName, setBarberName] = useState('Barber');
@@ -43,7 +45,9 @@ export default function ChatRoomScreen() {
     loadBarber();
   }, [bookingId]);
 
-  // Reset unread on mount
+  // Reset unread once the conversation is confirmed to exist -- resetting
+  // against a conversation that was never created is the same permission
+  // error the chat room used to hit before chat bootstrap was wired up.
   useEffect(() => {
     const resetUnread = async () => {
       try {
@@ -52,10 +56,10 @@ export default function ChatRoomScreen() {
         console.error('Error resetting unread:', err);
       }
     };
-    if (bookingId) {
+    if (bookingId && chatReady) {
       resetUnread();
     }
-  }, [bookingId]);
+  }, [bookingId, chatReady]);
 
   const sendMessage = async () => {
     const content = draft.trim();
@@ -105,13 +109,17 @@ export default function ChatRoomScreen() {
           </View>
         </View>
 
-        {error && (
+        {(bootstrapError || error) && (
           <View className="border-b border-red-200 bg-red-50 px-4 py-2">
-            <Text className="text-xs text-red-700">{error}</Text>
+            <Text className="text-xs text-red-700">{bootstrapError || error}</Text>
           </View>
         )}
 
-        {loading ? (
+        {bootstrapError ? (
+          <View className="flex-1 items-center justify-center px-6">
+            <Text className="text-center text-slate-500">Chat tidak tersedia untuk pemesanan ini.</Text>
+          </View>
+        ) : !chatReady || loading ? (
           <View className="flex-1 items-center justify-center">
             <ActivityIndicator size="large" />
           </View>

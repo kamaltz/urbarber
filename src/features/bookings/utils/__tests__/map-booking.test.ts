@@ -1,0 +1,139 @@
+/**
+ * Unit Tests for mapRawBookingToDomain (Batch 10B-5G)
+ *
+ * Live production inspection found bookings/{bookingId} persisted under
+ * multiple incompatible shapes: the current backend/vercel/api/payments.ts
+ * path writes flat date/startTime/price/serviceId fields with no
+ * shop/barber/services objects, while older/seeded documents carry
+ * bookingDate/bookingTime/totalAmount/totalPrice and a denormalized
+ * `services` array. The Booking domain type (and BookingCard, which
+ * dereferences booking.shop.imageUrl unconditionally) requires shop/barber
+ * objects and scheduledAt/scheduledTime/totalPrice -- spreading the raw
+ * document previously left these undefined and crashed BookingCard as soon
+ * as a real customerId (rather than the historical MOCK_CUSTOMER_ID) started
+ * returning real rows.
+ */
+import { describe, expect, it } from 'vitest';
+import { mapRawBookingToDomain } from '../map-booking';
+
+const BARBER_DOC = {
+  shopName: 'Kamal',
+  address: 'karpaw',
+  ratingAverage: 4.5,
+};
+
+const SERVICE_DOC = {
+  name: 'Cukur',
+  price: 30000,
+  durationMinutes: 30,
+  description: '',
+};
+
+describe('mapRawBookingToDomain', () => {
+  it('1. current-shape document (date/startTime/price/serviceId) maps to scheduledAt/scheduledTime/totalPrice', () => {
+    const result = mapRawBookingToDomain(
+      'Gy2zX7BnpgtmAN7K0UjK',
+      { customerId: 'cust-1', barberId: 'barber-1', serviceId: 'svc-1', date: '2026-08-26', startTime: '20:00', price: 30000, status: 'in_progress', paymentStatus: 'paid' },
+      BARBER_DOC,
+      SERVICE_DOC
+    );
+
+    expect(result.scheduledAt).toBe('2026-08-26');
+    expect(result.scheduledTime).toBe('20:00');
+    expect(result.totalPrice).toBe(30000);
+    expect(result.subtotal).toBe(30000);
+    expect(result.status).toBe('in_progress');
+    expect(result.paymentStatus).toBe('paid');
+  });
+
+  it('2. legacy-shape document (bookingDate/bookingTime/totalAmount/services array) still maps correctly', () => {
+    const result = mapRawBookingToDomain(
+      'book_accepted',
+      {
+        customerId: 'cust-1',
+        barberId: 'barber-1',
+        bookingDate: '2026-08-10',
+        bookingTime: '13:00',
+        totalAmount: 40000,
+        totalPrice: 40000,
+        status: 'accepted',
+        paymentStatus: 'paid',
+        services: [{ name: 'Beard Trim & Style', price: 40000 }],
+      },
+      undefined,
+      undefined
+    );
+
+    expect(result.scheduledAt).toBe('2026-08-10');
+    expect(result.scheduledTime).toBe('13:00');
+    expect(result.totalPrice).toBe(40000);
+    expect(result.services[0].name).toBe('Beard Trim & Style');
+  });
+
+  it('3. shop/barber are never undefined, even with no resolvable barber doc -- BookingCard dereferences booking.shop.imageUrl unconditionally', () => {
+    const result = mapRawBookingToDomain('b1', { customerId: 'c1', barberId: 'barber-x', status: 'pending' }, undefined, undefined);
+
+    expect(result.shop).toBeDefined();
+    expect(result.barber).toBeDefined();
+    expect(typeof result.shop.imageUrl).toBe('string');
+  });
+
+  it('4. resolved barber doc supplies real shop identity (shopName/address/rating), not a fabricated name', () => {
+    const result = mapRawBookingToDomain('b1', { customerId: 'c1', barberId: 'barber-1', status: 'pending' }, BARBER_DOC, undefined);
+
+    expect(result.shop.name).toBe('Kamal');
+    expect(result.barber.name).toBe('Kamal');
+    expect(result.shop.location).toBe('karpaw');
+    expect(result.shop.rating).toBe('4.5');
+  });
+
+  it('5. no resolvable barber doc falls back to the established generic label, not blank/undefined', () => {
+    const result = mapRawBookingToDomain('b1', { customerId: 'c1', barberId: 'unknown-barber', status: 'pending' }, undefined, undefined);
+
+    expect(result.shop.name).toBe('Barber URBarber');
+    expect(result.barber.name).toBe('Barber URBarber');
+  });
+
+  it('6. resolved barberServices doc supplies the real service name/price over an unresolved serviceId', () => {
+    const result = mapRawBookingToDomain(
+      'b1',
+      { customerId: 'c1', barberId: 'barber-1', serviceId: 'svc-real', price: 30000, status: 'pending' },
+      undefined,
+      SERVICE_DOC
+    );
+
+    expect(result.services).toEqual([
+      { id: 'svc-real', name: 'Cukur', description: '', price: 30000, durationMinutes: 30 },
+    ]);
+  });
+
+  it('7. an unresolvable serviceId (e.g. legacy seed id "1") falls back to a generic service entry without inventing a price', () => {
+    const result = mapRawBookingToDomain(
+      'b1',
+      { customerId: 'c1', barberId: 'barber-1', serviceId: '1', totalPrice: 50000, status: 'pending' },
+      undefined,
+      undefined
+    );
+
+    expect(result.services).toEqual([{ id: '1', name: 'Layanan Barber', price: 50000 }]);
+  });
+
+  it('8. a Firestore Timestamp createdAt/updatedAt is normalized to an ISO string', () => {
+    const toDate = () => new Date('2026-08-11T21:18:12.353Z');
+    const result = mapRawBookingToDomain(
+      'b1',
+      { customerId: 'c1', barberId: 'barber-1', status: 'pending', createdAt: { toDate }, updatedAt: { toDate } },
+      undefined,
+      undefined
+    );
+
+    expect(result.createdAt).toBe('2026-08-11T21:18:12.353Z');
+    expect(result.updatedAt).toBe('2026-08-11T21:18:12.353Z');
+  });
+
+  it('9. legacy status values pass through mapLegacyBookingStatus, not raw', () => {
+    const result = mapRawBookingToDomain('b1', { customerId: 'c1', barberId: 'barber-1', status: 'booked' }, undefined, undefined);
+
+    expect(result.status).toBe('pending');
+  });
+});

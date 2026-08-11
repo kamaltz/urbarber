@@ -19,13 +19,14 @@ import { routes } from '@/constants/routes';
 import { Loading } from '@/components/ui/Loading';
 import { BookingCard } from '@/features/bookings/components/BookingCard';
 import { useBookingList } from '@/features/bookings/hooks/use-booking-list';
-
-const MOCK_CUSTOMER_ID = 'CUST001'; // Mock customer ID
+import { useAuth } from '@/features/auth/hooks/use-auth';
 
 export default function BookingHistoryScreen() {
   const [activeTab, setActiveTab] = useState<'active' | 'history'>('active');
+  const { user, isAuthenticated, loading: authLoading } = useAuth();
+  const customerId = user?.uid || '';
 
-  const { bookings, loading, error } = useBookingList(MOCK_CUSTOMER_ID, activeTab);
+  const { bookings, loading, error } = useBookingList(customerId, activeTab);
 
   const handleBookingPress = (bookingId: string) => {
     if (activeTab === 'active') {
@@ -34,6 +35,31 @@ export default function BookingHistoryScreen() {
       router.push(`/(customer)/booking/history/${bookingId}`);
     }
   };
+
+  if (authLoading) {
+    return (
+      <SafeAreaView className="flex-1 bg-white">
+        <Loading />
+      </SafeAreaView>
+    );
+  }
+
+  if (!isAuthenticated || !customerId) {
+    return (
+      <SafeAreaView className="flex-1 bg-white">
+        <View className="flex-1 items-center justify-center px-6">
+          <Text className="text-center text-lg font-semibold text-slate-900">
+            Silakan masuk untuk melihat pemesanan Anda
+          </Text>
+          <AppButton
+            label="Ke Halaman Login"
+            onPress={() => router.replace(routes.auth.login)}
+            className="mt-6 h-12 rounded-lg px-8"
+          />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView className="flex-1 bg-white">

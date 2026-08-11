@@ -141,9 +141,12 @@ export const customerRepository = {
    */
   async getCustomerHomeData(customerId: string): Promise<CustomerHomeData | null> {
     try {
-      const [barbers, categories] = await Promise.all([
+      const { bookingRepository } = await import('@/features/bookings/repository/booking.repository');
+
+      const [barbers, categories, activeBookings] = await Promise.all([
         this.getPublicBarbers(),
         this.getCategories(),
+        bookingRepository.getActiveBookings(customerId),
       ]);
 
       const authUser = firebaseAuth.currentUser;
@@ -165,6 +168,15 @@ export const customerRepository = {
         subtitle: `Layanan ${c.label}`,
       }));
 
+      // Same real active-booking source as the booking history list (Batch
+      // 10B-5G) -- a customer may have more than one active booking, so the
+      // most actionable one (already in progress, then already accepted,
+      // then still pending) surfaces on the Home banner.
+      const activeStatusPriority: Record<string, number> = { in_progress: 0, accepted: 1, pending: 2 };
+      const primaryActive = [...activeBookings].sort(
+        (a, b) => (activeStatusPriority[a.status] ?? 9) - (activeStatusPriority[b.status] ?? 9)
+      )[0];
+
       return {
         userId: customerId,
         userName,
@@ -172,6 +184,16 @@ export const customerRepository = {
         featuredServices,
         barberSuggestions,
         notificationCount: 0,
+        activeBooking: primaryActive
+          ? {
+              id: primaryActive.id,
+              serviceName: primaryActive.services?.[0]?.name,
+              barberName: primaryActive.barber?.name,
+              bookingDate: primaryActive.scheduledAt,
+              bookingTime: primaryActive.scheduledTime,
+              status: primaryActive.status,
+            }
+          : null,
       };
     } catch (error: any) {
       if (__DEV__ && !isOfflineError(error)) {
