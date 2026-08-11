@@ -4,7 +4,8 @@ import { UserRole, UserStatus } from '@/types/domain';
 import { onAuthStateChanged, signOut, User } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import React, { createContext, useCallback, useEffect, useState } from 'react';
-import { AuthContextType, AuthUser } from '../types/auth';
+import { resolveBootstrapFlags, selfHealClaimsIfNeeded } from '../services/claims-self-heal.service';
+import { AuthBootstrapErrorCode, AuthContextType, AuthUser } from '../types/auth';
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -19,6 +20,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let photoURL: string | undefined = currentUser.photoURL || undefined;
     let profileImagePath: string | undefined = undefined;
     let isUninitialized = false;
+    let bootstrapError: AuthBootstrapErrorCode | undefined;
 
     try {
       // 1. Read token custom claims
@@ -46,6 +48,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (data.profileImagePath) {
           profileImagePath = data.profileImagePath;
         }
+
+        // Self-heal Firebase custom claims for accounts whose Firestore profile
+        // already exists but whose ID token still lacks role/app_role -- e.g.
+        // accounts provisioned before claim assignment shipped.
+        const healResult = await selfHealClaimsIfNeeded(currentUser, tokenResult.claims, data.role);
+        const flags = resolveBootstrapFlags(true, healResult);
+        isUninitialized = flags.isUninitialized;
+        bootstrapError = flags.bootstrapError;
       } else {
         // Document does not exist: mark as uninitialized for recovery flow (no silent fallback!)
         isUninitialized = true;
@@ -67,6 +77,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       status,
       emailVerified: currentUser.emailVerified,
       isUninitialized,
+      bootstrapError,
     };
   }, []);
 

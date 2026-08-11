@@ -56,7 +56,7 @@ export default function BarberLayout() {
     else if (role === 'customer') dest = '/(customer)/home';
     else if (role === 'admin') dest = '/(auth)/admin-web-only';
     else if (user?.status === 'suspended') return; // handled in render
-    else if (!barberProfile || verificationStatus === 'draft') dest = '/(barber-onboarding)/profile';
+    else if (!barberProfile || !verificationStatus || verificationStatus === 'draft') dest = '/(barber-onboarding)/profile';
     else if (verificationStatus === 'pending' || verificationStatus === 'rejected') dest = '/(barber-onboarding)/status';
 
     if (!dest) return; // approved barber — no redirect needed

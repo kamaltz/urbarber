@@ -38,6 +38,15 @@ export interface ForgotPasswordFormData {
   email: string;
 }
 
+/**
+ * ACCOUNT_CLAIMS_REPAIR_FAILED: an existing users/{uid} profile whose Firebase
+ * custom claims were missing/stale and self-heal could not repair them. Distinct
+ * from isUninitialized (Firestore profile missing) -- must never route through
+ * the missing-profile recovery screen, since the Firestore role already is
+ * authoritative and correct here.
+ */
+export type AuthBootstrapErrorCode = 'ACCOUNT_CLAIMS_REPAIR_FAILED';
+
 export interface AuthUser {
   uid: string;
   email: string | null;
@@ -49,6 +58,7 @@ export interface AuthUser {
   status: UserStatus;
   emailVerified: boolean;
   isUninitialized?: boolean;
+  bootstrapError?: AuthBootstrapErrorCode;
 }
 
 export interface AuthContextType {
