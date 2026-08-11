@@ -39,7 +39,7 @@ export default function BookingInvoiceScreen() {
   }, []);
 
   const [bookingId, setBookingId] = useState<string | null>(params.bookingId || null);
-  const [redirectUrl, setRedirectUrl] = useState<string | null>(null);
+  const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(!params.bookingId);
   const [error, setError] = useState<string | null>(null);
   const [paymentRecord, setPaymentRecord] = useState<PaymentRecord | null>(null);
@@ -47,15 +47,15 @@ export default function BookingInvoiceScreen() {
 
   // Initialize booking & Midtrans Snap payment via Vercel Backend
   const handleInitiatePayment = useCallback(async () => {
-    if (bookingId && redirectUrl) return;
+    if (bookingId && paymentUrl) return;
 
     setLoading(true);
     setError(null);
 
     const res = await paymentRepository.createBookingPayment({
       requestId: getRequestId(),
-      barberId: params.barberId || 'barber-default',
-      serviceId: params.serviceId || 'srv-haircut-standard',
+      barberId: params.barberId || '',
+      serviceId: params.serviceId || '',
       date: params.date || params.selectedDate || new Date().toISOString().split('T')[0],
       startTime: params.startTime || params.selectedTime || '10:00',
       address: params.address || 'Alamat Pelanggan',
@@ -64,21 +64,21 @@ export default function BookingInvoiceScreen() {
 
     if (res.success && res.data) {
       setBookingId(res.data.bookingId);
-      setRedirectUrl(res.data.redirectUrl);
+      setPaymentUrl(res.data.paymentUrl);
     } else {
       setError(res.error?.message || 'Gagal menyiapkan tagihan pembayaran.');
     }
     setLoading(false);
-  }, [bookingId, redirectUrl, params, getRequestId]);
+  }, [bookingId, paymentUrl, params, getRequestId]);
 
   useEffect(() => {
     let isMounted = true;
-    if (!params.bookingId && !bookingId && !redirectUrl) {
+    if (!params.bookingId && !bookingId && !paymentUrl) {
       paymentRepository
         .createBookingPayment({
           requestId: getRequestId(),
-          barberId: params.barberId || 'barber-default',
-          serviceId: params.serviceId || 'srv-haircut-standard',
+          barberId: params.barberId || '',
+          serviceId: params.serviceId || '',
           date: params.date || params.selectedDate || new Date().toISOString().split('T')[0],
           startTime: params.startTime || params.selectedTime || '10:00',
           address: params.address || 'Alamat Pelanggan',
@@ -88,7 +88,7 @@ export default function BookingInvoiceScreen() {
           if (!isMounted) return;
           if (res.success && res.data) {
             setBookingId(res.data.bookingId);
-            setRedirectUrl(res.data.redirectUrl);
+            setPaymentUrl(res.data.paymentUrl);
           } else {
             setError(res.error?.message || 'Gagal menyiapkan tagihan pembayaran.');
           }
@@ -101,7 +101,7 @@ export default function BookingInvoiceScreen() {
   }, [
     params.bookingId,
     bookingId,
-    redirectUrl,
+    paymentUrl,
     params.barberId,
     params.serviceId,
     params.date,
@@ -132,19 +132,19 @@ export default function BookingInvoiceScreen() {
 
   // Open Snap Redirect browser
   const handleOpenSnapBrowser = async () => {
-    if (!redirectUrl && bookingId) {
+    if (!paymentUrl && bookingId) {
       void handleInitiatePayment();
       return;
     }
 
-    if (!redirectUrl) {
+    if (!paymentUrl) {
       setError('URL pembayaran tidak tersedia. Silakan coba lagi.');
       return;
     }
 
     try {
       setSyncing(true);
-      await WebBrowser.openBrowserAsync(redirectUrl);
+      await WebBrowser.openBrowserAsync(paymentUrl);
     } catch (err: any) {
       if (__DEV__) console.warn('[WebBrowser Open Error]', err);
     } finally {
@@ -304,7 +304,7 @@ export default function BookingInvoiceScreen() {
                 label={syncing ? 'Menyinkronkan Status...' : 'Bayar Sekarang (Midtrans Snap)'}
                 onPress={handleOpenSnapBrowser}
                 variant="primary"
-                disabled={syncing || !redirectUrl}
+                disabled={syncing || !paymentUrl}
               />
 
               {syncing ? (

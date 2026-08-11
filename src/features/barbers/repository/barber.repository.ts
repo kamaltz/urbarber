@@ -93,7 +93,18 @@ export const barberRepository = {
   },
 
   /**
-   * Get barber services
+   * Get barber services.
+   *
+   * Batch 10B-5E-R2: normalizes Firestore's persistence shape (`{active,
+   * <no id field on the data itself>}`, document id carried separately by the
+   * SDK) into the canonical BarberService domain shape (`serviceId`,
+   * `isActive`) at this repository boundary. Every consumer -- the barber's
+   * own service-management screen (svc.serviceId/svc.isActive) and the
+   * customer booking flow -- expects the domain shape; returning the raw
+   * persistence shape left both `serviceId` and `isActive` undefined on every
+   * real document. Firestore document writes (addBarberService,
+   * toggleBarberService, updateBarberService) are unchanged -- only this read
+   * mapping changes.
    */
   async getBarberServices(barberId: string): Promise<BarberService[]> {
     try {
@@ -105,10 +116,22 @@ export const barberRepository = {
       );
 
       const snapshot = await getDocs(q);
-      return snapshot.docs.map((docSnap) => ({
-        ...docSnap.data(),
-        id: docSnap.id,
-      })) as unknown as BarberService[];
+      return snapshot.docs.map((docSnap) => {
+        const data = docSnap.data();
+        const createdAt =
+          data.createdAt instanceof Timestamp ? data.createdAt.toDate().toISOString() : data.createdAt || '';
+
+        return {
+          serviceId: docSnap.id,
+          name: data.name,
+          description: data.description || '',
+          price: data.price,
+          durationMinutes: data.durationMinutes,
+          imageUrl: data.imageUrl,
+          isActive: data.active !== false,
+          createdAt,
+        } as BarberService;
+      });
     } catch (error: any) {
       if (__DEV__) {
         console.warn('[BarberRepository getBarberServices Error]', error?.code, error?.message || error);

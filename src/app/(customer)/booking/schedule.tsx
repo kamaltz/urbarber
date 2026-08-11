@@ -52,7 +52,7 @@ export default function BookingScheduleScreen() {
       params: {
         barberId,
         barberName,
-        serviceId: serviceId || 'srv-haircut-standard',
+        serviceId: serviceId || '',
         serviceName,
         servicePrice: price.toString(),
         bookingType,

@@ -18,12 +18,18 @@ export interface CreateBookingPaymentPayload {
   notes?: string;
 }
 
+/**
+ * Batch 10B-5F: mirrors the actual POST /api/payments/create response --
+ * it returns `paymentUrl`, never `redirectUrl`/`snapToken`/`paymentStatus`.
+ * The idempotent existing-request path can return `paymentUrl: null`.
+ */
 export interface CreateBookingPaymentResult {
+  success?: boolean;
   bookingId: string;
   orderId: string;
-  redirectUrl: string;
-  snapToken: string;
-  paymentStatus: PaymentStatus;
+  amount?: number;
+  paymentUrl: string | null;
+  message?: string;
 }
 
 export interface SyncPaymentStatusResult {
