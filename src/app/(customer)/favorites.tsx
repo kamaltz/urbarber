@@ -1,6 +1,5 @@
 import { CustomerScreen } from '@/components/navigation/CustomerScreen';
 import { AppButton } from '@/components/ui/AppButton';
-import { AppCard } from '@/components/ui/AppCard';
 import { Avatar } from '@/components/ui/Avatar';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Loading } from '@/components/ui/Loading';
@@ -30,17 +29,17 @@ export default function FavoritesScreen() {
           <Loading />
         </View>
       ) : error ? (
-        <View className="p-4 rounded-xl bg-red-50 border border-red-200 my-4">
-          <Text className="text-sm font-semibold text-red-800 text-center mb-1">
+        <View className="p-5 rounded-2xl bg-rose-50 border border-rose-200 my-4">
+          <Text className="text-sm font-bold text-rose-800 text-center mb-1">
             Gagal Memuat Barber Favorit
           </Text>
-          <Text className="text-xs text-red-600 text-center mb-3">{error}</Text>
+          <Text className="text-xs text-rose-600 text-center mb-4">{error}</Text>
           <AppButton label="Coba Lagi" onPress={refresh} variant="secondary" />
         </View>
       ) : favoriteBarbers.length > 0 ? (
-        <View className="gap-3">
+        <View className="gap-3.5">
           {favoriteBarbers.map((barber) => (
-            <AppCard
+            <Pressable
               key={barber.barberId}
               onPress={() =>
                 router.push({
@@ -48,24 +47,30 @@ export default function FavoritesScreen() {
                   params: { barberId: barber.barberId },
                 })
               }
-              className="p-4"
+              className="rounded-2xl bg-white p-4 border border-slate-200/80 shadow-xs active:bg-slate-50"
             >
               <View className="flex-row items-center justify-between">
-                <View className="flex-row items-center gap-3 flex-1 pr-2">
-                  <Avatar
-                    size="md"
-                    name={barber.name}
-                    source={barber.imageUrl ? { uri: barber.imageUrl } : undefined}
-                  />
+                <View className="flex-row items-center gap-3.5 flex-1 pr-2">
+                  <View className="rounded-full p-0.5 border border-[#363062]/20">
+                    <Avatar
+                      size="md"
+                      name={barber.name}
+                      source={barber.imageUrl ? { uri: barber.imageUrl } : undefined}
+                    />
+                  </View>
+
                   <View className="flex-1">
-                    <Text className="font-bold text-slate-900 text-base">{barber.name}</Text>
-                    <Text className="text-xs text-slate-600 mt-1" numberOfLines={1}>
-                      📍 {barber.location || 'Garut'}
-                    </Text>
+                    <Text className="font-bold text-[#363062] text-base">{barber.name}</Text>
+                    <View className="flex-row items-center gap-1.5 mt-1">
+                      <Text className="text-xs text-slate-500 font-medium" numberOfLines={1}>
+                        📍 {barber.location || 'Garut'}
+                      </Text>
+                    </View>
+
                     {barber.rating !== undefined && (
-                      <View className="mt-1 flex-row items-center gap-1">
+                      <View className="mt-1.5 flex-row items-center gap-1.5">
                         <Rating value={barber.rating} size="sm" />
-                        <Text className="text-xs font-semibold text-slate-700">
+                        <Text className="text-xs font-bold text-[#363062]">
                           {barber.rating.toFixed(1)}
                         </Text>
                       </View>
@@ -79,22 +84,30 @@ export default function FavoritesScreen() {
                     e.stopPropagation();
                     void toggleFavorite(barber.barberId);
                   }}
-                  className="rounded-full bg-rose-50 p-2 border border-rose-200"
+                  className="rounded-full bg-rose-50 p-2.5 border border-rose-200 active:bg-rose-100"
                   accessibilityLabel="Hapus dari favorit"
                 >
                   <Text className="text-base">❤️</Text>
                 </Pressable>
               </View>
-            </AppCard>
+            </Pressable>
           ))}
         </View>
       ) : (
-        <EmptyState
-          title="Belum Ada Barber Favorit"
-          description="Beri tanda hati pada barber pilihan Anda di halaman Cari Barber atau Detail Barber."
-          actionLabel="Jelajahi Barber"
-          onActionPress={() => router.push(routes.customer.explore)}
-        />
+        <View className="py-6">
+          <EmptyState
+            title="Belum Ada Barber Favorit"
+            description="Tandai barber pilihan Anda saat menjelajah untuk mengakses layanan langganan secara instan di sini."
+            icon={
+              <View className="h-16 w-16 items-center justify-center rounded-2xl bg-[#EDEFFB] border border-[#363062]/10">
+                <Text className="text-3xl">🤍</Text>
+              </View>
+            }
+            actionLabel="Jelajahi Barber Terdekat"
+            onActionPress={() => router.push(routes.customer.explore)}
+            className="border-slate-200 bg-white shadow-xs"
+          />
+        </View>
       )}
     </CustomerScreen>
   );

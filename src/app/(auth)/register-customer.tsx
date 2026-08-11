@@ -14,7 +14,6 @@ import {
   Pressable,
   ScrollView,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -138,21 +137,73 @@ export default function RegisterCustomerScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 16 : 0}>
         <ScrollView className="flex-1" contentContainerStyle={{ flexGrow: 1 }}>
-          <View className="flex-1 px-[18px] pt-10 pb-6">
-            <View>
+          <View className="flex-1 px-6 pt-6 pb-8">
+            <View className="flex-1">
+              {/* Brand Header Icon Badge */}
+              <View className="mb-4 flex-row items-center gap-3">
+                <View className="h-10 w-10 items-center justify-center rounded-xl bg-[#363062] shadow-xs">
+                  <Text className="text-lg text-[#D2691E]">✂</Text>
+                </View>
+                <View className="rounded-full bg-[#EDEFFB] px-3 py-1">
+                  <Text className="text-xs font-bold tracking-wider text-[#363062]">
+                    REGISTRASI AKUN
+                  </Text>
+                </View>
+              </View>
+
               <AuthHeaderBlock
-                title={selectedRole === 'barber' ? 'Daftar Mitra Barber' : 'Daftar Akun Pelanggan'}
+                title={selectedRole === 'barber' ? 'Daftar Mitra Barber' : 'Daftar Pelanggan'}
                 description={
                   selectedRole === 'barber'
-                    ? 'Lengkapi data Anda untuk mendaftar sebagai Mitra Barber URBarber'
-                    : 'Lengkapi data Anda untuk memesan layanan cukur rambut'
+                    ? 'Lengkapi data Anda untuk mendaftar sebagai Mitra Barber profesional.'
+                    : 'Lengkapi data Anda untuk menikmati layanan pesan cukur rambut.'
                 }
               />
 
+              {/* Role Switcher Pill Tabs */}
+              <View className="mt-6 flex-row rounded-2xl bg-slate-100 p-1.5 border border-slate-200">
+                <Pressable
+                  onPress={() => setSelectedRole('customer')}
+                  disabled={isLoading}
+                  className={`flex-1 py-2.5 rounded-xl items-center justify-center transition-all ${
+                    selectedRole === 'customer'
+                      ? 'bg-[#363062] shadow-xs'
+                      : 'bg-transparent'
+                  }`}
+                >
+                  <Text
+                    className={`text-xs font-bold ${
+                      selectedRole === 'customer' ? 'text-white' : 'text-slate-600'
+                    }`}
+                  >
+                    Pelanggan
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => setSelectedRole('barber')}
+                  disabled={isLoading}
+                  className={`flex-1 py-2.5 rounded-xl items-center justify-center transition-all ${
+                    selectedRole === 'barber'
+                      ? 'bg-[#D2691E] shadow-xs'
+                      : 'bg-transparent'
+                  }`}
+                >
+                  <Text
+                    className={`text-xs font-bold ${
+                      selectedRole === 'barber' ? 'text-white' : 'text-slate-600'
+                    }`}
+                  >
+                    Mitra Barber
+                  </Text>
+                </Pressable>
+              </View>
+
+              {/* Registration Form Fields */}
               <View className="mt-6 gap-4">
                 <AppInput
                   label="Nama Lengkap"
-                  placeholder="Nama Anda"
+                  placeholder="Nama lengkap Anda"
                   value={fullName}
                   onChangeText={setFullName}
                   editable={!isLoading}
@@ -196,7 +247,8 @@ export default function RegisterCustomerScreen() {
                   editable={!isLoading}
                 />
 
-                <View className="mt-2">
+                {/* Terms Agreement Component */}
+                <View className="mt-1 rounded-xl bg-slate-50 p-3 border border-slate-200/80">
                   <TermsAgreement
                     checked={acceptedTerms}
                     onToggle={setAcceptedTerms}
@@ -206,7 +258,7 @@ export default function RegisterCustomerScreen() {
                 </View>
 
                 {successMessage ? (
-                  <View className="rounded-xl bg-emerald-50 p-3 border border-emerald-200">
+                  <View className="rounded-xl bg-emerald-50 p-3.5 border border-emerald-200">
                     <Text className="text-center text-xs font-semibold text-emerald-800">
                       {successMessage}
                     </Text>
@@ -214,44 +266,46 @@ export default function RegisterCustomerScreen() {
                 ) : null}
 
                 {error ? (
-                  <Text className="text-center text-sm text-rose-600 font-medium">{error}</Text>
+                  <View className="rounded-xl bg-rose-50 p-3.5 border border-rose-200">
+                    <Text className="text-center text-xs font-medium text-rose-700">{error}</Text>
+                  </View>
                 ) : null}
 
+                {/* Submit Action Button */}
                 <AppButton
                   label={
                     selectedRole === 'customer'
-                      ? 'Daftar Sebagai Pelanggan'
-                      : 'Daftar Sebagai Mitra Barber'
+                      ? 'Daftar Akun Pelanggan'
+                      : 'Daftar Mitra Barber'
                   }
                   loading={isLoading}
                   disabled={!isFormValid}
                   onPress={handleRegister}
-                  className={`h-[54px] rounded-lg ${
-                    selectedRole === 'barber' ? 'bg-[#D2691E]' : 'bg-slate-900'
+                  className={`h-[54px] rounded-xl active:opacity-90 ${
+                    selectedRole === 'barber' ? 'bg-[#D2691E]' : 'bg-[#363062]'
                   }`}
                 />
 
                 {/* Divider */}
-                <View className="flex-row items-center gap-3">
-                  <View className="flex-1 h-px bg-slate-300" />
-                  <Text className="text-sm text-slate-600">atau</Text>
-                  <View className="flex-1 h-px bg-slate-300" />
+                <View className="flex-row items-center gap-3 my-1">
+                  <View className="flex-1 h-px bg-slate-200" />
+                  <Text className="text-xs text-slate-400 font-medium">atau daftar dengan</Text>
+                  <View className="flex-1 h-px bg-slate-200" />
                 </View>
 
-                {/* Social SignUp */}
-                <View className="gap-3">
-                  <SocialLoginButton
-                    provider="google"
-                    onPress={handleGoogleSignUp}
-                    disabled={isLoading}
-                  />
-                </View>
+                {/* Social Sign Up */}
+                <SocialLoginButton
+                  provider="google"
+                  onPress={handleGoogleSignUp}
+                  disabled={isLoading}
+                />
               </View>
 
-              <View className="mt-6 items-center">
-                <Text className="text-sm text-slate-600">Sudah punya akun?</Text>
-                <Pressable onPress={handleLoginLink} disabled={isLoading}>
-                  <Text className="mt-1 text-sm font-semibold text-[#D2691E] underline">
+              {/* Login Link */}
+              <View className="mt-8 items-center pb-2">
+                <Text className="text-xs text-slate-500 font-medium">Sudah memiliki akun URBarber?</Text>
+                <Pressable onPress={handleLoginLink} disabled={isLoading} className="py-1">
+                  <Text className="text-sm font-bold text-[#D2691E] underline">
                     Masuk di sini
                   </Text>
                 </Pressable>
