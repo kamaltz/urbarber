@@ -963,7 +963,9 @@ export async function getBookingsList(
     const docs = snapshot.docs.slice(0, pageSize);
     const hasMore = snapshot.docs.length > pageSize;
 
-    const rawBookings = docs.map((doc: DocumentSnapshot) => ({ ...doc.data(), __bookingId: doc.id }));
+    const rawBookings: (Record<string, any> & { __bookingId: string })[] = docs.map(
+      (doc: DocumentSnapshot) => ({ ...doc.data(), __bookingId: doc.id })
+    );
     const identities = await resolveBookingIdentities(rawBookings);
 
     const items = rawBookings.map((data) =>
