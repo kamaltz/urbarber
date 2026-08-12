@@ -19,13 +19,13 @@ import { AppButton } from '@/components/ui/AppButton';
 import { Loading } from '@/components/ui/Loading';
 import { BookingHeader } from '@/features/bookings/components/BookingHeader';
 import { ReviewForm } from '@/features/bookings/components/ReviewForm';
+import { useAuth } from '@/features/auth/hooks/use-auth';
 import { useBookingDetail } from '@/features/bookings/hooks/use-booking-detail';
 import { bookingRepository } from '@/features/bookings/repository/booking.repository';
 
-const MOCK_CUSTOMER_ID = 'CUST001'; // Mock customer ID
-
 export default function BookingRatingScreen() {
   const { bookingId } = useLocalSearchParams<{ bookingId: string }>();
+  const { user } = useAuth();
   const { booking, loading, error } = useBookingDetail(bookingId || '');
   const [submitting, setSubmitting] = useState(false);
 
@@ -59,12 +59,18 @@ export default function BookingRatingScreen() {
     reviewText: string;
     tags: string[];
   }) => {
+    if (!user?.uid || !booking.barberId) {
+      alert('Sesi atau data booking tidak valid. Silakan muat ulang halaman.');
+      return;
+    }
+
     setSubmitting(true);
 
     try {
       const result = await bookingRepository.submitReview(bookingId || '', {
         ...data,
-        customerId: MOCK_CUSTOMER_ID,
+        customerId: user.uid,
+        barberId: booking.barberId,
       });
 
       if (result.success) {

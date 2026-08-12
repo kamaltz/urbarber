@@ -4,13 +4,13 @@
  */
 
 import {
-  addDoc,
   collection,
   doc,
   getDoc,
   getDocs,
   query,
   runTransaction,
+  setDoc,
   Timestamp,
   updateDoc,
   where,
@@ -352,7 +352,12 @@ class BookingRepository {
   }
 
   /**
-   * Submit booking review
+   * Submit booking review. Uses a deterministic reviews/{bookingId} document
+   * id (rather than addDoc's random id) so a booking can only ever have one
+   * review doc: a second submission targets the same doc id, which
+   * firestore.rules' `allow update` only grants to the assigned barber (for
+   * replies) -- a customer's second attempt is denied, not silently
+   * overwritten.
    */
   async submitReview(bookingId: string, reviewData: any): Promise<{ success: boolean; error?: any }> {
     try {
@@ -360,6 +365,13 @@ class BookingRepository {
         return {
           success: false,
           error: { code: 'INVALID_RATING', message: 'Rating harus antara 1-5' },
+        };
+      }
+
+      if (!reviewData.customerId || !reviewData.barberId) {
+        return {
+          success: false,
+          error: { code: 'INVALID_ARGUMENT', message: 'Data customer atau barber tidak lengkap' },
         };
       }
 
@@ -374,7 +386,7 @@ class BookingRepository {
         updatedAt: Timestamp.now(),
       };
 
-      await addDoc(collection(firestore, 'reviews'), review);
+      await setDoc(doc(firestore, 'reviews', bookingId), review);
 
       return { success: true };
     } catch (error: any) {
