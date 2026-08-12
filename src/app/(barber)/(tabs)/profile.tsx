@@ -305,17 +305,27 @@ export default function BarberProfileScreen() {
         {/* Shop Location */}
         <AppCard className="mb-6 p-4 gap-3">
           <Text className="font-bold text-slate-900 text-base border-b border-slate-100 pb-2">
-            Lokasi Barbershop
+            Lokasi Barber
           </Text>
 
-          {profile?.location ? (
-            <Text className="text-xs text-slate-600">
-              📍 Lokasi tersimpan ({profile.location.latitude.toFixed(4)}, {profile.location.longitude.toFixed(4)})
-            </Text>
+          {profile?.location && typeof profile.location.latitude === 'number' && typeof profile.location.longitude === 'number' ? (
+            <View className="flex-row items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200 p-3">
+              <Text className="text-base">📍</Text>
+              <View className="flex-1">
+                <Text className="text-xs font-bold text-emerald-900">Lokasi Sudah Dikonfigurasi (Configured)</Text>
+                <Text className="text-[11px] text-emerald-700 font-medium">
+                  {profile.location.latitude.toFixed(4)}, {profile.location.longitude.toFixed(4)}
+                  {profile.geohash ? ` (geohash: ${profile.geohash})` : ''}
+                </Text>
+              </View>
+            </View>
           ) : (
-            <Text className="text-xs text-amber-700">
-              Lokasi belum diatur. Barbershop tidak akan muncul di pencarian terdekat Pelanggan sampai lokasi disimpan.
-            </Text>
+            <View className="rounded-xl bg-amber-50 border border-amber-200 p-3">
+              <Text className="text-xs font-bold text-amber-900">Lokasi Belum Dikonfigurasi (Not Configured)</Text>
+              <Text className="text-[11px] text-amber-800 mt-0.5">
+                Barbershop Anda belum dapat ditampilkan di peta pencarian terdekat Pelanggan sampai lokasi dikonfigurasi.
+              </Text>
+            </View>
           )}
 
           <Text className="text-xs text-slate-500">
