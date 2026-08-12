@@ -19,14 +19,14 @@ export type AppButtonProps = PressableProps & {
 
 const variantClass: Record<AppButtonVariant, string> = {
   primary: 'bg-[#D2691E] border-[#D2691E]',
-  secondary: 'bg-slate-100 border-slate-300',
-  destructive: 'bg-rose-600 border-rose-600',
+  secondary: 'bg-[#363062] border-[#363062]',
+  destructive: 'bg-[#F43F5E] border-[#F43F5E]',
   ghost: 'bg-transparent border-transparent',
 };
 
 const textVariantClass: Record<AppButtonVariant, string> = {
   primary: 'text-white',
-  secondary: 'text-slate-900',
+  secondary: 'text-white',
   destructive: 'text-white',
   ghost: 'text-[#D2691E]',
 };

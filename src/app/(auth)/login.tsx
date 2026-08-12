@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppButton } from '@/components/ui/AppButton';
 import { AppInput } from '@/components/ui/AppInput';
+import { BrandLogo } from '@/components/ui/BrandLogo';
 import { AuthHeaderBlock } from '@/features/auth/components/AuthHeaderBlock';
 import { SocialLoginButton } from '@/features/auth/components/SocialLoginButton';
 import { useAuth } from '@/features/auth/hooks/use-auth';
@@ -100,17 +101,7 @@ export default function LoginScreen() {
         <ScrollView className="flex-1" contentContainerStyle={{ flexGrow: 1 }}>
           <View className="flex-1 px-6 pt-8 pb-6">
             <View className="flex-1">
-              {/* Brand Header Icon Badge */}
-              <View className="mb-6 flex-row items-center gap-3">
-                <View className="h-12 w-12 items-center justify-center rounded-2xl bg-[#363062] shadow-sm">
-                  <Text className="text-xl text-[#D2691E]">✂</Text>
-                </View>
-                <View className="rounded-full bg-[#EDEFFB] px-3 py-1">
-                  <Text className="text-xs font-bold tracking-wider text-[#363062]">
-                    URBARBER
-                  </Text>
-                </View>
-              </View>
+              <BrandLogo className="mb-6" />
 
               <AuthHeaderBlock
                 title="Masuk"

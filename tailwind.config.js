@@ -8,11 +8,16 @@ module.exports = {
     extend: {
       colors: {
         brand: {
-          50: "#F5F7F2",
-          100: "#E8EDDF",
-          500: "#718355",
-          600: "#5F7047",
-          700: "#4C5C38",
+          primary: "#363062",
+          soft: "#8683A1",
+          surface: "#EDEFFB",
+          accent: "#D2691E",
+          accentBright: "#F99417",
+          text: "#111827",
+          secondary: "#64748B",
+          border: "#E5E7EB",
+          icon: "#94A3B8",
+          rating: "#FACC15",
         },
       },
     },

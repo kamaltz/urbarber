@@ -33,13 +33,13 @@ export function AppInput({
 
   return (
     <View className={['w-full gap-2', containerClassName ?? ''].join(' ')}>
-      {label ? <Text className={['text-sm font-medium text-slate-800', labelClassName ?? ''].join(' ')}>{label}</Text> : null}
+      {label ? <Text className={['text-sm font-semibold text-[#111827]', labelClassName ?? ''].join(' ')}>{label}</Text> : null}
 
       <View
         className={[
-          'min-h-12 w-full flex-row items-center rounded-xl border bg-white px-3',
-          hasError ? 'border-rose-500' : 'border-slate-300',
-          !editable ? 'bg-slate-100' : '',
+          'min-h-12 w-full flex-row items-center rounded-xl border bg-white px-3.5',
+          hasError ? 'border-[#F43F5E]' : 'border-slate-200',
+          !editable ? 'bg-slate-50' : '',
         ].join(' ')}>
         {leftAdornment}
         <TextInput
