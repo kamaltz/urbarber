@@ -75,6 +75,32 @@ function resolveServices(data: Record<string, any>, serviceDoc: Record<string, a
   ];
 }
 
+/**
+ * Batch 10B-5H-C: canonical service-location derivation. Mirrors the exact
+ * OR-check tracking already uses (isHomeService in
+ * src/app/(barber)/booking/[bookingId].tsx) so the mapper and tracking gate
+ * can never disagree about which bookings are Home Service. Payment-created
+ * bookings persist both bookingType and serviceLocationType (see
+ * backend/vercel/api/payments.ts); legacy/seeded documents may carry either,
+ * one, or neither -- documents with neither field predate location capture
+ * entirely and fall back to 'onsite', matching this mapper's prior behavior.
+ */
+function resolveServiceLocationType(data: Record<string, any>): 'barbershop' | 'customer_home' | undefined {
+  if (data.serviceLocationType === 'customer_home' || data.serviceLocationType === 'barbershop') {
+    return data.serviceLocationType;
+  }
+  if (data.bookingType === 'home') return 'customer_home';
+  if (data.bookingType === 'onsite') return 'barbershop';
+  return undefined;
+}
+
+function resolveBookingType(data: Record<string, any>): 'home' | 'onsite' {
+  if (data.bookingType === 'home' || data.bookingType === 'onsite') return data.bookingType;
+  if (data.serviceLocationType === 'customer_home') return 'home';
+  if (data.serviceLocationType === 'barbershop') return 'onsite';
+  return 'onsite';
+}
+
 function resolveBarberIdentity(barberDoc: Record<string, any> | undefined) {
   const name = barberDoc?.shopName || barberDoc?.businessName || barberDoc?.displayName || barberDoc?.name || 'Barber URBarber';
   const address = barberDoc?.shopAddress || barberDoc?.address || '';
@@ -114,9 +140,9 @@ export function mapRawBookingToDomain(
     services: resolveServices(data, serviceDoc),
     status: mapLegacyBookingStatus(data.status),
     paymentStatus: data.paymentStatus,
-    bookingType: 'onsite',
-    serviceLocationType: data.serviceLocationType,
-    serviceAddress: data.address,
+    bookingType: resolveBookingType(data),
+    serviceLocationType: resolveServiceLocationType(data),
+    serviceAddress: data.address || data.serviceAddress,
     scheduledAt: resolveDate(data),
     scheduledTime: resolveTime(data),
     totalPrice: price,

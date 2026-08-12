@@ -136,4 +136,71 @@ describe('mapRawBookingToDomain', () => {
 
     expect(result.status).toBe('pending');
   });
+
+  // Batch 10B-5H-C: service-location canonicalization. Mirrors the exact
+  // OR-check tracking uses (isHomeService) so both never disagree.
+  it('10. current payment-created Home Service document preserves bookingType and serviceLocationType', () => {
+    const result = mapRawBookingToDomain(
+      'b1',
+      { customerId: 'c1', barberId: 'barber-1', status: 'pending', bookingType: 'home', serviceLocationType: 'customer_home', address: 'Jl. Merdeka 1' },
+      undefined,
+      undefined
+    );
+
+    expect(result.bookingType).toBe('home');
+    expect(result.serviceLocationType).toBe('customer_home');
+    expect(result.serviceAddress).toBe('Jl. Merdeka 1');
+  });
+
+  it('11. current payment-created onsite document preserves bookingType and serviceLocationType', () => {
+    const result = mapRawBookingToDomain(
+      'b1',
+      { customerId: 'c1', barberId: 'barber-1', status: 'pending', bookingType: 'onsite', serviceLocationType: 'barbershop' },
+      undefined,
+      undefined
+    );
+
+    expect(result.bookingType).toBe('onsite');
+    expect(result.serviceLocationType).toBe('barbershop');
+  });
+
+  it('12. document with only serviceLocationType derives bookingType (never silently onsite for a home booking)', () => {
+    const result = mapRawBookingToDomain(
+      'b1',
+      { customerId: 'c1', barberId: 'barber-1', status: 'pending', serviceLocationType: 'customer_home' },
+      undefined,
+      undefined
+    );
+
+    expect(result.bookingType).toBe('home');
+  });
+
+  it('13. document with only bookingType derives serviceLocationType', () => {
+    const result = mapRawBookingToDomain(
+      'b1',
+      { customerId: 'c1', barberId: 'barber-1', status: 'pending', bookingType: 'home' },
+      undefined,
+      undefined
+    );
+
+    expect(result.serviceLocationType).toBe('customer_home');
+  });
+
+  it('14. document with neither field falls back to onsite/undefined (pre-location-capture legacy data, not a real home booking being converted)', () => {
+    const result = mapRawBookingToDomain('b1', { customerId: 'c1', barberId: 'barber-1', status: 'pending' }, undefined, undefined);
+
+    expect(result.bookingType).toBe('onsite');
+    expect(result.serviceLocationType).toBeUndefined();
+  });
+
+  it('15. Admin-shaped document (serviceAddress, no address) still resolves an address', () => {
+    const result = mapRawBookingToDomain(
+      'b1',
+      { customerId: 'c1', barberId: 'barber-1', status: 'pending', serviceAddress: 'Jl. Legacy 9' },
+      undefined,
+      undefined
+    );
+
+    expect(result.serviceAddress).toBe('Jl. Legacy 9');
+  });
 });

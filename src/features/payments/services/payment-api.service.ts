@@ -16,6 +16,7 @@ export interface CreateBookingPaymentPayload {
   startTime: string;
   address: string;
   notes?: string;
+  bookingType: 'home' | 'onsite';
 }
 
 /**

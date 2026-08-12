@@ -36,6 +36,7 @@ const BASE_PAYLOAD = {
   date: '2026-08-18',
   startTime: '12:30',
   address: 'Jl. Test No. 1',
+  bookingType: 'onsite' as const,
 };
 
 describe('paymentRepository.createBookingPayment', () => {

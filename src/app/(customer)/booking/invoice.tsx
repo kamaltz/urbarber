@@ -4,6 +4,7 @@ import { AppCard } from '@/components/ui/AppCard';
 import { Loading } from '@/components/ui/Loading';
 import { routes } from '@/constants/routes';
 import { paymentRepository } from '@/features/payments/repository/payment.repository';
+import { createPaidCheckoutGuard } from '@/features/payments/utils/paid-checkout-guard';
 import type { PaymentRecord, PaymentStatus } from '@/types/domain';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
@@ -24,6 +25,7 @@ export default function BookingInvoiceScreen() {
     servicePrice?: string;
     barberName?: string;
     bookingId?: string;
+    bookingType?: 'home' | 'onsite';
   }>();
 
   // Unique requestId per booking flow session (retained on retry)
@@ -45,6 +47,27 @@ export default function BookingInvoiceScreen() {
   const [paymentRecord, setPaymentRecord] = useState<PaymentRecord | null>(null);
   const [syncing, setSyncing] = useState<boolean>(false);
 
+  // One-shot guard: authoritative "paid" can arrive via the Firestore subscription
+  // and/or the sync-status response. Only the first signal may navigate.
+  const paidGuardRef = useRef(createPaidCheckoutGuard());
+  const navigateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const goToActiveBooking = useCallback((id: string, status: PaymentStatus = 'paid') => {
+    if (!paidGuardRef.current.consumeIfPaid(status)) return;
+    navigateTimeoutRef.current = setTimeout(() => {
+      // Dismiss the entire booking-creation stack (options/schedule/location/invoice)
+      // before landing on Active Booking, so Back cannot reopen a paid checkout.
+      router.dismissTo(routes.customer.home);
+      router.push(routes.customer.activeBooking(id));
+    }, 1200);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (navigateTimeoutRef.current) clearTimeout(navigateTimeoutRef.current);
+    };
+  }, []);
+
   // Initialize booking & Midtrans Snap payment via Vercel Backend
   const handleInitiatePayment = useCallback(async () => {
     if (bookingId && paymentUrl) return;
@@ -60,6 +83,7 @@ export default function BookingInvoiceScreen() {
       startTime: params.startTime || params.selectedTime || '10:00',
       address: params.address || 'Alamat Pelanggan',
       notes: params.notes || '',
+      bookingType: params.bookingType as 'home' | 'onsite',
     });
 
     if (res.success && res.data) {
@@ -83,6 +107,7 @@ export default function BookingInvoiceScreen() {
           startTime: params.startTime || params.selectedTime || '10:00',
           address: params.address || 'Alamat Pelanggan',
           notes: params.notes || '',
+          bookingType: params.bookingType as 'home' | 'onsite',
         })
         .then((res) => {
           if (!isMounted) return;
@@ -108,6 +133,7 @@ export default function BookingInvoiceScreen() {
     params.startTime,
     params.address,
     params.notes,
+    params.bookingType,
     getRequestId,
   ]);
 
@@ -120,15 +146,13 @@ export default function BookingInvoiceScreen() {
       (record) => {
         setPaymentRecord(record);
         if (record?.status === 'paid') {
-          setTimeout(() => {
-            router.replace(routes.customer.activeBooking(bookingId));
-          }, 1200);
+          goToActiveBooking(bookingId);
         }
       }
     );
 
     return () => unsubscribe();
-  }, [bookingId]);
+  }, [bookingId, goToActiveBooking]);
 
   // Open Snap Redirect browser
   const handleOpenSnapBrowser = async () => {
@@ -149,7 +173,10 @@ export default function BookingInvoiceScreen() {
       if (__DEV__) console.warn('[WebBrowser Open Error]', err);
     } finally {
       if (bookingId) {
-        await paymentRepository.syncBookingPaymentStatus(bookingId);
+        const syncRes = await paymentRepository.syncBookingPaymentStatus(bookingId);
+        if (syncRes.success && syncRes.data?.paymentStatus === 'paid') {
+          goToActiveBooking(bookingId);
+        }
       }
       setSyncing(false);
     }
@@ -282,7 +309,7 @@ export default function BookingInvoiceScreen() {
           {currentStatus === 'paid' ? (
             <AppButton
               label="Lihat Detail Pesanan"
-              onPress={() => bookingId && router.replace(routes.customer.activeBooking(bookingId))}
+              onPress={() => bookingId && goToActiveBooking(bookingId)}
               variant="primary"
             />
           ) : ['expired', 'cancelled', 'failed'].includes(currentStatus) ? (
