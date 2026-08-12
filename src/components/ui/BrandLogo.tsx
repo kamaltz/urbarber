@@ -1,5 +1,6 @@
+import { Image } from 'expo-image';
 import React from 'react';
-import { Text, View, type ViewProps } from 'react-native';
+import { View, type ViewProps } from 'react-native';
 
 export interface BrandLogoProps extends ViewProps {
   variant?: 'default' | 'compact' | 'light' | 'large';
@@ -7,9 +8,12 @@ export interface BrandLogoProps extends ViewProps {
   className?: string;
 }
 
+const logoFull = require('@/assets/images/urbarber-logo.png');
+const logoIcon = require('@/assets/images/urbarber-icon.png');
+
 /**
  * Canonical URBarber Brand Logo Component.
- * Encapsulates the visual identity badge across Auth, Onboarding, and Header states.
+ * Encapsulates the official visual identity assets across Auth, Onboarding, and Header states.
  */
 export function BrandLogo({
   variant = 'default',
@@ -20,17 +24,13 @@ export function BrandLogo({
 }: BrandLogoProps) {
   if (variant === 'large') {
     return (
-      <View className={['items-center gap-3', className ?? ''].join(' ')} style={style} {...rest}>
-        <View className="h-20 w-20 items-center justify-center rounded-3xl bg-[#363062] shadow-md">
-          <Text className="text-3xl text-[#D2691E]">✂</Text>
-        </View>
-        {showLabel ? (
-          <View className="rounded-full bg-[#EDEFFB] px-4 py-1.5 border border-[#363062]/10">
-            <Text className="text-sm font-extrabold tracking-widest text-[#363062]">
-              URBARBER
-            </Text>
-          </View>
-        ) : null}
+      <View className={['items-center justify-center', className ?? ''].join(' ')} style={style} {...rest}>
+        <Image
+          source={logoFull}
+          contentFit="contain"
+          style={{ width: 220, height: 80 }}
+          accessibilityLabel="URBarber Logo"
+        />
       </View>
     );
   }
@@ -38,44 +38,41 @@ export function BrandLogo({
   if (variant === 'compact') {
     return (
       <View
-        className={['h-10 w-10 items-center justify-center rounded-xl bg-[#363062] shadow-xs', className ?? ''].join(' ')}
+        className={['items-center justify-center rounded-xl bg-[#363062] p-1 shadow-xs', className ?? ''].join(' ')}
         style={style}
         {...rest}
       >
-        <Text className="text-lg text-[#D2691E]">✂</Text>
+        <Image
+          source={logoIcon}
+          contentFit="contain"
+          style={{ width: 32, height: 32 }}
+          accessibilityLabel="URBarber Icon"
+        />
       </View>
     );
   }
 
   if (variant === 'light') {
     return (
-      <View className={['flex-row items-center gap-3', className ?? ''].join(' ')} style={style} {...rest}>
-        <View className="h-11 w-11 items-center justify-center rounded-2xl bg-white/20 border border-white/30 backdrop-blur-md">
-          <Text className="text-xl text-[#F99417]">✂</Text>
-        </View>
-        {showLabel ? (
-          <View className="rounded-full bg-white/20 px-3 py-1 border border-white/30">
-            <Text className="text-xs font-bold tracking-wider text-white">
-              URBARBER
-            </Text>
-          </View>
-        ) : null}
+      <View className={['flex-row items-center justify-center', className ?? ''].join(' ')} style={style} {...rest}>
+        <Image
+          source={logoFull}
+          contentFit="contain"
+          style={{ width: 150, height: 48 }}
+          accessibilityLabel="URBarber Logo Light"
+        />
       </View>
     );
   }
 
   return (
-    <View className={['flex-row items-center gap-3', className ?? ''].join(' ')} style={style} {...rest}>
-      <View className="h-12 w-12 items-center justify-center rounded-2xl bg-[#363062] shadow-sm">
-        <Text className="text-xl text-[#D2691E]">✂</Text>
-      </View>
-      {showLabel ? (
-        <View className="rounded-full bg-[#EDEFFB] px-3 py-1 border border-[#363062]/10">
-          <Text className="text-xs font-bold tracking-wider text-[#363062]">
-            URBARBER
-          </Text>
-        </View>
-      ) : null}
+    <View className={['flex-row items-center justify-center', className ?? ''].join(' ')} style={style} {...rest}>
+      <Image
+        source={logoFull}
+        contentFit="contain"
+        style={{ width: 160, height: 52 }}
+        accessibilityLabel="URBarber Logo"
+      />
     </View>
   );
 }
