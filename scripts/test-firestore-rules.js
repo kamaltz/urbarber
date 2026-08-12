@@ -41,7 +41,7 @@ async function runRulesTests() {
   }
 
   try {
-    console.log('\n--- Running 18 Firestore Rules Test Scenarios ---\n');
+    console.log('\n--- Running Firestore Rules Test Scenarios ---\n');
 
     // 1. Unauthenticated access denied where required
     await test('1. Unauthenticated access is denied where required', async () => {
@@ -851,6 +851,53 @@ async function runRulesTests() {
       );
     });
 
+    // 81. resetUnreadCount (chat.repository.ts) only ever zeroes the caller's OWN
+    // unread field; sendMessage only ever increments the RECIPIENT's field. A
+    // participant decreasing/resetting the *other* side's counter is neither
+    // pattern -- it must be denied even though test 39 already allows that
+    // participant to touch conversation metadata in general. Each assertion
+    // uses its own fresh document so an earlier successful write can't change
+    // the baseline (e.g. 0 >= 0) and mask a would-be-denied decrease.
+    await test("81. Participant cannot decrease/reset the other side's unread counter", async () => {
+      const seed = async (id, customerUnreadCount, barberUnreadCount) => {
+        await testEnv.withSecurityRulesDisabled(async (context) => {
+          await context.firestore().collection('conversations').doc(id).set({
+            bookingId: id,
+            customerId: 'cust-unread',
+            barberId: 'barb-unread',
+            participants: ['cust-unread', 'barb-unread'],
+            status: 'active',
+            createdAt: '2026-01-01',
+            customerUnreadCount,
+            barberUnreadCount,
+          });
+        });
+      };
+
+      const custDb = testEnv.authenticatedContext('cust-unread', { app_role: 'customer' }).firestore();
+      const barbDb = testEnv.authenticatedContext('barb-unread', { app_role: 'barber' }).firestore();
+
+      // Customer resetting their OWN counter remains allowed.
+      await seed('conv-unread-a', 3, 5);
+      await assertSucceeds(custDb.collection('conversations').doc('conv-unread-a').update({ customerUnreadCount: 0 }));
+
+      // Customer incrementing the barber's counter (sending a message) remains allowed.
+      await seed('conv-unread-b', 3, 5);
+      await assertSucceeds(custDb.collection('conversations').doc('conv-unread-b').update({ barberUnreadCount: 6 }));
+
+      // Customer resetting/decreasing the barber's (nonzero) counter is denied.
+      await seed('conv-unread-c', 3, 5);
+      await assertFails(custDb.collection('conversations').doc('conv-unread-c').update({ barberUnreadCount: 0 }));
+
+      // Barber resetting their OWN counter remains allowed.
+      await seed('conv-unread-d', 3, 5);
+      await assertSucceeds(barbDb.collection('conversations').doc('conv-unread-d').update({ barberUnreadCount: 0 }));
+
+      // Barber decreasing the customer's (nonzero) counter is denied.
+      await seed('conv-unread-e', 3, 5);
+      await assertFails(barbDb.collection('conversations').doc('conv-unread-e').update({ customerUnreadCount: 0 }));
+    });
+
     // 41. Chat is explicitly out of scope for Admin (docs/agent/business-rules.md:
     // "Admin: No chat access"). Admin must not gain ordinary client-level read
     // access to a conversation or its messages just from app_role=admin.
@@ -1204,6 +1251,247 @@ async function runRulesTests() {
       const barbDb = await seedGeoBoundsBarber('barb_geo_radiuslow');
       await assertFails(
         barbDb.collection('barbers').doc('barb_geo_radiuslow').update({ serviceRadiusKm: 0 })
+      );
+    });
+
+    // 63-80. Realtime booking tracking security (Batch 10C). The booking is the
+    // authority for participants and eligibility; copied IDs in bookingTracking
+    // never grant access by themselves.
+    function validTrackingPayload(bookingId, overrides = {}) {
+      return {
+        bookingId,
+        customerId: 'tracking_customer',
+        barberId: 'tracking_barber',
+        trackingStatus: 'en_route',
+        isActive: true,
+        location: { latitude: -7.2278, longitude: 107.9087 },
+        updatedAt: new Date('2026-08-11T08:00:00.000Z'),
+        ...overrides,
+      };
+    }
+
+    async function seedTrackingBooking(bookingId, overrides = {}) {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('bookings').doc(bookingId).set({
+          customerId: 'tracking_customer',
+          barberId: 'tracking_barber',
+          status: 'accepted',
+          paymentStatus: 'paid',
+          serviceLocationType: 'customer_home',
+          createdAt: '2026-08-11',
+          ...overrides,
+        });
+      });
+    }
+
+    async function seedTrackingDocument(bookingId, trackingOverrides = {}, bookingOverrides = {}) {
+      await seedTrackingBooking(bookingId, bookingOverrides);
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('bookingTracking').doc(bookingId).set(
+          validTrackingPayload(bookingId, trackingOverrides)
+        );
+      });
+    }
+
+    await test('63. Assigned customer and assigned barber can read tracking', async () => {
+      const bookingId = 'tracking_read_participants';
+      await seedTrackingDocument(bookingId);
+      const customerDb = testEnv.authenticatedContext('tracking_customer', { app_role: 'customer' }).firestore();
+      const barberDb = testEnv.authenticatedContext('tracking_barber', { app_role: 'barber' }).firestore();
+      await assertSucceeds(customerDb.collection('bookingTracking').doc(bookingId).get());
+      await assertSucceeds(barberDb.collection('bookingTracking').doc(bookingId).get());
+    });
+
+    await test('64. Unrelated customer cannot read tracking', async () => {
+      const bookingId = 'tracking_read_other_customer';
+      await seedTrackingDocument(bookingId);
+      const unrelatedDb = testEnv.authenticatedContext('other_customer', { app_role: 'customer' }).firestore();
+      await assertFails(unrelatedDb.collection('bookingTracking').doc(bookingId).get());
+    });
+
+    await test('65. Unrelated barber cannot read tracking', async () => {
+      const bookingId = 'tracking_read_other_barber';
+      await seedTrackingDocument(bookingId);
+      const unrelatedDb = testEnv.authenticatedContext('other_barber', { app_role: 'barber' }).firestore();
+      await assertFails(unrelatedDb.collection('bookingTracking').doc(bookingId).get());
+    });
+
+    await test('66. Admin without participant role cannot read or delete tracking', async () => {
+      const bookingId = 'tracking_admin_denied';
+      await seedTrackingDocument(bookingId);
+      const adminDb = testEnv.authenticatedContext('admin1', { app_role: 'admin' }).firestore();
+      await assertFails(adminDb.collection('bookingTracking').doc(bookingId).get());
+      await assertFails(adminDb.collection('bookingTracking').doc(bookingId).delete());
+    });
+
+    await test('67. Assigned barber can create valid en_route tracking for an eligible booking', async () => {
+      const bookingId = 'tracking_create_valid';
+      await seedTrackingBooking(bookingId);
+      const barberDb = testEnv.authenticatedContext('tracking_barber', { app_role: 'barber' }).firestore();
+      await assertSucceeds(
+        barberDb.collection('bookingTracking').doc(bookingId).set(validTrackingPayload(bookingId))
+      );
+    });
+
+    await test('68. Customer cannot create tracking even when assigned to the booking', async () => {
+      const bookingId = 'tracking_create_customer';
+      await seedTrackingBooking(bookingId);
+      const customerDb = testEnv.authenticatedContext('tracking_customer', { app_role: 'customer' }).firestore();
+      await assertFails(
+        customerDb.collection('bookingTracking').doc(bookingId).set(validTrackingPayload(bookingId))
+      );
+    });
+
+    await test('69. Unrelated barber cannot create tracking with forged participant IDs', async () => {
+      const bookingId = 'tracking_create_other_barber';
+      await seedTrackingBooking(bookingId);
+      const unrelatedDb = testEnv.authenticatedContext('other_barber', { app_role: 'barber' }).firestore();
+      await assertFails(
+        unrelatedDb.collection('bookingTracking').doc(bookingId).set(
+          validTrackingPayload(bookingId, { barberId: 'other_barber' })
+        )
+      );
+    });
+
+    await test('70. Tracking cannot start before authoritative payment is paid', async () => {
+      const bookingId = 'tracking_create_unpaid';
+      await seedTrackingBooking(bookingId, { paymentStatus: 'pending' });
+      const barberDb = testEnv.authenticatedContext('tracking_barber', { app_role: 'barber' }).firestore();
+      await assertFails(
+        barberDb.collection('bookingTracking').doc(bookingId).set(validTrackingPayload(bookingId))
+      );
+    });
+
+    await test('71. Tracking cannot start before the booking is accepted', async () => {
+      const bookingId = 'tracking_create_pending_booking';
+      await seedTrackingBooking(bookingId, { status: 'pending' });
+      const barberDb = testEnv.authenticatedContext('tracking_barber', { app_role: 'barber' }).firestore();
+      await assertFails(
+        barberDb.collection('bookingTracking').doc(bookingId).set(validTrackingPayload(bookingId))
+      );
+    });
+
+    await test('72. Tracking cannot start for an onsite booking', async () => {
+      const bookingId = 'tracking_create_onsite';
+      await seedTrackingBooking(bookingId, { serviceLocationType: 'barbershop' });
+      const barberDb = testEnv.authenticatedContext('tracking_barber', { app_role: 'barber' }).firestore();
+      await assertFails(
+        barberDb.collection('bookingTracking').doc(bookingId).set(validTrackingPayload(bookingId))
+      );
+    });
+
+    await test('73. Tracking rejects non-numeric coordinates', async () => {
+      const bookingId = 'tracking_bad_coordinate_type';
+      await seedTrackingBooking(bookingId);
+      const barberDb = testEnv.authenticatedContext('tracking_barber', { app_role: 'barber' }).firestore();
+      await assertFails(
+        barberDb.collection('bookingTracking').doc(bookingId).set(
+          validTrackingPayload(bookingId, { location: { latitude: '-7.2', longitude: 107.9 } })
+        )
+      );
+    });
+
+    await test('74. Tracking rejects latitude outside [-90, 90]', async () => {
+      const bookingId = 'tracking_bad_latitude';
+      await seedTrackingBooking(bookingId);
+      const barberDb = testEnv.authenticatedContext('tracking_barber', { app_role: 'barber' }).firestore();
+      await assertFails(
+        barberDb.collection('bookingTracking').doc(bookingId).set(
+          validTrackingPayload(bookingId, { location: { latitude: 90.1, longitude: 107.9 } })
+        )
+      );
+    });
+
+    await test('75. Tracking rejects longitude outside [-180, 180]', async () => {
+      const bookingId = 'tracking_bad_longitude';
+      await seedTrackingBooking(bookingId);
+      const barberDb = testEnv.authenticatedContext('tracking_barber', { app_role: 'barber' }).firestore();
+      await assertFails(
+        barberDb.collection('bookingTracking').doc(bookingId).set(
+          validTrackingPayload(bookingId, { location: { latitude: -7.2, longitude: -180.1 } })
+        )
+      );
+    });
+
+    await test('76. Booking statuses cannot be written as tracking statuses', async () => {
+      const bookingId = 'tracking_booking_status_mix';
+      await seedTrackingBooking(bookingId);
+      const barberDb = testEnv.authenticatedContext('tracking_barber', { app_role: 'barber' }).firestore();
+      await assertFails(
+        barberDb.collection('bookingTracking').doc(bookingId).set(
+          validTrackingPayload(bookingId, { trackingStatus: 'in_progress' })
+        )
+      );
+    });
+
+    await test('77. Legal en_route to arrived to stopped tracking transitions succeed', async () => {
+      const bookingId = 'tracking_legal_transitions';
+      await seedTrackingDocument(bookingId);
+      const barberDb = testEnv.authenticatedContext('tracking_barber', { app_role: 'barber' }).firestore();
+      await assertSucceeds(
+        barberDb.collection('bookingTracking').doc(bookingId).update({
+          trackingStatus: 'arrived',
+          arrivedAt: new Date('2026-08-11T08:10:00.000Z'),
+          updatedAt: new Date('2026-08-11T08:10:00.000Z'),
+        })
+      );
+      await assertSucceeds(
+        barberDb.collection('bookingTracking').doc(bookingId).update({
+          trackingStatus: 'stopped',
+          isActive: false,
+          stoppedAt: new Date('2026-08-11T08:20:00.000Z'),
+          updatedAt: new Date('2026-08-11T08:20:00.000Z'),
+        })
+      );
+    });
+
+    await test('78. Stopped tracking cannot transition back to en_route', async () => {
+      const bookingId = 'tracking_invalid_restart';
+      await seedTrackingDocument(bookingId, { trackingStatus: 'stopped', isActive: false });
+      const barberDb = testEnv.authenticatedContext('tracking_barber', { app_role: 'barber' }).firestore();
+      await assertFails(
+        barberDb.collection('bookingTracking').doc(bookingId).update({
+          trackingStatus: 'en_route',
+          isActive: true,
+          updatedAt: new Date('2026-08-11T08:30:00.000Z'),
+        })
+      );
+    });
+
+    await test('79. Customer and unrelated barber cannot update tracking', async () => {
+      const bookingId = 'tracking_update_unauthorized';
+      await seedTrackingDocument(bookingId);
+      const customerDb = testEnv.authenticatedContext('tracking_customer', { app_role: 'customer' }).firestore();
+      const unrelatedDb = testEnv.authenticatedContext('other_barber', { app_role: 'barber' }).firestore();
+      await assertFails(
+        customerDb.collection('bookingTracking').doc(bookingId).update({
+          location: { latitude: -7.3, longitude: 107.8 },
+          updatedAt: new Date('2026-08-11T08:05:00.000Z'),
+        })
+      );
+      await assertFails(
+        unrelatedDb.collection('bookingTracking').doc(bookingId).update({
+          barberId: 'other_barber',
+          updatedAt: new Date('2026-08-11T08:05:00.000Z'),
+        })
+      );
+    });
+
+    await test('80. Assigned barber cannot add arbitrary fields or mutate participant identity', async () => {
+      const bookingId = 'tracking_schema_integrity';
+      await seedTrackingDocument(bookingId);
+      const barberDb = testEnv.authenticatedContext('tracking_barber', { app_role: 'barber' }).firestore();
+      await assertFails(
+        barberDb.collection('bookingTracking').doc(bookingId).update({
+          customerId: 'other_customer',
+          updatedAt: new Date('2026-08-11T08:05:00.000Z'),
+        })
+      );
+      await assertFails(
+        barberDb.collection('bookingTracking').doc(bookingId).update({
+          arbitraryPayload: true,
+          updatedAt: new Date('2026-08-11T08:05:00.000Z'),
+        })
       );
     });
 

@@ -36,6 +36,135 @@ service cloud.firestore {
       return isSignedIn() && appRole() == 'customer';
     }
 
+    // bookingTracking is a realtime client-owned projection, but authorization and
+    // lifecycle eligibility always come from the authoritative booking document.
+    // Never trust participant IDs copied into the tracking document itself.
+    function trackingBookingExists(bookingId) {
+      return exists(/databases/$(database)/documents/bookings/$(bookingId));
+    }
+
+    function isTrackingParticipant(bookingId) {
+      return trackingBookingExists(bookingId)
+        && (
+          (
+            isCustomer()
+            && get(/databases/$(database)/documents/bookings/$(bookingId)).data.customerId == uid()
+          )
+          || (
+            isBarber()
+            && get(/databases/$(database)/documents/bookings/$(bookingId)).data.barberId == uid()
+          )
+        );
+    }
+
+    function isAssignedTrackingBarber(bookingId) {
+      return trackingBookingExists(bookingId)
+        && isBarber()
+        && get(/databases/$(database)/documents/bookings/$(bookingId)).data.barberId == uid();
+    }
+
+    function isPaidHomeServiceTrackingBooking(bookingId) {
+      return trackingBookingExists(bookingId)
+        && get(/databases/$(database)/documents/bookings/$(bookingId)).data.paymentStatus == 'paid'
+        && (
+          (
+            'serviceLocationType' in get(/databases/$(database)/documents/bookings/$(bookingId)).data
+            && get(/databases/$(database)/documents/bookings/$(bookingId)).data.serviceLocationType == 'customer_home'
+          )
+          || (
+            'bookingType' in get(/databases/$(database)/documents/bookings/$(bookingId)).data
+            && get(/databases/$(database)/documents/bookings/$(bookingId)).data.bookingType == 'home'
+          )
+        );
+    }
+
+    function trackingIdentityMatchesBooking(bookingId, data) {
+      return data.bookingId == bookingId
+        && data.customerId == get(/databases/$(database)/documents/bookings/$(bookingId)).data.customerId
+        && data.barberId == get(/databases/$(database)/documents/bookings/$(bookingId)).data.barberId;
+    }
+
+    function hasValidTrackingLocation(data) {
+      return data.location is map
+        && data.location.keys().hasOnly(['latitude', 'longitude'])
+        && data.location.latitude is number
+        && data.location.latitude >= -90.0
+        && data.location.latitude <= 90.0
+        && data.location.longitude is number
+        && data.location.longitude >= -180.0
+        && data.location.longitude <= 180.0;
+    }
+
+    function hasValidOptionalTrackingData(data) {
+      return (!('accuracy' in data) || data.accuracy == null || data.accuracy is number)
+        && (!('heading' in data) || data.heading == null || data.heading is number)
+        && (!('speed' in data) || data.speed == null || data.speed is number)
+        && (!('startedAt' in data) || data.startedAt is timestamp)
+        && (!('arrivedAt' in data) || data.arrivedAt is timestamp)
+        && (!('stoppedAt' in data) || data.stoppedAt is timestamp)
+        && (!('expiresAt' in data) || data.expiresAt is timestamp);
+    }
+
+    function isValidTrackingDocument(data) {
+      return data.keys().hasAll([
+          'bookingId', 'customerId', 'barberId', 'trackingStatus',
+          'isActive', 'location', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'bookingId', 'customerId', 'barberId', 'trackingStatus',
+          'isActive', 'location', 'accuracy', 'heading', 'speed',
+          'startedAt', 'arrivedAt', 'updatedAt', 'stoppedAt', 'expiresAt'
+        ])
+        && data.bookingId is string
+        && data.customerId is string
+        && data.barberId is string
+        && data.isActive is bool
+        && data.updatedAt is timestamp
+        && hasValidTrackingLocation(data)
+        && hasValidOptionalTrackingData(data)
+        && (
+          (data.trackingStatus == 'en_route' && data.isActive == true)
+          || (data.trackingStatus == 'arrived' && data.isActive == true)
+          || (data.trackingStatus == 'stopped' && data.isActive == false)
+        );
+    }
+
+    function isLegalTrackingTransition() {
+      return (
+          resource.data.trackingStatus == 'en_route'
+          && (
+            request.resource.data.trackingStatus == 'en_route'
+            || request.resource.data.trackingStatus == 'arrived'
+            || request.resource.data.trackingStatus == 'stopped'
+          )
+        )
+        || (
+          resource.data.trackingStatus == 'arrived'
+          && (
+            request.resource.data.trackingStatus == 'arrived'
+            || request.resource.data.trackingStatus == 'stopped'
+          )
+        );
+    }
+
+    function trackingBookingStateAllowsWrite(bookingId, trackingStatus) {
+      return (
+          trackingStatus == 'stopped'
+          && (
+            get(/databases/$(database)/documents/bookings/$(bookingId)).data.status == 'accepted'
+            || get(/databases/$(database)/documents/bookings/$(bookingId)).data.status == 'in_progress'
+            || get(/databases/$(database)/documents/bookings/$(bookingId)).data.status == 'completed'
+          )
+        )
+        || (
+          (trackingStatus == 'en_route' || trackingStatus == 'arrived')
+          && (
+            get(/databases/$(database)/documents/bookings/$(bookingId)).data.status == 'accepted'
+            || get(/databases/$(database)/documents/bookings/$(bookingId)).data.status == 'in_progress'
+          )
+        );
+    }
+
     // Validates a barber-owned location+geohash pair: location must be a map with
     // numeric latitude/longitude within valid Earth bounds, geohash a non-empty string.
     function isValidBarberGeo() {
@@ -298,21 +427,35 @@ service cloud.firestore {
     // 7d. COLLECTION: bookingTracking
     // =========================================================================
     match /bookingTracking/{bookingId} {
-      // Assigned customer, assigned barber, or admin can read tracking data
-      allow read: if isOwner(resource.data.customerId)
-        || isOwner(resource.data.barberId)
-        || isAdmin();
+      // Direct client access is limited to the assigned customer and assigned
+      // barber. Admin tooling uses the Admin SDK; an admin claim alone is not a
+      // legitimate reason to expose precise participant location data.
+      allow read: if isTrackingParticipant(bookingId);
 
-      // Only the assigned Barber can write foreground location updates for home-service bookings
-      allow create, update: if isSignedIn()
-        && isOwner(request.resource.data.barberId)
-        && request.resource.data.bookingId == bookingId
-        && request.resource.data.location.latitude >= -90.0
-        && request.resource.data.location.latitude <= 90.0
-        && request.resource.data.location.longitude >= -180.0
-        && request.resource.data.location.longitude <= 180.0;
+      // An absent document is the canonical inactive state. Tracking may only be
+      // created by the assigned barber for an accepted, paid home-service booking.
+      allow create: if isAssignedTrackingBarber(bookingId)
+        && isPaidHomeServiceTrackingBooking(bookingId)
+        && get(/databases/$(database)/documents/bookings/$(bookingId)).data.status == 'accepted'
+        && trackingIdentityMatchesBooking(bookingId, request.resource.data)
+        && isValidTrackingDocument(request.resource.data)
+        && request.resource.data.trackingStatus == 'en_route';
 
-      allow delete: if isAdmin();
+      // TrackingStatus is intentionally separate from BookingStatus. Only legal
+      // en_route -> arrived -> stopped transitions (plus idempotent/location
+      // refreshes) are accepted, and participant identity is immutable.
+      allow update: if isAssignedTrackingBarber(bookingId)
+        && isPaidHomeServiceTrackingBooking(bookingId)
+        && trackingIdentityMatchesBooking(bookingId, request.resource.data)
+        && request.resource.data.bookingId == resource.data.bookingId
+        && request.resource.data.customerId == resource.data.customerId
+        && request.resource.data.barberId == resource.data.barberId
+        && isValidTrackingDocument(request.resource.data)
+        && isLegalTrackingTransition()
+        && trackingBookingStateAllowsWrite(bookingId, request.resource.data.trackingStatus);
+
+      // Tracking history is never deleted through a client SDK, including admin clients.
+      allow delete: if false;
     }
 
     // =========================================================================
@@ -383,6 +526,13 @@ service cloud.firestore {
       // structural/identity field must stay exactly equal to its current value, so
       // this can never be used to add participants, reassign ownership, or reopen a
       // closed conversation.
+      //
+      // Unread-count ownership: resetUnreadCount only ever zeroes the caller's own
+      // field (customerUnreadCount for a customer, barberUnreadCount for a barber);
+      // sendMessage only ever increments the RECIPIENT's field. So the other
+      // participant's counter may only ever move up (a legitimate incoming-message
+      // increment), never down -- a participant resetting/deflating the other
+      // side's unread badge is denied, while sendMessage's increment still works.
       allow update: if (
         (isOwner(resource.data.customerId) || isOwner(resource.data.barberId))
         && request.resource.data.customerId == resource.data.customerId
@@ -391,6 +541,14 @@ service cloud.firestore {
         && request.resource.data.participants == resource.data.participants
         && request.resource.data.status == resource.data.status
         && request.resource.data.createdAt == resource.data.createdAt
+        && (
+          !isOwner(resource.data.customerId)
+          || request.resource.data.barberUnreadCount >= resource.data.barberUnreadCount
+        )
+        && (
+          !isOwner(resource.data.barberId)
+          || request.resource.data.customerUnreadCount >= resource.data.customerUnreadCount
+        )
       ) || isAdmin();
     }
 
