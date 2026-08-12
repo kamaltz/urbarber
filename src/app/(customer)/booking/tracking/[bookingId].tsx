@@ -13,6 +13,8 @@ import { Booking, BookingTracking } from '@/features/bookings/types/booking';
 import { bookingRepository } from '@/features/bookings/repository/booking.repository';
 import { trackingService } from '@/features/location/services/tracking.service';
 import { calculateDistanceKm } from '@/features/location/utils/geo.utils';
+import { MAP_CONFIG } from '@/config/map.config';
+import { Camera, Map, Marker } from '@maplibre/maplibre-react-native';
 
 export default function CustomerTrackingScreen() {
   const { bookingId } = useLocalSearchParams<{ bookingId: string }>();
@@ -145,7 +147,26 @@ export default function CustomerTrackingScreen() {
           </Text>
         </View>
 
-        {/* Map / Coordinates Card Fallback */}
+        {tracking?.location ? (
+          <View className="m-4 mb-0 h-72 overflow-hidden rounded-2xl border border-slate-200">
+            <Map mapStyle={MAP_CONFIG.styleUrl} style={{ flex: 1 }}>
+              <Camera
+                key={`${tracking.location.longitude}:${tracking.location.latitude}`}
+                initialViewState={{
+                  center: [tracking.location.longitude, tracking.location.latitude],
+                  zoom: 15,
+                }}
+              />
+              <Marker
+                id={`tracking-barber-${booking.barberId}`}
+                lngLat={[tracking.location.longitude, tracking.location.latitude]}>
+                <View className="h-6 w-6 rounded-full border-4 border-white bg-[#D2691E]" />
+              </Marker>
+            </Map>
+          </View>
+        ) : null}
+
+        {/* Coordinates fallback and distance details */}
         <View className="m-4 rounded-2xl bg-slate-100 p-5 border border-slate-200">
           <Text className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
             📍 Informasi Lokasi & Jarak

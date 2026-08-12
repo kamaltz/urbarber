@@ -10,9 +10,8 @@
  * - POST /api/barber/registration/submit
  * - POST /api/barber/bookings/respond
  * - POST /api/barber/bookings/status
- * - POST /api/barber/bookings/tracking/arrive
- * - POST /api/barber/bookings/tracking/start
- * - POST /api/barber/bookings/tracking/stop
+ * - DEAD_TRACKING_API: legacy tracking REST handlers are intentionally not routed;
+ *   current mobile tracking uses participant-scoped Firestore realtime access.
  * - POST /api/bookings/cancel
  * - POST /api/bookings/:bookingId/chat
  */
@@ -570,7 +569,8 @@ async function handleBarberUpdateBookingStatus(ctx: RouteContext): Promise<void>
 }
 
 /**
- * POST /api/barber/bookings/tracking/arrive
+ * DEAD_TRACKING_API: legacy POST /api/barber/bookings/tracking/arrive.
+ * Kept for historical reference only; intentionally absent from the route table.
  */
 async function handleBarberTrackingArrive(ctx: RouteContext): Promise<void> {
   const { req, res } = ctx;
@@ -648,7 +648,8 @@ async function handleBarberTrackingArrive(ctx: RouteContext): Promise<void> {
 }
 
 /**
- * POST /api/barber/bookings/tracking/start
+ * DEAD_TRACKING_API: legacy POST /api/barber/bookings/tracking/start.
+ * Its `in_progress` literal is incompatible with canonical TrackingStatus.
  */
 async function handleBarberTrackingStart(ctx: RouteContext): Promise<void> {
   const { req, res } = ctx;
@@ -726,7 +727,8 @@ async function handleBarberTrackingStart(ctx: RouteContext): Promise<void> {
 }
 
 /**
- * POST /api/barber/bookings/tracking/stop
+ * DEAD_TRACKING_API: legacy POST /api/barber/bookings/tracking/stop.
+ * Its `completed` literal is incompatible with canonical TrackingStatus.
  */
 async function handleBarberTrackingStop(ctx: RouteContext): Promise<void> {
   const { req, res } = ctx;
@@ -1098,9 +1100,6 @@ const routes: Record<string, Record<string, RouteHandler>> = {
     '/api/barber/registration/submit': handleBarberRegistrationSubmit,
     '/api/barber/bookings/respond': handleBarberRespondBooking,
     '/api/barber/bookings/status': handleBarberUpdateBookingStatus,
-    '/api/barber/bookings/tracking/arrive': handleBarberTrackingArrive,
-    '/api/barber/bookings/tracking/start': handleBarberTrackingStart,
-    '/api/barber/bookings/tracking/stop': handleBarberTrackingStop,
     '/api/bookings/cancel': handleCancelBooking,
   },
   'GET': {

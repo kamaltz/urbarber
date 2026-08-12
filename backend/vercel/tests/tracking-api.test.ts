@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-describe('Vercel Backend Tracking Endpoints Validation', () => {
+describe('DEAD_TRACKING_API historical validation (handlers are not routed)', () => {
   it('start tracking requires app_role=barber', () => {
     const customerToken = { uid: 'cust-123', appRole: 'customer' };
     const isBarber = customerToken.appRole === 'barber' || customerToken.appRole === 'admin';

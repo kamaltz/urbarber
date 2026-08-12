@@ -186,7 +186,9 @@ export default function BookingDetailScreen() {
             {/* Action Buttons */}
             <View className="gap-3">
               <View className="flex-row gap-3">
-                <Pressable className="flex-1 items-center gap-2 rounded-lg bg-slate-100 py-3">
+                <Pressable
+                  onPress={() => router.push(`/(customer)/booking/tracking/${booking.id}` as any)}
+                  className="flex-1 items-center gap-2 rounded-lg bg-slate-100 py-3">
                   <Text className="text-2xl">🗺️</Text>
                   <Text className="text-xs font-semibold text-slate-900">Peta</Text>
                 </Pressable>
