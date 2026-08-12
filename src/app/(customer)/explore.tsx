@@ -64,10 +64,6 @@ export default function ExploreScreen() {
     latitude: MAP_CONFIG.defaultViewport.latitude,
     longitude: MAP_CONFIG.defaultViewport.longitude,
   };
-  // Only remount the camera (and reset its viewport) when coordinates actually
-  // change -- exploreData.searchCenter is a fresh object on every fetch, so keying
-  // on its identity would re-jump the map on every keystroke.
-  const cameraKey = `${center.latitude.toFixed(4)},${center.longitude.toFixed(4)}`;
   const showCustomerMarker = exploreData?.locationMode === 'granted';
   const showDefaultAreaNotice = exploreData?.locationMode === 'default_area' && locationUiStatus !== 'requesting';
 

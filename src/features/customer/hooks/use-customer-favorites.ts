@@ -14,18 +14,11 @@ export function useCustomerFavorites(customerId: string) {
   const [loading, setLoading] = useState<boolean>(Boolean(customerId));
   const [error, setError] = useState<string | null>(null);
 
-  // React Navigation's back() re-shows this screen without remounting it, so a
-  // favorite removed from Detail/Explore while this screen was merely backgrounded
-  // (not refetched) would otherwise keep showing here. Prune reactively against the
-  // shared context -- isFavorite's identity changes whenever the underlying Set does.
-  useEffect(() => {
-    setFavoritesData((prev) => {
-      if (!prev) return prev;
-      const stillFavorited = prev.favoriteBarbers.filter((b) => favorites.isFavorite(b.barberId));
-      if (stillFavorited.length === prev.favoriteBarbers.length) return prev;
-      return { ...prev, favoriteBarbers: stillFavorited };
-    });
-  }, [favorites.isFavorite]);
+  // Filter favorite barbers reactively against the shared context so an item unfavorited
+  // from Detail/Explore is immediately excluded from rendering without needing a synchronous effect.
+  const favoriteBarbers = (favoritesData?.favoriteBarbers || []).filter((b) =>
+    favorites.isFavorite(b.barberId)
+  );
 
   const fetchFavorites = useCallback(async () => {
     if (!customerId) return;
@@ -93,7 +86,7 @@ export function useCustomerFavorites(customerId: string) {
   );
 
   return {
-    favoritesData,
+    favoritesData: favoritesData ? { ...favoritesData, favoriteBarbers } : null,
     loading,
     error,
     toggleFavorite,
