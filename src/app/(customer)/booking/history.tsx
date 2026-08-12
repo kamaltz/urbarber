@@ -1,8 +1,3 @@
-/**
- * Booking History Screen
- * Shows active bookings and booking history with tab switcher
- */
-
 import { router } from 'expo-router';
 import { useState } from 'react';
 import {
@@ -15,6 +10,7 @@ import {
 
 import { AppButton } from '@/components/ui/AppButton';
 import { CustomerBottomNavigation } from '@/components/navigation/CustomerBottomNavigation';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { routes } from '@/constants/routes';
 import { Loading } from '@/components/ui/Loading';
 import { BookingCard } from '@/features/bookings/components/BookingCard';
@@ -62,67 +58,79 @@ export default function BookingHistoryScreen() {
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-white">
+    <SafeAreaView className="flex-1 bg-slate-50">
       <View className="flex-1">
-        {/* Header */}
-        <View className="border-b border-slate-200 px-4 py-4">
-          <Text className="text-2xl font-bold text-slate-900">Pemesanan</Text>
+        {/* Header Bar */}
+        <View className="border-b border-slate-200 bg-white px-5 py-4 shadow-xs">
+          <Text className="text-xl font-bold text-[#363062]">Pemesanan Saya</Text>
+          <Text className="text-xs text-slate-500 mt-0.5">Kelola janji pemesanan & riwayat cukur</Text>
         </View>
 
-        {/* Tab Control */}
-        <View className="flex-row gap-3 border-b border-slate-200 px-4 py-4">
-          <Pressable
-            onPress={() => setActiveTab('active')}
-            className={`flex-1 items-center rounded-full py-2 ${
-              activeTab === 'active' ? 'bg-orange-100' : 'bg-slate-100'
-            }`}>
-            <Text
-              className={`font-semibold ${
-                activeTab === 'active' ? 'text-orange-700' : 'text-slate-600'
+        {/* Tab Control Switcher */}
+        <View className="bg-white px-5 py-3 border-b border-slate-200/80">
+          <View className="flex-row rounded-2xl bg-slate-100 p-1.5 border border-slate-200/60">
+            <Pressable
+              onPress={() => setActiveTab('active')}
+              className={`flex-1 items-center justify-center rounded-xl py-2.5 transition-all ${
+                activeTab === 'active'
+                  ? 'bg-[#363062] shadow-xs'
+                  : 'bg-transparent'
               }`}>
-              Pemesanan Aktif
-            </Text>
-          </Pressable>
+              <Text
+                className={`text-xs font-bold ${
+                  activeTab === 'active' ? 'text-white' : 'text-slate-600'
+                }`}>
+                Pemesanan Aktif
+              </Text>
+            </Pressable>
 
-          <Pressable
-            onPress={() => setActiveTab('history')}
-            className={`flex-1 items-center rounded-full py-2 ${
-              activeTab === 'history' ? 'bg-orange-100' : 'bg-slate-100'
-            }`}>
-            <Text
-              className={`font-semibold ${
-                activeTab === 'history' ? 'text-orange-700' : 'text-slate-600'
+            <Pressable
+              onPress={() => setActiveTab('history')}
+              className={`flex-1 items-center justify-center rounded-xl py-2.5 transition-all ${
+                activeTab === 'history'
+                  ? 'bg-[#363062] shadow-xs'
+                  : 'bg-transparent'
               }`}>
-              Riwayat
-            </Text>
-          </Pressable>
+              <Text
+                className={`text-xs font-bold ${
+                  activeTab === 'history' ? 'text-white' : 'text-slate-600'
+                }`}>
+                Riwayat Cukur
+              </Text>
+            </Pressable>
+          </View>
         </View>
 
-        {/* Content */}
+        {/* Main Content Area */}
         {loading ? (
-          <Loading />
+          <View className="flex-1 items-center justify-center">
+            <Loading />
+          </View>
         ) : error ? (
-          <View className="flex-1 items-center justify-center px-4">
-            <Text className="text-center text-slate-600">{error}</Text>
+          <View className="p-5 rounded-2xl bg-rose-50 border border-rose-200 m-5">
+            <Text className="text-sm font-bold text-rose-800 text-center mb-1">
+              Gagal Memuat Pemesanan
+            </Text>
+            <Text className="text-xs text-rose-600 text-center">{error}</Text>
           </View>
         ) : (bookings?.length ?? 0) === 0 ? (
-          <View className="flex-1 items-center justify-center px-4">
-            <Text className="text-center text-lg font-semibold text-slate-900">
-              {activeTab === 'active' ? 'Tidak ada pemesanan aktif' : 'Belum ada riwayat pemesanan'}
-            </Text>
-            <Text className="mt-2 text-center text-slate-600">
-              {activeTab === 'active'
-                ? 'Mulai pesan layanan barbershop sekarang'
-                : 'Riwayat pemesanan Anda akan muncul di sini'}
-            </Text>
-
-            {activeTab === 'active' && (
-              <AppButton
-                label="Cari Barbershop"
-                onPress={() => router.push(routes.customer.explore)}
-                className="mt-6 h-12 rounded-lg px-8"
-              />
-            )}
+          <View className="flex-1 items-center justify-center px-6 py-10">
+            <EmptyState
+              title={activeTab === 'active' ? 'Belum Ada Pemesanan Aktif' : 'Belum Ada Riwayat Pemesanan'}
+              description={
+                activeTab === 'active'
+                  ? 'Pesan layanan barbershop atau panggil barber ke rumah sekarang secara mudah.'
+                  : 'Riwayat pemesanan layanan yang telah selesai akan tercatat di sini.'
+              }
+              icon={
+                <View className="h-16 w-16 items-center justify-center rounded-2xl bg-[#EDEFFB] border border-[#363062]/10">
+                  <Text className="text-3xl">{activeTab === 'active' ? '📅' : '📜'}</Text>
+                </View>
+              }
+              actionLabel={activeTab === 'active' ? 'Cari Barber Terdekat' : undefined}
+              onActionPress={activeTab === 'active' ? () => router.push(routes.customer.explore) : undefined}
+              className="bg-white border-slate-200/80 shadow-xs"
+            />
           </View>
         ) : (
           <FlatList
@@ -133,7 +141,6 @@ export default function BookingHistoryScreen() {
                 <BookingCard booking={item} onPress={() => handleBookingPress(item.id)} />
               </View>
             )}
-            scrollEnabled={false}
             contentContainerStyle={{ paddingVertical: 16 }}
           />
         )}

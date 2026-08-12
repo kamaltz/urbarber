@@ -1,7 +1,3 @@
-/**
- * Review Form Component - Booking review and rating form
- */
-
 import { Pressable, Text, TextInput, View } from 'react-native';
 import { useState } from 'react';
 
@@ -39,18 +35,19 @@ export function ReviewForm({ onSubmit, loading = false }: ReviewFormProps) {
   };
 
   return (
-    <View className="gap-6">
-      {/* Star Rating */}
-      <View className="gap-3">
-        <Text className="text-lg font-bold text-slate-900">Berikan Rating</Text>
+    <View className="gap-5">
+      {/* Star Rating Section */}
+      <View className="gap-2.5 items-center bg-[#EDEFFB]/60 p-4.5 rounded-2xl border border-[#363062]/10">
+        <Text className="text-sm font-bold text-[#363062]">Bagaimana Pengalaman Layanan Anda?</Text>
+        <Text className="text-xs text-slate-500 mb-1">Berikan penilaian bintang untuk barber</Text>
 
-        <View className="flex-row gap-3">
+        <View className="flex-row gap-3 justify-center">
           {[1, 2, 3, 4, 5].map((star) => (
             <Pressable
               key={star}
               onPress={() => setRating(star)}
-              className="flex-1">
-              <Text className={`text-center text-4xl ${star <= rating ? '⭐' : '☆'}`}>
+              className="p-1 active:scale-110">
+              <Text className="text-3xl">
                 {star <= rating ? '⭐' : '☆'}
               </Text>
             </Pressable>
@@ -58,55 +55,56 @@ export function ReviewForm({ onSubmit, loading = false }: ReviewFormProps) {
         </View>
       </View>
 
-      {/* Review Text */}
+      {/* Review Text Input */}
       <View className="gap-2">
-        <Text className="text-base font-semibold text-slate-900">Ulasan</Text>
+        <Text className="text-xs font-bold text-[#363062] uppercase tracking-wider">Ulasan Singkat</Text>
 
         <TextInput
-          className="h-24 rounded-lg border border-slate-300 bg-white p-3 text-slate-900"
-          placeholder="Bagikan pengalaman Anda (opsional)"
-          placeholderTextColor="#9CA3AF"
+          className="h-28 rounded-2xl border border-slate-200 bg-white p-4 text-sm font-medium text-[#363062] shadow-xs"
+          placeholder="Tulis kesan & saran pelayanan cukur Anda (opsional)..."
+          placeholderTextColor="#94A3B8"
           value={reviewText}
           onChangeText={setReviewText}
           multiline
+          textAlignVertical="top"
           editable={!loading}
         />
       </View>
 
-      {/* Tags */}
+      {/* Tag Switcher Pills */}
       <View className="gap-2">
-        <Text className="text-base font-semibold text-slate-900">Pilih Tags</Text>
+        <Text className="text-xs font-bold text-[#363062] uppercase tracking-wider">Pilih Tag Pelayanan</Text>
 
         <View className="flex-row flex-wrap gap-2">
           {REVIEW_TAGS.map((tag) => (
             <Pressable
               key={tag}
               onPress={() => toggleTag(tag)}
-              className={`rounded-full px-4 py-2 border-2 ${
+              className={`rounded-full px-4 py-2 border transition-all ${
                 selectedTags.includes(tag)
-                  ? 'border-orange-600 bg-orange-100'
-                  : 'border-slate-300 bg-white'
+                  ? 'border-[#D2691E] bg-orange-50'
+                  : 'border-slate-200 bg-white'
               }`}>
               <Text
-                className={`text-sm font-semibold ${
-                  selectedTags.includes(tag) ? 'text-orange-700' : 'text-slate-600'
+                className={`text-xs font-bold ${
+                  selectedTags.includes(tag) ? 'text-[#D2691E]' : 'text-slate-600'
                 }`}>
-                {tag}
+                {selectedTags.includes(tag) ? '✓ ' : ''}{tag}
               </Text>
             </Pressable>
           ))}
         </View>
       </View>
 
-      {/* Submit Button */}
+      {/* Submit Action Button */}
       <Pressable
         onPress={handleSubmit}
         disabled={loading || rating === 0}
-        className={`h-14 items-center justify-center rounded-lg ${
-          loading || rating === 0 ? 'bg-slate-300' : 'bg-orange-600'
+        className={`h-13 items-center justify-center rounded-xl shadow-xs mt-2 ${
+          loading || rating === 0 ? 'bg-slate-300' : 'bg-[#D2691E] active:bg-[#B05416]'
         }`}>
-        <Text className="text-base font-semibold text-white">
-          {loading ? 'Mengirim...' : 'Kirim Ulasan'}
+        <Text className="text-base font-bold text-white">
+          {loading ? 'Mengirim Ulasan...' : 'Kirim Ulasan Barber'}
         </Text>
       </Pressable>
     </View>

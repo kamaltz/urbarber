@@ -1,8 +1,3 @@
-/**
- * Booking Rating Screen
- * Allows customer to submit review and rating for a completed booking
- */
-
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import {
@@ -31,7 +26,7 @@ export default function BookingRatingScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView className="flex-1 bg-white">
+      <SafeAreaView className="flex-1 bg-[#363062]">
         <Loading />
       </SafeAreaView>
     );
@@ -39,15 +34,15 @@ export default function BookingRatingScreen() {
 
   if (error || !booking) {
     return (
-      <SafeAreaView className="flex-1 bg-white">
-        <View className="flex-1 items-center justify-center px-4">
-          <Text className="text-center text-lg font-semibold text-slate-900">
+      <SafeAreaView className="flex-1 bg-[#363062]">
+        <View className="flex-1 items-center justify-center px-5">
+          <Text className="text-center text-lg font-bold text-white mb-2">
             {error || 'Booking tidak ditemukan'}
           </Text>
           <AppButton
             label="Kembali"
             onPress={() => router.back()}
-            className="mt-6 h-12 rounded-lg px-8"
+            className="mt-4 h-12 rounded-xl px-8 bg-white"
           />
         </View>
       </SafeAreaView>
@@ -87,7 +82,7 @@ export default function BookingRatingScreen() {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-orange-600">
+    <SafeAreaView className="flex-1 bg-[#363062]">
       <KeyboardAvoidingView
         className="flex-1"
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -95,21 +90,23 @@ export default function BookingRatingScreen() {
           className="flex-1"
           contentContainerStyle={{ flexGrow: 1 }}
           keyboardShouldPersistTaps="handled">
-          {/* Header */}
-          <View className="px-4 py-4">
-            <Pressable onPress={() => router.back()} className="flex-row items-center gap-2">
-              <Text className="text-2xl text-white">←</Text>
-              <Text className="text-xl font-bold text-white">Beri Ulasan</Text>
+          {/* Top Bar Header */}
+          <View className="px-5 py-4 flex-row items-center justify-between">
+            <Pressable onPress={() => router.back()} className="flex-row items-center gap-2.5">
+              <View className="h-9 w-9 items-center justify-center rounded-full bg-white/10">
+                <Text className="text-base font-bold text-white">←</Text>
+              </View>
+              <Text className="text-lg font-bold text-white">Beri Ulasan Barber</Text>
             </Pressable>
           </View>
 
-          {/* Shop Header */}
-          <View className="px-4 pb-4">
-            <BookingHeader shop={booking.shop} backgroundColor="bg-white" />
+          {/* Shop Header Card */}
+          <View className="px-5 pb-5 pt-1">
+            <BookingHeader shop={booking.shop} backgroundColor="bg-white/10" />
           </View>
 
-          {/* Form - White bottom sheet */}
-          <View className="flex-1 gap-6 rounded-t-3xl bg-white px-4 pb-8 pt-6">
+          {/* Form Bottom Sheet Container */}
+          <View className="flex-1 rounded-t-[32px] bg-slate-50 px-5 pb-8 pt-6 border-t border-white/20 shadow-lg">
             <ReviewForm onSubmit={handleSubmitReview} loading={submitting} />
           </View>
         </ScrollView>
