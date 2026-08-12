@@ -106,6 +106,10 @@ async function authenticateWithGoogle(): Promise<
       };
     }
 
+    if (__DEV__) {
+      console.log('[GOOGLE_REGISTER]', { stage: 'CHOOSER_SUCCESS' });
+    }
+
     const idToken = response.data.idToken;
     if (!idToken) {
       return {
@@ -161,10 +165,21 @@ async function authenticateWithGoogle(): Promise<
   }
 }
 
-async function getFirestoreUserState(uid: string): Promise<{ exists: boolean; status?: string }> {
+/** Safely disconnects native Google SDK session during explicit logout so account chooser re-runs on next login attempt. */
+export async function signOutGoogleNative(): Promise<void> {
+  try {
+    configureGoogleSignIn();
+    await GoogleSignin.signOut();
+  } catch (_err) {
+    // Ignore errors (e.g. user was signed in via email/password or GoogleSignin was not initialized)
+  }
+}
+
+async function getFirestoreUserState(uid: string): Promise<{ exists: boolean; status?: string; role?: string }> {
   const snap = await getDoc(doc(firestore, 'users', uid));
   if (!snap.exists()) return { exists: false };
-  return { exists: true, status: snap.data().status };
+  const data = snap.data();
+  return { exists: true, status: data.status, role: data.role || data.app_role };
 }
 
 /**
@@ -202,17 +217,56 @@ export async function loginExistingGoogleAccount(): Promise<GoogleAuthResult> {
 }
 
 /**
- * Registration screen entry point. Caller must have already validated
- * acceptedTerms === true before invoking this. A pre-existing account keeps
- * its stored role -- requestedRole only applies to genuinely new accounts,
- * mirroring the backend's own self-heal clamp (batch 10B-5B).
+ * Registration screen entry point. Caller must validate acceptedTerms === true.
+ * If Firestore profile users/{uid} is missing (e.g. fresh registration or partial
+ * registration retry), it calls the trusted account bootstrap endpoint idempotently.
+ * A pre-existing account preserves its stored role -- requestedRole only applies to
+ * new accounts, mirroring the backend's self-heal clamp.
  */
-export async function registerGoogleAccount(requestedRole: PublicRegistrationRole): Promise<GoogleAuthResult> {
+export async function registerGoogleAccount(
+  requestedRole: PublicRegistrationRole,
+  acceptedTerms: boolean = true
+): Promise<GoogleAuthResult> {
+  if (!acceptedTerms) {
+    return {
+      success: false,
+      error: {
+        code: 'TERMS_NOT_ACCEPTED',
+        message: 'Anda harus menyetujui syarat dan ketentuan sebelum mendaftar.',
+      },
+    };
+  }
+
+  if (__DEV__) {
+    console.log('[GOOGLE_REGISTER]', { stage: 'START', requestedRole });
+  }
+
   const auth = await authenticateWithGoogle();
-  if (!auth.success) return auth;
+  if (!auth.success) {
+    if (__DEV__) {
+      console.log('[GOOGLE_REGISTER]', { stage: 'CHOOSER_FAILED', errorCode: auth.error.code });
+    }
+    return auth;
+  }
 
   const { user } = auth.userCredential;
+  if (__DEV__) {
+    console.log('[GOOGLE_REGISTER]', {
+      stage: 'FIREBASE_CREDENTIAL_SUCCESS',
+      firebaseUidPresent: Boolean(user.uid),
+      requestedRole,
+    });
+    console.log('[GOOGLE_REGISTER]', { stage: 'APP_PROFILE_LOOKUP', firebaseUidPresent: Boolean(user.uid) });
+  }
+
   const record = await getFirestoreUserState(user.uid);
+
+  if (__DEV__) {
+    console.log('[GOOGLE_REGISTER]', {
+      stage: record.exists ? 'APP_PROFILE_EXISTS' : 'APP_PROFILE_MISSING',
+      firestoreProfileExists: record.exists,
+    });
+  }
 
   if (record.status === 'suspended') {
     await signOut(firebaseAuth);
@@ -222,23 +276,70 @@ export async function registerGoogleAccount(requestedRole: PublicRegistrationRol
     };
   }
 
+  // STATE B: Application profile missing (fresh registration or partial registration self-heal retry)
   if (!record.exists) {
+    if (__DEV__) {
+      console.log('[GOOGLE_REGISTER]', { stage: 'BOOTSTRAP_START', requestedRole });
+    }
+
     const bootstrap = await accountBootstrapService.initializeAccount({
       requestedRole,
       name: user.displayName || user.email?.split('@')[0] || 'Pengguna Google',
     });
 
     if (!bootstrap.success) {
+      if (__DEV__) {
+        console.log('[GOOGLE_REGISTER]', {
+          stage: 'BOOTSTRAP_FAILED',
+          errorCode: bootstrap.error?.code,
+          message: bootstrap.error?.message,
+        });
+      }
       return {
         success: false,
         error: bootstrap.error || { code: 'INIT_FAILED', message: 'Gagal inisialisasi akun backend.' },
       };
     }
 
-    // Custom claims were just provisioned server-side -- never assume the
-    // client's cached token already reflects them.
+    if (__DEV__) {
+      console.log('[GOOGLE_REGISTER]', { stage: 'BOOTSTRAP_SUCCESS' });
+      console.log('[GOOGLE_REGISTER]', { stage: 'CLAIMS_REFRESH_START' });
+    }
+
     await user.getIdToken(true);
+
+    if (__DEV__) {
+      console.log('[GOOGLE_REGISTER]', { stage: 'CLAIMS_REFRESH_SUCCESS' });
+      console.log('[GOOGLE_REGISTER]', { stage: 'ROUTE_START' });
+      console.log('[GOOGLE_REGISTER]', { stage: 'COMPLETE', isNewAccount: true });
+    }
+
     return { success: true, isNewAccount: true, user };
+  }
+
+  // STATE A / C: Application profile ALREADY exists -> Check existing role safety!
+  const storedRole = record.role;
+  if (storedRole && storedRole !== requestedRole) {
+    const roleLabel = storedRole === 'customer' ? 'Pelanggan' : 'Barber';
+    if (__DEV__) {
+      console.log('[GOOGLE_REGISTER]', {
+        stage: 'ROLE_MISMATCH',
+        storedRole,
+        requestedRole,
+      });
+    }
+    return {
+      success: false,
+      error: {
+        code: 'ROLE_MISMATCH',
+        message: `Akun Google ini sudah terdaftar sebagai ${roleLabel}. Silakan masuk.`,
+      },
+    };
+  }
+
+  await user.getIdToken(true);
+  if (__DEV__) {
+    console.log('[GOOGLE_REGISTER]', { stage: 'COMPLETE', isNewAccount: false });
   }
 
   return { success: true, isNewAccount: false, user };

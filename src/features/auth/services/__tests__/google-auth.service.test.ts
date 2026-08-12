@@ -164,51 +164,69 @@ describe('registerGoogleAccount', () => {
     hasPlayServicesMock.mockResolvedValue(true);
   });
 
-  it('4. a new Customer registers via the existing trusted bootstrap endpoint and force-refreshes the token', async () => {
+  it('1. fresh Google Customer: app profile missing -> bootstraps customer and force-refreshes token', async () => {
     const user = mockSuccessfulGoogleSignIn();
     mockFirestoreUser(false);
     initializeAccountMock.mockResolvedValue({ success: true });
 
-    const result = await registerGoogleAccount('customer');
+    const result = await registerGoogleAccount('customer', true);
 
     expect(initializeAccountMock).toHaveBeenCalledWith({ requestedRole: 'customer', name: 'Test User' });
     expect(user.getIdToken).toHaveBeenCalledWith(true);
     expect(result).toEqual({ success: true, isNewAccount: true, user });
   });
 
-  it('5. a new Barber registers with requestedRole barber', async () => {
+  it('2. fresh Google Barber: app profile missing -> bootstraps barber', async () => {
     mockSuccessfulGoogleSignIn();
     mockFirestoreUser(false);
     initializeAccountMock.mockResolvedValue({ success: true });
 
-    await registerGoogleAccount('barber');
+    await registerGoogleAccount('barber', true);
 
     expect(initializeAccountMock).toHaveBeenCalledWith({ requestedRole: 'barber', name: 'Test User' });
   });
 
-  it('7. an existing account keeps its stored role -- the Register screen role selector cannot switch it', async () => {
+  it('3. Firebase Auth user exists but users/{uid} is missing: self-heals by retrying initialize-account', async () => {
+    const user = mockSuccessfulGoogleSignIn();
+    mockFirestoreUser(false);
+    initializeAccountMock.mockResolvedValue({ success: true });
+
+    const result = await registerGoogleAccount('customer', true);
+
+    expect(initializeAccountMock).toHaveBeenCalledTimes(1);
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.isNewAccount).toBe(true);
+  });
+
+  it('4. existing Customer + register as Barber: Customer role preserved / rejected with ROLE_MISMATCH', async () => {
     mockSuccessfulGoogleSignIn();
     mockFirestoreUser(true, { status: 'active', role: 'customer' });
 
-    const result = await registerGoogleAccount('barber');
+    const result = await registerGoogleAccount('barber', true);
 
     expect(initializeAccountMock).not.toHaveBeenCalled();
-    expect(result).toEqual({ success: true, isNewAccount: false, user: expect.anything() });
-  });
-
-  it('8b. a suspended account is signed out and rejected on registration too', async () => {
-    mockSuccessfulGoogleSignIn();
-    mockFirestoreUser(true, { status: 'suspended', role: 'customer' });
-
-    const result = await registerGoogleAccount('customer');
-
     expect(result.success).toBe(false);
-    if (!result.success) expect(result.error.code).toBe('USER_SUSPENDED');
-    expect(signOutMock).toHaveBeenCalledTimes(1);
-    expect(initializeAccountMock).not.toHaveBeenCalled();
+    if (!result.success) {
+      expect(result.error.code).toBe('ROLE_MISMATCH');
+      expect(result.error.message).toMatch(/Pelanggan/);
+    }
   });
 
-  it('12. a bootstrap failure does not claim success and does not force-refresh the token', async () => {
+  it('5. existing Barber + register as Customer: Barber role preserved / rejected with ROLE_MISMATCH', async () => {
+    mockSuccessfulGoogleSignIn();
+    mockFirestoreUser(true, { status: 'active', role: 'barber' });
+
+    const result = await registerGoogleAccount('customer', true);
+
+    expect(initializeAccountMock).not.toHaveBeenCalled();
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.code).toBe('ROLE_MISMATCH');
+      expect(result.error.message).toMatch(/Barber/);
+    }
+  });
+
+  it('6. initialize-account failure: reports controlled error and does not force-refresh token', async () => {
     const user = mockSuccessfulGoogleSignIn();
     mockFirestoreUser(false);
     initializeAccountMock.mockResolvedValue({
@@ -216,11 +234,52 @@ describe('registerGoogleAccount', () => {
       error: { code: 'INVALID_ROLE', message: 'Role tidak valid.' },
     });
 
-    const result = await registerGoogleAccount('customer');
+    const result = await registerGoogleAccount('customer', true);
 
     expect(result.success).toBe(false);
     if (!result.success) expect(result.error).toEqual({ code: 'INVALID_ROLE', message: 'Role tidak valid.' });
     expect(user.getIdToken).not.toHaveBeenCalled();
+  });
+
+  it('7. bootstrap success: force-refreshes ID token via getIdToken(true)', async () => {
+    const user = mockSuccessfulGoogleSignIn();
+    mockFirestoreUser(false);
+    initializeAccountMock.mockResolvedValue({ success: true });
+
+    await registerGoogleAccount('customer', true);
+
+    expect(user.getIdToken).toHaveBeenCalledWith(true);
+  });
+
+  it('8. Terms false: rejects with TERMS_NOT_ACCEPTED without calling GoogleSignin or Firebase', async () => {
+    const result = await registerGoogleAccount('customer', false);
+
+    expect(result.success).toBe(false);
+    if (!result.success) expect(result.error.code).toBe('TERMS_NOT_ACCEPTED');
+    expect(signInMock).not.toHaveBeenCalled();
+    expect(initializeAccountMock).not.toHaveBeenCalled();
+  });
+
+  it('9. USER_CANCELLED: reports clean cancelled result without calling Firestore or initialize-account', async () => {
+    signInMock.mockResolvedValue({ type: 'cancelled', data: null });
+
+    const result = await registerGoogleAccount('customer', true);
+
+    expect(result.success).toBe(false);
+    if (!result.success) expect(result.error.code).toBe('USER_CANCELLED');
+    expect(initializeAccountMock).not.toHaveBeenCalled();
+  });
+
+  it('10. suspended existing account: denied with USER_SUSPENDED and signed out', async () => {
+    mockSuccessfulGoogleSignIn();
+    mockFirestoreUser(true, { status: 'suspended', role: 'customer' });
+
+    const result = await registerGoogleAccount('customer', true);
+
+    expect(result.success).toBe(false);
+    if (!result.success) expect(result.error.code).toBe('USER_SUSPENDED');
+    expect(signOutMock).toHaveBeenCalledTimes(1);
+    expect(initializeAccountMock).not.toHaveBeenCalled();
   });
 });
 

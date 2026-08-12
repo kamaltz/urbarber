@@ -107,7 +107,7 @@ export default function RegisterCustomerScreen() {
     setIsLoading(true);
     try {
       configureGoogleSignIn();
-      const result = await registerGoogleAccount(selectedRole);
+      const result = await registerGoogleAccount(selectedRole, acceptedTerms);
       if (result.success) {
         await reloadUser();
         setSuccessMessage('🎉 Berhasil mendaftar dengan Akun Google! Mengalihkan...');

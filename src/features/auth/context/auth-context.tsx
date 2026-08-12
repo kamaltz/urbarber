@@ -5,6 +5,7 @@ import { onAuthStateChanged, signOut, User } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import React, { createContext, useCallback, useEffect, useState } from 'react';
 import { resolveBootstrapFlags, selfHealClaimsIfNeeded } from '../services/claims-self-heal.service';
+import { signOutGoogleNative } from '../services/google-auth.service';
 import { AuthBootstrapErrorCode, AuthContextType, AuthUser } from '../types/auth';
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -129,6 +130,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(async () => {
     await signOut(firebaseAuth);
+    await signOutGoogleNative();
     setAuthUser(null);
   }, []);
 

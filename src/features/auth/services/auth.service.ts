@@ -6,6 +6,7 @@
 import { firebaseAuth, firestore } from '@/lib/firebase';
 import { withTimeout } from '@/lib/promise';
 import { accountBootstrapService } from './account-bootstrap.service';
+import { signOutGoogleNative } from './google-auth.service';
 import {
     createUserWithEmailAndPassword,
     AuthError as FirebaseAuthError,
@@ -359,6 +360,7 @@ class FirebaseAuthService {
    */
   async logout(): Promise<void> {
     await signOut(firebaseAuth);
+    await signOutGoogleNative();
   }
 
   /**
