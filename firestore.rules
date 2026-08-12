@@ -493,10 +493,19 @@ service cloud.firestore {
     // 9. COLLECTION: favorites
     // =========================================================================
     match /favorites/{favoriteId} {
-      allow read: if isOwner(resource.data.customerId) || isAdmin();
+      // get() must be split from list(): a get() existence-check on a not-yet-created
+      // doc has resource == null (customer's first toggle does getDoc() before the
+      // doc exists), so it's checked against favoriteId -- the deterministic
+      // `{customerId}_{barberId}` path segment -- instead of resource.data.
+      allow get: if (isSignedIn() && favoriteId.matches(uid() + '_.*')) || isAdmin();
 
-      allow create: if isSignedIn()
-        && request.resource.data.customerId == uid();
+      // list() queries (e.g. where('customerId','==', uid())) can only be statically
+      // proven safe by Firestore when the rule matches resource.data against the
+      // same field the query already filters on -- a path-based check here would
+      // make every list() query undecidable and get rejected outright.
+      allow list: if (isSignedIn() && resource.data.customerId == uid()) || isAdmin();
+
+      allow create: if isSignedIn() && request.resource.data.customerId == uid();
 
       allow delete: if isOwner(resource.data.customerId) || isAdmin();
     }

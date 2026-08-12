@@ -1,5 +1,6 @@
 import { Loading } from '@/components/ui/Loading';
 import { useAuth } from '@/features/auth/hooks/use-auth';
+import { FavoritesProvider } from '@/features/customer/context/favorites-context';
 import { router, Stack } from 'expo-router';
 import { useEffect } from 'react';
 
@@ -38,17 +39,19 @@ export default function CustomerLayout() {
   if (!isValidCustomer) return <Loading />;
 
   return (
-    <Stack
-      screenOptions={{
-        headerShown: false,
-        animation: 'slide_from_right',
-        presentation: 'card',
-      }}>
-      <Stack.Screen name="home" />
-      <Stack.Screen name="explore" />
-      <Stack.Screen name="favorites" />
-      <Stack.Screen name="chat" />
-      <Stack.Screen name="profile" />
-    </Stack>
+    <FavoritesProvider>
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          animation: 'slide_from_right',
+          presentation: 'card',
+        }}>
+        <Stack.Screen name="home" />
+        <Stack.Screen name="explore" />
+        <Stack.Screen name="favorites" />
+        <Stack.Screen name="chat" />
+        <Stack.Screen name="profile" />
+      </Stack>
+    </FavoritesProvider>
   );
 }

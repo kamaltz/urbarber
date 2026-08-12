@@ -7,6 +7,7 @@ import { Loading } from '@/components/ui/Loading';
 import { Rating } from '@/components/ui/Rating';
 import { MAP_CONFIG } from '@/config/map.config';
 import { useAuth } from '@/features/auth/hooks/use-auth';
+import { useFavorites } from '@/features/customer/context/favorites-context';
 import { useCustomerSearch } from '@/features/customer/hooks/use-customer-search';
 import { Camera, Map, Marker } from '@maplibre/maplibre-react-native';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -22,6 +23,7 @@ import {
 export default function ExploreScreen() {
   const { user } = useAuth();
   const customerId = user?.uid || '';
+  const { isFavorite, toggleFavorite } = useFavorites();
 
   const params = useLocalSearchParams<{ category?: string }>();
   const initialCategory = params.category;
@@ -231,8 +233,20 @@ export default function ExploreScreen() {
                 <View className="flex-1">
                   <View className="flex-row items-center justify-between">
                     <Text className="text-base font-bold text-slate-900">{barber.name}</Text>
-                    <View className="rounded-full bg-amber-50 px-2 py-0.5 border border-amber-200">
-                      <Text className="text-[10px] font-bold text-amber-800">Verified</Text>
+                    <View className="flex-row items-center gap-2">
+                      <View className="rounded-full bg-amber-50 px-2 py-0.5 border border-amber-200">
+                        <Text className="text-[10px] font-bold text-amber-800">Verified</Text>
+                      </View>
+                      <Pressable
+                        onPress={() => toggleFavorite(barber.barberId)}
+                        hitSlop={8}
+                        accessibilityRole="button"
+                        accessibilityLabel="Tambah atau hapus favorit"
+                      >
+                        <Text className="text-base">
+                          {isFavorite(barber.barberId) ? '❤️' : '🤍'}
+                        </Text>
+                      </Pressable>
                     </View>
                   </View>
                   <Text className="mt-1 text-xs text-slate-600" numberOfLines={1}>

@@ -5,7 +5,6 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Loading } from '@/components/ui/Loading';
 import { Rating } from '@/components/ui/Rating';
 import { routes } from '@/constants/routes';
-import { useAuth } from '@/features/auth/hooks/use-auth';
 import { useBarberDetail } from '@/features/customer/hooks/use-barber-detail';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Pressable, ScrollView, Text, View } from 'react-native';
@@ -25,14 +24,11 @@ export function formatDurationMinutes(minutes: number): string {
 }
 
 export default function BarberDetailScreen() {
-  const { user } = useAuth();
-  const customerId = user?.uid || '';
-
   const params = useLocalSearchParams<{ barberId: string }>();
   const barberId = params.barberId ? String(params.barberId).trim() : '';
 
   const { barber, services, isFavorite, loading, error, toggleFavorite, refresh } =
-    useBarberDetail(barberId, customerId);
+    useBarberDetail(barberId);
 
   if (!barberId) {
     return (

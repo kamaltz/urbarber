@@ -6,13 +6,14 @@
 import { barberRepository } from '@/features/barbers/repository/barber.repository';
 import type { BarberService } from '@/features/barbers/types/barber';
 import { useCallback, useEffect, useState } from 'react';
+import { useFavorites } from '../context/favorites-context';
 import { customerRepository } from '../repository/customer.repository';
 import type { PublicBarberSummary } from '../types/customer';
 
-export function useBarberDetail(barberId: string, customerId?: string) {
+export function useBarberDetail(barberId: string) {
+  const favorites = useFavorites();
   const [barber, setBarber] = useState<PublicBarberSummary | null>(null);
   const [services, setServices] = useState<BarberService[]>([]);
-  const [isFavorite, setIsFavorite] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(Boolean(barberId));
   const [error, setError] = useState<string | null>(null);
 
@@ -36,18 +37,13 @@ export function useBarberDetail(barberId: string, customerId?: string) {
       const rawServices = await barberRepository.getBarberServices(barberId);
       const activeServices = (rawServices || []).filter((s) => s.isActive !== false);
       setServices(activeServices);
-
-      if (customerId) {
-        const fav = await customerRepository.isFavorite(customerId, barberId);
-        setIsFavorite(fav);
-      }
       setError(null);
     } catch (err: any) {
       setError(err?.message || 'Gagal memuat detail barber.');
     } finally {
       setLoading(false);
     }
-  }, [barberId, customerId]);
+  }, [barberId]);
 
   useEffect(() => {
     let active = true;
@@ -70,23 +66,14 @@ export function useBarberDetail(barberId: string, customerId?: string) {
   }, [barberId, fetchDetail]);
 
   const toggleFavorite = useCallback(async () => {
-    if (!customerId || !barberId) return;
-
-    const prev = isFavorite;
-    setIsFavorite(!prev);
-
-    const res = await customerRepository.toggleFavoriteBarber(customerId, barberId);
-    if (!res.success) {
-      setIsFavorite(prev);
-    } else {
-      setIsFavorite(res.isFavorite);
-    }
-  }, [customerId, barberId, isFavorite]);
+    if (!barberId) return;
+    await favorites.toggleFavorite(barberId);
+  }, [barberId, favorites]);
 
   return {
     barber,
     services,
-    isFavorite,
+    isFavorite: favorites.isFavorite(barberId),
     loading,
     error,
     toggleFavorite,

@@ -1495,6 +1495,84 @@ async function runRulesTests() {
       );
     });
 
+    await test('81. Customer can existence-check their own not-yet-created favorite (get() on a non-existent doc must not error)', async () => {
+      const custDb = testEnv.authenticatedContext('fav_cust1', { app_role: 'customer' }).firestore();
+      const snap = await custDb.collection('favorites').doc('fav_cust1_fav_barb1').get();
+      if (snap.exists) throw new Error('Expected non-existent favorite doc');
+    });
+
+    await test('82. Customer can delete own favorite; other customer cannot delete it', async () => {
+      const ownerDb = testEnv.authenticatedContext('fav_cust2', { app_role: 'customer' }).firestore();
+      await assertSucceeds(
+        ownerDb.collection('favorites').doc('fav_cust2_fav_barb1').set({
+          customerId: 'fav_cust2',
+          barberId: 'fav_barb1',
+        })
+      );
+
+      const otherDb = testEnv.authenticatedContext('fav_cust3', { app_role: 'customer' }).firestore();
+      await assertFails(otherDb.collection('favorites').doc('fav_cust2_fav_barb1').delete());
+
+      await assertSucceeds(ownerDb.collection('favorites').doc('fav_cust2_fav_barb1').delete());
+    });
+
+    await test('83. Barber cannot delete or read a customer favorite it is not the owner of', async () => {
+      const ownerDb = testEnv.authenticatedContext('fav_cust4', { app_role: 'customer' }).firestore();
+      await assertSucceeds(
+        ownerDb.collection('favorites').doc('fav_cust4_fav_barb2').set({
+          customerId: 'fav_cust4',
+          barberId: 'fav_barb2',
+        })
+      );
+
+      const barberDb = testEnv.authenticatedContext('fav_barb2', { app_role: 'barber' }).firestore();
+      await assertFails(barberDb.collection('favorites').doc('fav_cust4_fav_barb2').get());
+      await assertFails(barberDb.collection('favorites').doc('fav_cust4_fav_barb2').delete());
+    });
+
+    await test('84. Customer cannot create a favorite doc with a spoofed customerId', async () => {
+      const custDb = testEnv.authenticatedContext('fav_cust5', { app_role: 'customer' }).firestore();
+      await assertFails(
+        custDb.collection('favorites').doc('fav_cust5_fav_barb3').set({
+          customerId: 'someone_else',
+          barberId: 'fav_barb3',
+        })
+      );
+    });
+
+    await test('86. Customer can list() their own favorites via where(customerId==uid); cannot list() another customer\'s', async () => {
+      const ownerDb = testEnv.authenticatedContext('fav_cust7', { app_role: 'customer' }).firestore();
+      await assertSucceeds(
+        ownerDb.collection('favorites').doc('fav_cust7_fav_barb5').set({
+          customerId: 'fav_cust7',
+          barberId: 'fav_barb5',
+        })
+      );
+
+      await assertSucceeds(
+        ownerDb.collection('favorites').where('customerId', '==', 'fav_cust7').get()
+      );
+
+      const otherDb = testEnv.authenticatedContext('fav_cust8', { app_role: 'customer' }).firestore();
+      await assertFails(
+        otherDb.collection('favorites').where('customerId', '==', 'fav_cust7').get()
+      );
+    });
+
+    await test('85. Admin can read and delete any favorite', async () => {
+      const ownerDb = testEnv.authenticatedContext('fav_cust6', { app_role: 'customer' }).firestore();
+      await assertSucceeds(
+        ownerDb.collection('favorites').doc('fav_cust6_fav_barb4').set({
+          customerId: 'fav_cust6',
+          barberId: 'fav_barb4',
+        })
+      );
+
+      const adminDb = testEnv.authenticatedContext('fav_admin1', { app_role: 'admin' }).firestore();
+      await assertSucceeds(adminDb.collection('favorites').doc('fav_cust6_fav_barb4').get());
+      await assertSucceeds(adminDb.collection('favorites').doc('fav_cust6_fav_barb4').delete());
+    });
+
   } finally {
     await testEnv.cleanup();
     console.log(`\nTest Execution Complete: ${passed} Passed, ${failed} Failed.\n`);
