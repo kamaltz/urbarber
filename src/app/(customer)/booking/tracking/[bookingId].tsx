@@ -151,7 +151,6 @@ export default function CustomerTrackingScreen() {
           <View className="m-4 mb-0 h-72 overflow-hidden rounded-2xl border border-slate-200">
             <Map mapStyle={MAP_CONFIG.styleUrl} style={{ flex: 1 }}>
               <Camera
-                key={`${tracking.location.longitude}:${tracking.location.latitude}`}
                 initialViewState={{
                   center: [tracking.location.longitude, tracking.location.latitude],
                   zoom: 15,

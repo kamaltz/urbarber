@@ -76,33 +76,34 @@ export default function ExploreScreen() {
       title="Cari Barber"
       description="Temukan barber terpercaya dan terverifikasi di sekitar Anda."
       showTabs
+      scroll={false}
     >
-      {/* Default-area notice: never let this look like the Customer's real location */}
-      {showDefaultAreaNotice ? (
-        <View className="mb-4 rounded-xl bg-amber-50 border border-amber-200 p-3">
-          <Text className="text-xs font-semibold text-amber-900">
-            Menampilkan barber di sekitar area default (Garut), bukan lokasi Anda saat ini.
-          </Text>
-          <AppButton
-            label="Gunakan Lokasi Saya"
-            onPress={requestLocation}
-            variant="secondary"
-            fullWidth={false}
-            className="mt-2 self-start"
-          />
-        </View>
-      ) : null}
+      <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
+        {/* Default-area notice: never let this look like the Customer's real location */}
+        {showDefaultAreaNotice ? (
+          <View className="mb-4 rounded-xl bg-amber-50 border border-amber-200 p-3">
+            <Text className="text-xs font-semibold text-amber-900">
+              Menampilkan barber di sekitar area default (Garut), bukan lokasi Anda saat ini.
+            </Text>
+            <AppButton
+              label="Gunakan Lokasi Saya"
+              onPress={requestLocation}
+              variant="secondary"
+              fullWidth={false}
+              className="mt-2 self-start"
+            />
+          </View>
+        ) : null}
 
-      {/* Map */}
-      <View className="mb-4 h-64 overflow-hidden rounded-2xl border border-slate-200">
-        <Map mapStyle={MAP_CONFIG.styleUrl} style={{ flex: 1 }}>
-          <Camera
-            key={cameraKey}
-            initialViewState={{
-              center: [center.longitude, center.latitude],
-              zoom: MAP_CONFIG.defaultViewport.zoom,
-            }}
-          />
+        {/* Map */}
+        <View className="mb-4 h-64 overflow-hidden rounded-2xl border border-slate-200">
+          <Map mapStyle={MAP_CONFIG.styleUrl} style={{ flex: 1 }}>
+            <Camera
+              initialViewState={{
+                center: [center.longitude, center.latitude],
+                zoom: MAP_CONFIG.defaultViewport.zoom,
+              }}
+            />
 
           {showCustomerMarker ? (
             <Marker lngLat={[center.longitude, center.latitude]} id="customer-location">
@@ -281,6 +282,7 @@ export default function ExploreScreen() {
           onActionPress={searchQuery || selectedCategory ? clearSearch : refresh}
         />
       )}
+      </ScrollView>
     </CustomerScreen>
   );
 }
