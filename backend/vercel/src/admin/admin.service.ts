@@ -8,6 +8,14 @@ import type { DocumentSnapshot } from 'firebase-admin/firestore';
 import { FieldValue } from 'firebase-admin/firestore';
 import { db } from '../lib/firebase-admin.js';
 import { getSupabaseAdminClient } from '../lib/supabase-admin.js';
+import type { AdminBookingIdentities } from './admin-booking-dto.js';
+import {
+  mapAdminBookingDetail,
+  mapAdminBookingSummary,
+  resolveBookingAmount,
+  resolveBookingDate,
+  resolveBookingStartTime,
+} from './admin-booking-dto.js';
 import { ALLOWED_DOC_TYPES, assertPathFromFirestore, validateStoragePathNamespace } from './admin.validation.js';
 import type {
     AdminBarberDetail,
@@ -117,9 +125,11 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
       .orderBy('createdAt', 'desc')
       .limit(5)
       .get();
-    // Explicit safe DTO -- raw Firestore booking docs store `totalPrice`, not
-    // `price`, and have no `bookingId` field (the doc ID is authoritative), so a
-    // blind spread here would silently omit fields the Admin UI depends on.
+    // Explicit safe DTO -- raw Firestore booking docs have no `bookingId` field
+    // (the doc ID is authoritative), so a blind spread here would silently omit
+    // fields the Admin UI depends on. resolveBookingAmount tolerates the
+    // historical price/totalAmount/totalPrice field variants (see
+    // admin-booking-dto.ts) -- the current payment-first creator stores `price`.
     const recentBookings: AdminBookingRecord[] = recentBookingSnap.docs.map(d => {
       const data = d.data();
       return {
@@ -130,9 +140,9 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
         status: data.status,
         paymentMethod: data.paymentMethod,
         paymentStatus: data.paymentStatus,
-        price: data.totalPrice || 0,
-        date: data.date,
-        startTime: data.startTime,
+        price: resolveBookingAmount(data),
+        date: resolveBookingDate(data),
+        startTime: resolveBookingStartTime(data),
         createdAt: data.createdAt,
       };
     });
@@ -845,6 +855,69 @@ export interface BookingMonitoringFilters {
 }
 
 /**
+ * Batch-resolves customer/barber/service display identity for a set of raw
+ * booking documents, one deduplicated read per unique id rather than one
+ * read per booking row -- bounded by the page size, not a per-row N+1.
+ * See admin-booking-dto.ts for why this exists instead of denormalizing
+ * names onto every future booking.
+ */
+async function resolveBookingIdentities(
+  bookings: Record<string, any>[]
+): Promise<Map<string, AdminBookingIdentities>> {
+  const customerIds = Array.from(new Set(bookings.map((b) => b.customerId).filter(Boolean)));
+  const barberIds = Array.from(new Set(bookings.map((b) => b.barberId).filter(Boolean)));
+  const serviceIds = Array.from(new Set(bookings.map((b) => b.serviceId).filter(Boolean)));
+
+  const [customerUserSnaps, barberDocSnaps, barberUserSnaps, serviceSnaps] = await Promise.all([
+    Promise.all(customerIds.map((id) => db.collection('users').doc(id).get().catch(() => null))),
+    Promise.all(barberIds.map((id) => db.collection('barbers').doc(id).get().catch(() => null))),
+    Promise.all(barberIds.map((id) => db.collection('users').doc(id).get().catch(() => null))),
+    Promise.all(serviceIds.map((id) => db.collection('barberServices').doc(id).get().catch(() => null))),
+  ]);
+
+  const customerMap = new Map<string, { displayName?: string; email?: string; phoneNumber?: string }>();
+  customerIds.forEach((id, i) => {
+    const d = customerUserSnaps[i]?.exists ? customerUserSnaps[i]!.data() : undefined;
+    if (d) customerMap.set(id, d);
+  });
+
+  const barberMap = new Map<string, { displayName?: string; businessName?: string; email?: string; phoneNumber?: string }>();
+  barberIds.forEach((id, i) => {
+    const barberDoc = barberDocSnaps[i]?.exists ? barberDocSnaps[i]!.data() : undefined;
+    const userDoc = barberUserSnaps[i]?.exists ? barberUserSnaps[i]!.data() : undefined;
+    if (barberDoc || userDoc) {
+      barberMap.set(id, {
+        displayName: barberDoc?.displayName || barberDoc?.businessName || userDoc?.displayName,
+        email: userDoc?.email,
+        phoneNumber: userDoc?.phoneNumber,
+      });
+    }
+  });
+
+  const serviceMap = new Map<string, string>();
+  serviceIds.forEach((id, i) => {
+    const d = serviceSnaps[i]?.exists ? serviceSnaps[i]!.data() : undefined;
+    if (d?.name) serviceMap.set(id, d.name);
+  });
+
+  const result = new Map<string, AdminBookingIdentities>();
+  for (const booking of bookings) {
+    const customer = booking.customerId ? customerMap.get(booking.customerId) : undefined;
+    const barber = booking.barberId ? barberMap.get(booking.barberId) : undefined;
+    result.set(booking.__bookingId, {
+      customerName: customer?.displayName,
+      customerEmail: customer?.email,
+      customerPhone: customer?.phoneNumber,
+      barberName: barber?.displayName,
+      barberEmail: barber?.email,
+      barberPhone: barber?.phoneNumber,
+      serviceName: booking.serviceId ? serviceMap.get(booking.serviceId) : undefined,
+    });
+  }
+  return result;
+}
+
+/**
  * Get list of bookings with admin-safe fields and filtering.
  * Supports pagination, status filter, date range, payment filters.
  * No location tracking history exposed.
@@ -890,24 +963,12 @@ export async function getBookingsList(
     const docs = snapshot.docs.slice(0, pageSize);
     const hasMore = snapshot.docs.length > pageSize;
 
-    const items = docs.map((doc: DocumentSnapshot) => {
-      const data = doc.data();
-      return {
-        bookingId: doc.id,
-        customerName: data?.customerName || 'Unknown',
-        barberName: data?.barberName || 'Unknown',
-        serviceName: data?.serviceName || 'Service',
-        serviceLocationType: data?.serviceLocationType,
-        serviceAddress: data?.serviceAddress,
-        date: data?.date,
-        startTime: data?.startTime,
-        status: data?.status,
-        paymentMethod: data?.paymentMethod,
-        paymentStatus: data?.paymentStatus,
-        totalPrice: data?.totalPrice || 0,
-        createdAt: data?.createdAt,
-      };
-    });
+    const rawBookings = docs.map((doc: DocumentSnapshot) => ({ ...doc.data(), __bookingId: doc.id }));
+    const identities = await resolveBookingIdentities(rawBookings);
+
+    const items = rawBookings.map((data) =>
+      mapAdminBookingSummary(data.__bookingId, data, identities.get(data.__bookingId) || {})
+    );
 
     return {
       items,
@@ -931,32 +992,10 @@ export async function getBookingDetail(bookingId: string): Promise<any | null> {
     }
 
     const data = bookingSnap.data()!;
+    const identities = await resolveBookingIdentities([{ ...data, __bookingId: bookingSnap.id }]);
 
     return {
-      bookingId: bookingSnap.id,
-      customerId: data.customerId,
-      customerName: data.customerName || 'Unknown',
-      customerEmail: data.customerEmail,
-      customerPhone: data.customerPhone,
-      barberId: data.barberId,
-      barberName: data.barberName || 'Unknown',
-      barberEmail: data.barberEmail,
-      barberPhone: data.barberPhone,
-      serviceId: data.serviceId,
-      serviceName: data.serviceName,
-      serviceLocationType: data.serviceLocationType,
-      serviceAddress: data.serviceAddress,
-      date: data.date,
-      startTime: data.startTime,
-      endTime: data.endTime,
-      status: data.status,
-      notes: data.notes,
-      paymentMethod: data.paymentMethod,
-      paymentStatus: data.paymentStatus,
-      totalPrice: data.totalPrice || 0,
-      createdAt: data.createdAt,
-      updatedAt: data.updatedAt,
-      paidAt: data.paidAt,
+      ...mapAdminBookingDetail(bookingSnap.id, data, identities.get(bookingSnap.id) || {}),
       // SECURITY: Do NOT expose:
       // - latitude, longitude (location tracking)
       // - snapToken (payment gateway)
@@ -1017,7 +1056,7 @@ export async function getTransactionsList(
             bookingId: doc.id,
             provider: 'cash_on_service' as const,
             environment: 'cash' as const,
-            grossAmount: data?.totalPrice || 0,
+            grossAmount: data ? resolveBookingAmount(data) : 0,
             status: 'not_required',
             createdAt: data?.createdAt,
             paidAt: undefined,

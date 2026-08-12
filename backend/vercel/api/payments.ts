@@ -240,6 +240,10 @@ async function handleCreatePayment(ctx: RouteContext): Promise<void> {
         grossAmount: price,
         currency: 'IDR',
         method: 'midtrans_sandbox',
+        // Admin's transaction list (admin.service.ts getTransactionsList) filters
+        // on this field -- it was never written here, so no payment-created
+        // transaction could ever appear in Admin regardless of status.
+        environment: config.midtransIsProduction ? 'production' : 'sandbox',
         status: 'initiated',
         // Snap's createTransaction response only returns { token, redirect_url } --
         // transaction_id isn't assigned by Midtrans until a payment attempt occurs
