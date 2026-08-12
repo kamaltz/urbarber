@@ -10,6 +10,7 @@
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { z } from 'zod';
+import { isServiceActive, resolveServiceLocationType } from '../src/bookings/service-booking-guard.js';
 import { getSlotLockId } from '../src/bookings/slot-lock.js';
 import { config } from '../src/config/index.js';
 import { authenticateRequest } from '../src/lib/auth-middleware.js';
@@ -67,6 +68,17 @@ async function handleCreatePayment(ctx: RouteContext): Promise<void> {
     startTime: z.string().min(1, 'startTime wajib diisi.'),
     address: z.string().min(1, 'address wajib diisi.'),
     notes: z.string().optional().default(''),
+    // Batch 10B-5H-C: the client's home/onsite selection (options.tsx) was
+    // previously dropped at this boundary -- every payment-created booking
+    // persisted neither `bookingType` nor `serviceLocationType`, so downstream
+    // tracking (isHomeService in src/app/(barber)/booking/[bookingId].tsx)
+    // could never recognize a real Home Service booking. Only 'home'/'onsite'
+    // are ever accepted; the canonical serviceLocationType is derived
+    // server-side below, never taken verbatim from client input.
+    bookingType: z.enum(['home', 'onsite'], {
+      required_error: 'bookingType wajib diisi.',
+      invalid_type_error: 'bookingType harus home atau onsite.',
+    }),
   });
 
   const parseResult = createPaymentSchema.safeParse(req.body);
@@ -80,8 +92,9 @@ async function handleCreatePayment(ctx: RouteContext): Promise<void> {
     return;
   }
 
-  const { requestId, barberId, serviceId, date, startTime, address, notes } = parseResult.data;
+  const { requestId, barberId, serviceId, date, startTime, address, notes, bookingType } = parseResult.data;
   const customerId = authUser.uid;
+  const serviceLocationType = resolveServiceLocationType(bookingType);
 
   try {
     // Check if request already exists (idempotency)
@@ -122,6 +135,13 @@ async function handleCreatePayment(ctx: RouteContext): Promise<void> {
     if (serviceData.barberId !== barberId) {
       res.status(404).json({
         error: { code: 'SERVICE_NOT_FOUND', message: 'Layanan tidak ditemukan.' },
+      });
+      return;
+    }
+
+    if (!isServiceActive(serviceData)) {
+      res.status(404).json({
+        error: { code: 'SERVICE_INACTIVE', message: 'Layanan sedang tidak aktif.' },
       });
       return;
     }
@@ -168,6 +188,13 @@ async function handleCreatePayment(ctx: RouteContext): Promise<void> {
       date,
       startTime,
       address,
+      // serviceAddress mirrors `address` under the field name the Admin
+      // backend (admin.service.ts getBookingsList/getBookingDetail) already
+      // reads -- without this, a paid Home Service booking's address was
+      // silently invisible in Admin.
+      serviceAddress: address,
+      bookingType,
+      serviceLocationType,
       notes,
       price,
       status: 'pending',
