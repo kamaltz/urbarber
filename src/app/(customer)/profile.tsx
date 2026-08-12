@@ -1,6 +1,5 @@
 import { CustomerScreen } from '@/components/navigation/CustomerScreen';
 import { AppButton } from '@/components/ui/AppButton';
-import { AppCard } from '@/components/ui/AppCard';
 import { Avatar } from '@/components/ui/Avatar';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { useCustomerProfile } from '@/features/customer/hooks/use-customer-profile';
@@ -11,11 +10,11 @@ import { updateProfile as updateFirebaseProfile } from 'firebase/auth';
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 
-const items = [
-  ['Akun', '/(customer)/profile/account'],
-  ['Ubah Password', '/(customer)/profile/change-password'],
-  ['Bantuan', '/(customer)/profile/help'],
-  ['Tentang', '/(customer)/profile/about'],
+const MENU_ITEMS = [
+  { label: 'Informasi Akun', path: '/(customer)/profile/account', icon: '👤', description: 'Lihat & edit data diri' },
+  { label: 'Ubah Password', path: '/(customer)/profile/change-password', icon: '🔒', description: 'Keamanan akun & sandi' },
+  { label: 'Bantuan & FAQ', path: '/(customer)/profile/help', icon: '❓', description: 'Pusat bantuan & panduan' },
+  { label: 'Tentang Aplikasi', path: '/(customer)/profile/about', icon: 'ℹ️', description: 'Versi & informasi URBarber' },
 ] as const;
 
 export default function ProfileScreen() {
@@ -122,8 +121,9 @@ export default function ProfileScreen() {
   };
 
   return (
-    <CustomerScreen title="Profil" showTabs>
-      <View className="mb-6 items-center rounded-2xl bg-white p-6 shadow-sm border border-slate-100">
+    <CustomerScreen title="Profil Saya" showTabs>
+      {/* Profile Header Hero Card */}
+      <View className="mb-6 items-center rounded-2xl bg-white p-6 shadow-sm border border-slate-200/80">
         <Pressable
           onPress={handleAvatarPress}
           disabled={uploading}
@@ -131,42 +131,44 @@ export default function ProfileScreen() {
           accessibilityRole="button"
           accessibilityLabel="Ganti foto profil"
         >
-          <Avatar
-            name={displayName}
-            source={avatarUrl ? { uri: avatarUrl } : undefined}
-            size="xl"
-            status="online"
-          />
+          <View className="rounded-full p-1 border-2 border-[#D2691E]/30 bg-slate-50">
+            <Avatar
+              name={displayName}
+              source={avatarUrl ? { uri: avatarUrl } : undefined}
+              size="xl"
+              status="online"
+            />
+          </View>
 
           {uploading ? (
             <View className="absolute inset-0 items-center justify-center rounded-full bg-black/40">
               <ActivityIndicator color="#ffffff" size="small" />
             </View>
           ) : (
-            <View className="absolute bottom-0 right-0 rounded-full bg-[#D2691E] p-1.5 border-2 border-white shadow-sm">
+            <View className="absolute bottom-1 right-1 rounded-full bg-[#D2691E] p-2 border-2 border-white shadow-sm">
               <Text className="text-xs text-white">📷</Text>
             </View>
           )}
         </Pressable>
 
-        <Pressable onPress={handleAvatarPress} disabled={uploading} className="mt-2">
-          <Text className="text-xs font-semibold text-[#D2691E] underline">
-            {uploading ? 'Mengunggah...' : 'Ganti Foto Profil'}
+        <Pressable onPress={handleAvatarPress} disabled={uploading} className="mt-3">
+          <Text className="text-xs font-bold text-[#D2691E]">
+            {uploading ? 'Mengunggah Foto...' : 'Ubah Foto Profil'}
           </Text>
         </Pressable>
 
-        <Text className="mt-3 text-xl font-bold text-slate-900">{displayName}</Text>
-        <Text className="mt-1 text-sm text-slate-500">{user?.email || 'Lengkapi informasi akun Anda'}</Text>
+        <Text className="mt-3 text-xl font-bold text-[#363062]">{displayName}</Text>
+        <Text className="mt-0.5 text-xs text-slate-500">{user?.email || 'Akun Pelanggan Terverifikasi'}</Text>
 
         {statusMessage ? (
           <View
             className={`mt-4 rounded-xl p-3 w-full border ${
-              isError ? 'bg-[#FFF5F5] border-[#FEB2B2]' : 'bg-[#F0FFF4] border-[#9AE6B4]'
+              isError ? 'bg-rose-50 border-rose-200' : 'bg-emerald-50 border-emerald-200'
             }`}
           >
             <Text
-              className={`text-center text-xs font-medium ${
-                isError ? 'text-[#9B2C2C]' : 'text-[#22543D]'
+              className={`text-center text-xs font-semibold ${
+                isError ? 'text-rose-700' : 'text-emerald-800'
               }`}
             >
               {statusMessage}
@@ -175,14 +177,30 @@ export default function ProfileScreen() {
         ) : null}
       </View>
 
-      {items.map(([label, path]) => (
-        <AppCard key={path} onPress={() => router.push(path)} className="mb-3 flex-row items-center justify-between p-4">
-          <Text className="font-semibold text-slate-900">{label}</Text>
-          <Text className="text-xl text-slate-400">›</Text>
-        </AppCard>
-      ))}
+      {/* Menu Cards List */}
+      <View className="mb-6 rounded-2xl bg-white border border-slate-200/80 p-2 shadow-xs gap-1">
+        {MENU_ITEMS.map((item) => (
+          <Pressable
+            key={item.path}
+            onPress={() => router.push(item.path as any)}
+            className="flex-row items-center justify-between p-3.5 rounded-xl active:bg-slate-50"
+          >
+            <View className="flex-row items-center gap-3">
+              <View className="h-10 w-10 items-center justify-center rounded-xl bg-[#EDEFFB]">
+                <Text className="text-base">{item.icon}</Text>
+              </View>
+              <View>
+                <Text className="font-bold text-[#363062] text-sm">{item.label}</Text>
+                <Text className="text-xs text-slate-400">{item.description}</Text>
+              </View>
+            </View>
+            <Text className="text-lg text-slate-300 font-bold">›</Text>
+          </Pressable>
+        ))}
+      </View>
 
-      <View className="mt-6 pb-4">
+      {/* Logout Action Button */}
+      <View className="pb-6">
         <AppButton
           label="Keluar dari Akun"
           variant="destructive"

@@ -1,10 +1,11 @@
 import { CustomerScreen } from '@/components/navigation/CustomerScreen';
 import { AppButton } from '@/components/ui/AppButton';
+import { AppInput } from '@/components/ui/AppInput';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { firebaseAuth } from '@/lib/firebase';
 import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth';
 import { useState } from 'react';
-import { ScrollView, Text, TextInput, View } from 'react-native';
+import { ScrollView, Text, View } from 'react-native';
 
 export default function ChangePasswordScreen() {
   const { user } = useAuth();
@@ -93,61 +94,64 @@ export default function ChangePasswordScreen() {
       description="Perbarui password akun URBarber Anda secara berkala untuk menjaga keamanan."
     >
       <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-        <View className="gap-4 mb-6">
-          <View>
-            <Text className="text-xs font-bold text-slate-700 mb-1">Password Saat Ini *</Text>
-            <TextInput
-              className="rounded-xl bg-white p-3.5 border border-slate-200 text-sm font-medium text-slate-900"
-              value={currentPassword}
-              onChangeText={setCurrentPassword}
-              placeholder="Masukkan password saat ini"
-              placeholderTextColor="#94A3B8"
-              secureTextEntry
-            />
+        {/* Security Guidance Card */}
+        <View className="mb-5 rounded-2xl bg-[#EDEFFB] p-4 border border-[#363062]/10 flex-row gap-3 items-center">
+          <Text className="text-xl">🛡️</Text>
+          <View className="flex-1">
+            <Text className="text-xs font-bold text-[#363062]">Keamanan Kata Sandi</Text>
+            <Text className="text-xs text-[#363062]/80 mt-0.5">
+              Gunakan kata sandi unik minimal 6 karakter demi keamanan akun Anda.
+            </Text>
           </View>
+        </View>
 
-          <View>
-            <Text className="text-xs font-bold text-slate-700 mb-1">Password Baru *</Text>
-            <TextInput
-              className="rounded-xl bg-white p-3.5 border border-slate-200 text-sm font-medium text-slate-900"
-              value={newPassword}
-              onChangeText={setNewPassword}
-              placeholder="Minimal 6 karakter"
-              placeholderTextColor="#94A3B8"
-              secureTextEntry
-            />
-          </View>
+        {/* Password Form Inputs */}
+        <View className="rounded-2xl bg-white p-5 border border-slate-200/80 shadow-xs gap-4 mb-6">
+          <AppInput
+            label="Password Saat Ini *"
+            placeholder="Masukkan password saat ini"
+            value={currentPassword}
+            onChangeText={setCurrentPassword}
+            secureTextEntry
+            editable={!loading}
+          />
 
-          <View>
-            <Text className="text-xs font-bold text-slate-700 mb-1">Konfirmasi Password Baru *</Text>
-            <TextInput
-              className="rounded-xl bg-white p-3.5 border border-slate-200 text-sm font-medium text-slate-900"
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              placeholder="Ulangi password baru"
-              placeholderTextColor="#94A3B8"
-              secureTextEntry
-            />
-          </View>
+          <AppInput
+            label="Password Baru *"
+            placeholder="Minimal 6 karakter"
+            value={newPassword}
+            onChangeText={setNewPassword}
+            secureTextEntry
+            editable={!loading}
+          />
 
-          {/* Feedback Messages */}
+          <AppInput
+            label="Konfirmasi Password Baru *"
+            placeholder="Ulangi password baru"
+            value={confirmPassword}
+            onChangeText={setConfirmPassword}
+            secureTextEntry
+            editable={!loading}
+          />
+
+          {/* Feedback Banners */}
           {errorMsg ? (
-            <View className="rounded-xl bg-red-50 p-3 border border-red-200">
-              <Text className="text-xs text-red-700 text-center font-medium">{errorMsg}</Text>
+            <View className="rounded-xl bg-rose-50 p-3.5 border border-rose-200">
+              <Text className="text-xs text-rose-700 text-center font-semibold">{errorMsg}</Text>
             </View>
           ) : null}
 
           {successMsg ? (
-            <View className="rounded-xl bg-emerald-50 p-3 border border-emerald-200">
-              <Text className="text-xs text-emerald-700 text-center font-medium">{successMsg}</Text>
+            <View className="rounded-xl bg-emerald-50 p-3.5 border border-emerald-200">
+              <Text className="text-xs text-emerald-800 text-center font-semibold">{successMsg}</Text>
             </View>
           ) : null}
 
           <AppButton
-            label={loading ? 'Memperbarui...' : 'Ubah Password'}
+            label="Perbarui Password"
+            loading={loading}
             onPress={handleSubmit}
-            variant="primary"
-            disabled={loading}
+            className="h-[54px] rounded-xl bg-[#D2691E] active:bg-[#b85a19] mt-2"
           />
         </View>
       </ScrollView>

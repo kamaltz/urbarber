@@ -1,13 +1,13 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-    KeyboardAvoidingView,
-    Platform,
-    Pressable,
-    SafeAreaView,
-    Text,
-    TextInput,
-    View,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  SafeAreaView,
+  Text,
+  TextInput,
+  View,
 } from 'react-native';
 
 import { AppButton } from '@/components/ui/AppButton';
@@ -108,9 +108,13 @@ function OtpInputGroup({
           }}
           onKeyPress={({ nativeEvent }) => handleKeyPress(index, nativeEvent.key)}
           className={[
-            'h-[62px] w-[62px] rounded-xl border bg-white text-center text-2xl font-semibold text-slate-900',
-            hasError ? 'border-rose-500' : 'border-slate-300',
-            disabled ? 'bg-slate-100 text-slate-400' : '',
+            'h-[62px] w-[62px] rounded-2xl border bg-slate-50/50 text-center text-2xl font-bold text-[#363062] shadow-xs',
+            hasError
+              ? 'border-rose-400 bg-rose-50/30 text-rose-600'
+              : char
+                ? 'border-[#363062] bg-white'
+                : 'border-slate-200',
+            disabled ? 'bg-slate-100 text-slate-400 border-slate-200' : '',
           ].join(' ')}
         />
       ))}
@@ -137,8 +141,12 @@ export default function OtpVerificationScreen() {
 
   if (!identifier) {
     return (
-      <SafeAreaView className="flex-1 bg-white items-center justify-center">
-        <Text className="text-red-600">Error: Identifier not provided</Text>
+      <SafeAreaView className="flex-1 bg-white items-center justify-center px-6">
+        <View className="rounded-2xl bg-rose-50 p-4 border border-rose-200">
+          <Text className="text-rose-700 font-semibold text-center">
+            Error: Identifikasi tidak ditemukan
+          </Text>
+        </View>
       </SafeAreaView>
     );
   }
@@ -202,14 +210,25 @@ export default function OtpVerificationScreen() {
         className="flex-1"
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 16 : 0}>
-        <View className="flex-1 px-[18px] pt-14">
+        <View className="flex-1 px-6 pt-6 pb-6">
+          {/* Top Navigation Back Button */}
+          <Pressable
+            onPress={handleChangeIdentifier}
+            className="mb-4 flex-row items-center gap-1 rounded-full py-1 self-start active:opacity-70"
+            accessibilityRole="button"
+            accessibilityLabel="Ubah email"
+          >
+            <Text className="text-xl font-bold text-[#363062]">←</Text>
+            <Text className="text-sm font-semibold text-[#363062]">Kembali</Text>
+          </Pressable>
+
           <View className="flex-1">
             <AuthHeaderBlock
-              title="Verifikasi"
-              description={`Masukkan kode OTP yang dikirim ke ${identifier}`}
+              title="Verifikasi OTP"
+              description={`Masukkan 4 digit kode verifikasi yang dikirim ke ${identifier}`}
             />
 
-            <View className="mt-12">
+            <View className="mt-8">
               <OtpInputGroup
                 value={otpCode}
                 onChange={(next) => {
@@ -222,37 +241,35 @@ export default function OtpVerificationScreen() {
               />
             </View>
 
-            {errorText ? <Text className="mt-3 text-center text-sm text-rose-600">{errorText}</Text> : null}
+            {errorText ? (
+              <View className="mt-4 rounded-xl bg-rose-50 p-3 border border-rose-200">
+                <Text className="text-center text-xs font-medium text-rose-700">{errorText}</Text>
+              </View>
+            ) : null}
 
             <View className="mt-8">
               <AppButton
-                label="Verifikasi"
+                label="Verifikasi Kode"
                 loading={verifyState === 'loading'}
                 disabled={!isComplete}
                 onPress={handleVerify}
-                className="h-[54px] rounded-lg"
+                className="h-[54px] rounded-xl bg-[#D2691E] active:bg-[#b85a19]"
               />
             </View>
 
-            <View className="mt-10 items-center">
+            <View className="mt-8 items-center">
               <Pressable
                 accessibilityRole="button"
                 disabled={cooldown > 0 || verifyState === 'loading'}
-                onPress={handleResend}>
+                onPress={handleResend}
+                className="rounded-full px-4 py-2 bg-slate-50 border border-slate-200 active:bg-slate-100"
+              >
                 <Text
                   className={[
-                    'text-xl font-semibold',
+                    'text-sm font-semibold',
                     cooldown > 0 || verifyState === 'loading' ? 'text-slate-400' : 'text-[#363062]',
                   ].join(' ')}>
-                  {cooldown > 0 ? `Kirim ulang (${cooldown})` : 'Tidak menerima kode?'}
-                </Text>
-              </Pressable>
-            </View>
-
-            <View className="mt-6 items-center">
-              <Pressable onPress={handleChangeIdentifier} disabled={verifyState === 'loading'}>
-                <Text className="text-base font-semibold text-slate-600 underline">
-                  Ubah email
+                  {cooldown > 0 ? `Kirim ulang kode (${cooldown}s)` : 'Belum menerima kode? Kirim Ulang'}
                 </Text>
               </Pressable>
             </View>
