@@ -16,6 +16,11 @@ import { AuthHeaderBlock } from '@/features/auth/components/AuthHeaderBlock';
 import { SocialLoginButton } from '@/features/auth/components/SocialLoginButton';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { authService } from '@/features/auth/services/auth.service';
+import {
+  configureGoogleSignIn,
+  isGoogleAuthConfigured,
+  loginExistingGoogleAccount,
+} from '@/features/auth/services/google-auth.service';
 import { validateLoginForm } from '@/features/auth/validation/auth.validation';
 
 export default function LoginScreen() {
@@ -57,12 +62,13 @@ export default function LoginScreen() {
     setError('');
     setIsLoading(true);
     try {
-      const response = await authService.loginWithGoogle();
-      if (response.success) {
+      configureGoogleSignIn();
+      const result = await loginExistingGoogleAccount();
+      if (result.success) {
         await reloadUser();
-        router.replace('/(customer)/home');
-      } else {
-        setError(response.error?.message || 'Gagal masuk dengan Akun Google.');
+        router.replace('/');
+      } else if (result.error.code !== 'USER_CANCELLED') {
+        setError(result.error.message);
       }
     } catch (err: any) {
       setError('Terjadi kesalahan saat masuk dengan Google.');
@@ -156,13 +162,15 @@ export default function LoginScreen() {
               </View>
             </View>
 
-            <View className="mt-8 mb-8">
-              <SocialLoginButton
-                provider="google"
-                onPress={handleGoogleLogin}
-                disabled={isLoading}
-              />
-            </View>
+            {isGoogleAuthConfigured() ? (
+              <View className="mt-8 mb-8">
+                <SocialLoginButton
+                  provider="google"
+                  onPress={handleGoogleLogin}
+                  disabled={isLoading}
+                />
+              </View>
+            ) : null}
           </View>
         </ScrollView>
       </KeyboardAvoidingView>

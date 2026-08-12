@@ -12,6 +12,7 @@
     },
     "android": {
       "package": "com.kamaltz.urbarber",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -41,7 +42,8 @@
         {
           "locationForegroundPermission": "Aplikasi URBarber memerlukan akses lokasi untuk menemukan Barber terdekat dan melacak layanan cukur di rumah."
         }
-      ]
+      ],
+      "@react-native-google-signin/google-signin"
     ],
     "experiments": {
       "typedRoutes": true,

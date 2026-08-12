@@ -54,6 +54,7 @@ example
 # secrets & private credentials
 secrets/
 firebase-service-account.json
+google-services.json
 
 docs/figma/screenshots/*.png
 docs/figma/screenshots/admin/*.png

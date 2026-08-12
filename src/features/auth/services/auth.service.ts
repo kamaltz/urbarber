@@ -5,15 +5,12 @@
 
 import { firebaseAuth, firestore } from '@/lib/firebase';
 import { withTimeout } from '@/lib/promise';
-import type { PublicRegistrationRole } from '@/types/domain';
 import { accountBootstrapService } from './account-bootstrap.service';
 import {
     createUserWithEmailAndPassword,
     AuthError as FirebaseAuthError,
-    GoogleAuthProvider,
     sendEmailVerification,
     sendPasswordResetEmail,
-    signInWithCredential,
     signInWithEmailAndPassword,
     signOut,
     updateProfile,
@@ -75,19 +72,6 @@ function verificationEmailError(error: unknown): AuthError {
     code: firebaseError.code || 'SEND_FAILED',
     message: 'Firebase gagal mengirim email verifikasi. Coba lagi beberapa saat.',
   };
-}
-
-export interface GoogleUser {
-  id: string;
-  email: string;
-  displayName: string;
-  photoUrl?: string;
-}
-
-export interface SocialAuthResponse {
-  success: boolean;
-  user?: GoogleUser;
-  error?: AuthError;
 }
 
 class FirebaseAuthService {
@@ -375,71 +359,6 @@ class FirebaseAuthService {
    */
   async logout(): Promise<void> {
     await signOut(firebaseAuth);
-  }
-
-  /**
-   * Login or Register with Google (supports native idToken credential or Firebase Popup)
-   */
-  async loginWithGoogle(
-    idToken?: string,
-    requestedRole: PublicRegistrationRole = 'customer'
-  ): Promise<SocialAuthResponse> {
-    try {
-      let userCredential;
-
-      if (idToken) {
-        const credential = GoogleAuthProvider.credential(idToken);
-        userCredential = await signInWithCredential(firebaseAuth, credential);
-      } else {
-        const provider = new GoogleAuthProvider();
-        provider.setCustomParameters({ prompt: 'select_account' });
-        try {
-          const { signInWithPopup } = await import('firebase/auth');
-          userCredential = await signInWithPopup(firebaseAuth, provider);
-        } catch (popupErr: any) {
-          return {
-            success: false,
-            error: {
-              code: 'GOOGLE_CONFIG_REQUIRED',
-              message:
-                popupErr?.message ||
-                'Google Sign-In pada perangkat seluler memerlukan idToken credential.',
-            },
-          };
-        }
-      }
-
-      const uid = userCredential.user.uid;
-      const email = userCredential.user.email;
-      const displayName =
-        userCredential.user.displayName || email?.split('@')[0] || 'Pengguna Google';
-      const photoURL = userCredential.user.photoURL || undefined;
-
-      // Auto-bootstrap user document in Firestore if new
-      await accountBootstrapService.initializeAccount({
-        requestedRole,
-        name: displayName,
-      });
-
-      return {
-        success: true,
-        user: {
-          id: uid,
-          email: email || '',
-          displayName,
-          photoUrl: photoURL,
-        },
-      };
-    } catch (error: any) {
-      const firebaseError = error as FirebaseAuthError;
-      return {
-        success: false,
-        error: {
-          code: firebaseError?.code || 'GOOGLE_LOGIN_FAILED',
-          message: firebaseError?.message || 'Gagal masuk dengan Akun Google.',
-        },
-      };
-    }
   }
 
   /**

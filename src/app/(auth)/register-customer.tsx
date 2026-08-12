@@ -4,6 +4,11 @@ import { AuthHeaderBlock } from '@/features/auth/components/AuthHeaderBlock';
 import { SocialLoginButton } from '@/features/auth/components/SocialLoginButton';
 import { TermsAgreement } from '@/features/auth/components/TermsAgreement';
 import { authService } from '@/features/auth/services/auth.service';
+import {
+  configureGoogleSignIn,
+  isGoogleAuthConfigured,
+  registerGoogleAccount,
+} from '@/features/auth/services/google-auth.service';
 import { validateRegisterForm } from '@/features/auth/validation/auth.validation';
 import type { PublicRegistrationRole } from '@/types/domain';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -94,19 +99,24 @@ export default function RegisterCustomerScreen() {
   const handleGoogleSignUp = async () => {
     setError('');
     setSuccessMessage('');
+
+    if (!acceptedTerms) {
+      setError('Anda harus menyetujui syarat dan ketentuan sebelum mendaftar.');
+      return;
+    }
+
     setIsLoading(true);
     try {
-      const response = await authService.loginWithGoogle(undefined, selectedRole);
-      if (response.success) {
+      configureGoogleSignIn();
+      const result = await registerGoogleAccount(selectedRole);
+      if (result.success) {
         await reloadUser();
         setSuccessMessage('🎉 Berhasil mendaftar dengan Akun Google! Mengalihkan...');
         setTimeout(() => {
-          router.replace(
-            selectedRole === 'barber' ? ('/(barber-onboarding)/profile' as any) : ('/(customer)/home' as any),
-          );
+          router.replace('/');
         }, 1000);
-      } else {
-        setError(response.error?.message || 'Gagal mendaftar dengan Akun Google.');
+      } else if (result.error.code !== 'USER_CANCELLED') {
+        setError(result.error.message);
       }
     } catch (err: any) {
       setError('Terjadi kesalahan saat mendaftar dengan Google.');
@@ -231,21 +241,25 @@ export default function RegisterCustomerScreen() {
                   }`}
                 />
 
-                {/* Divider */}
-                <View className="flex-row items-center gap-3">
-                  <View className="flex-1 h-px bg-slate-300" />
-                  <Text className="text-sm text-slate-600">atau</Text>
-                  <View className="flex-1 h-px bg-slate-300" />
-                </View>
+                {isGoogleAuthConfigured() ? (
+                  <>
+                    {/* Divider */}
+                    <View className="flex-row items-center gap-3">
+                      <View className="flex-1 h-px bg-slate-300" />
+                      <Text className="text-sm text-slate-600">atau</Text>
+                      <View className="flex-1 h-px bg-slate-300" />
+                    </View>
 
-                {/* Social SignUp */}
-                <View className="gap-3">
-                  <SocialLoginButton
-                    provider="google"
-                    onPress={handleGoogleSignUp}
-                    disabled={isLoading}
-                  />
-                </View>
+                    {/* Social SignUp */}
+                    <View className="gap-3">
+                      <SocialLoginButton
+                        provider="google"
+                        onPress={handleGoogleSignUp}
+                        disabled={isLoading || !acceptedTerms}
+                      />
+                    </View>
+                  </>
+                ) : null}
               </View>
 
               <View className="mt-6 items-center">
