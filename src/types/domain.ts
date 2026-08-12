@@ -157,6 +157,9 @@ export interface PaymentRecord {
   transactionId?: string;
   snapToken?: string;
   redirectUrl?: string;
+  // The actual field backend/vercel/api/payments.ts writes to payments/{bookingId}
+  // (see payment-api.service.ts) -- redirectUrl above was never populated.
+  paymentUrl?: string;
   createdAt: string;
   updatedAt: string;
   paidAt?: string;

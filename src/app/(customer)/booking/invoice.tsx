@@ -5,11 +5,12 @@ import { Loading } from '@/components/ui/Loading';
 import { routes } from '@/constants/routes';
 import { paymentRepository } from '@/features/payments/repository/payment.repository';
 import { createPaidCheckoutGuard } from '@/features/payments/utils/paid-checkout-guard';
+import { isPayButtonDisabled } from '@/features/payments/utils/pay-button-state';
 import type { PaymentRecord, PaymentStatus } from '@/types/domain';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, InteractionManager, ScrollView, Text, View } from 'react-native';
 
 export default function BookingInvoiceScreen() {
   const params = useLocalSearchParams<{
@@ -52,13 +53,27 @@ export default function BookingInvoiceScreen() {
   const paidGuardRef = useRef(createPaidCheckoutGuard());
   const navigateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const goToActiveBooking = useCallback((id: string, status: PaymentStatus = 'paid') => {
-    if (!paidGuardRef.current.consumeIfPaid(status)) return;
+  const goToActiveBooking = useCallback((id: string, source: 'subscription' | 'sync' | 'button', status: PaymentStatus = 'paid') => {
+    const consumed = paidGuardRef.current.consumeIfPaid(status);
+    if (__DEV__) {
+      console.log('[PAID_NAV]', { source, consumed });
+    }
+    if (!consumed) return;
     navigateTimeoutRef.current = setTimeout(() => {
       // Dismiss the entire booking-creation stack (options/schedule/location/invoice)
       // before landing on Active Booking, so Back cannot reopen a paid checkout.
       router.dismissTo(routes.customer.home);
-      router.push(routes.customer.activeBooking(id));
+      // dismissTo's screen removal and push's screen insertion are each their
+      // own native-stack/Fabric commit. Firing them in the same tick raced
+      // Fabric's async view-tree commit for the dismiss against the push's
+      // insert, crashing with "addViewAt: failed to insert view / child
+      // already has a parent". InteractionManager defers the push until the
+      // dismiss transition's interactions have actually finished -- the
+      // supported way to sequence two navigation actions, not a magic-number
+      // setTimeout.
+      InteractionManager.runAfterInteractions(() => {
+        router.push(routes.customer.activeBooking(id));
+      });
     }, 1200);
   }, []);
 
@@ -145,8 +160,16 @@ export default function BookingInvoiceScreen() {
       bookingId,
       (record) => {
         setPaymentRecord(record);
+        // Keeps the Pay button's paymentUrl in sync with the authoritative
+        // Firestore record. Without this, reopening Invoice for an existing
+        // bookingId (paymentUrl state starts null; only the creation path
+        // ever set it) left a genuinely still-payable pending transaction
+        // permanently disabled -- `!paymentUrl` never became false again.
+        if (record?.paymentUrl) {
+          setPaymentUrl(record.paymentUrl);
+        }
         if (record?.status === 'paid') {
-          goToActiveBooking(bookingId);
+          goToActiveBooking(bookingId, 'subscription');
         }
       }
     );
@@ -166,16 +189,26 @@ export default function BookingInvoiceScreen() {
       return;
     }
 
+    let browserResult: WebBrowser.WebBrowserResult | undefined;
     try {
       setSyncing(true);
-      await WebBrowser.openBrowserAsync(paymentUrl);
+      browserResult = await WebBrowser.openBrowserAsync(paymentUrl);
     } catch (err: any) {
       if (__DEV__) console.warn('[WebBrowser Open Error]', err);
     } finally {
+      // The browser's own result (cancel/dismiss/opened) is never treated as
+      // payment success -- only the authoritative sync response below is.
       if (bookingId) {
         const syncRes = await paymentRepository.syncBookingPaymentStatus(bookingId);
-        if (syncRes.success && syncRes.data?.paymentStatus === 'paid') {
-          goToActiveBooking(bookingId);
+        const authoritativeStatus = syncRes.success ? syncRes.data?.paymentStatus : undefined;
+        if (__DEV__) {
+          console.log('[PAYMENT_RETURN]', {
+            browserResult: browserResult?.type,
+            authoritativePaymentStatus: authoritativeStatus,
+          });
+        }
+        if (authoritativeStatus === 'paid') {
+          goToActiveBooking(bookingId, 'sync');
         }
       }
       setSyncing(false);
@@ -309,7 +342,7 @@ export default function BookingInvoiceScreen() {
           {currentStatus === 'paid' ? (
             <AppButton
               label="Lihat Detail Pesanan"
-              onPress={() => bookingId && goToActiveBooking(bookingId)}
+              onPress={() => bookingId && goToActiveBooking(bookingId, 'button')}
               variant="primary"
             />
           ) : ['expired', 'cancelled', 'failed'].includes(currentStatus) ? (
@@ -331,7 +364,7 @@ export default function BookingInvoiceScreen() {
                 label={syncing ? 'Menyinkronkan Status...' : 'Bayar Sekarang (Midtrans Snap)'}
                 onPress={handleOpenSnapBrowser}
                 variant="primary"
-                disabled={syncing || !paymentUrl}
+                disabled={isPayButtonDisabled({ status: currentStatus, paymentUrl, syncing })}
               />
 
               {syncing ? (
