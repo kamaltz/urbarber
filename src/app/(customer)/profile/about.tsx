@@ -15,6 +15,7 @@ export default function AboutScreen() {
     <CustomerScreen
       title="Tentang URBarber"
       description="Platform digital pemesanan layanan barber panggil (home-service) dan barbershop modern."
+      scroll={false}
     >
       <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
         {/* App Branding Banner */}

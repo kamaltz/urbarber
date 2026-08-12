@@ -290,6 +290,7 @@ export default function BookingInvoiceScreen() {
     <CustomerScreen
       title="Rincian Tagihan & Pembayaran"
       description="Selesaikan pembayaran dengan Midtrans Snap Sandbox (Virtual Account / QRIS / E-Wallet)."
+      scroll={false}
     >
       <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
         {renderStatusBadge()}

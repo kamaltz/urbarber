@@ -47,6 +47,7 @@ export default function HelpScreen() {
     <CustomerScreen
       title="Pusat Bantuan & FAQ"
       description="Pertanyaan yang sering diajukan seputar layanan panggil barber URBarber."
+      scroll={false}
     >
       <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
         <Text className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">

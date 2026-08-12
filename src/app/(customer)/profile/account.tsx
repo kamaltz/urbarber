@@ -129,7 +129,7 @@ export default function AccountScreen() {
   }
 
   return (
-    <CustomerScreen title="Edit Akun" description="Kelola nama, telepon, alamat, dan foto profil Anda.">
+    <CustomerScreen title="Edit Akun" description="Kelola nama, telepon, alamat, dan foto profil Anda." scroll={false}>
       <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
         {/* Avatar Upload Card */}
         <AppCard className="mb-4 p-5 items-center">

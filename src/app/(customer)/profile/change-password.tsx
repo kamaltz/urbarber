@@ -92,6 +92,7 @@ export default function ChangePasswordScreen() {
     <CustomerScreen
       title="Ubah Password"
       description="Perbarui password akun URBarber Anda secara berkala untuk menjaga keamanan."
+      scroll={false}
     >
       <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
         {/* Security Guidance Card */}

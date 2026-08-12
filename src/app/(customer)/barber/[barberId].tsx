@@ -77,6 +77,7 @@ export default function BarberDetailScreen() {
     <CustomerScreen
       title="Detail Barber"
       description="Profil lengkap dan katalog layanan barber pilihan."
+      scroll={false}
       action={{
         label: 'Pilih Barber & Pesan',
         onPress: () =>
