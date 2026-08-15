@@ -13,9 +13,17 @@ export default function AuthLayout() {
   useEffect(() => {
     if (loading || !shouldRedirectAway) return;
 
+    // P1-1 (FINAL_THESIS_READINESS_AUDIT.md HIGH finding): admin-web-only used to
+    // live inside this same (auth) route group, so redirecting an authenticated
+    // admin here meant this layout's own render-gate below (shouldRedirectAway ->
+    // <Loading/>, Stack never mounts) blocked the very screen it was redirecting
+    // to -- an admin on mobile got stuck on an infinite spinner and could never
+    // reach Logout. admin-web-only now lives at the app root (src/app/admin-web-only.tsx),
+    // outside any auth-gated group, so this redirect always lands on a route this
+    // layout has no control over mounting.
     let dest: string;
     if (role === 'barber') dest = '/(barber)/home';
-    else if (role === 'admin') dest = '/(auth)/admin-web-only';
+    else if (role === 'admin') dest = '/admin-web-only';
     else dest = '/(customer)/home';
 
     const tid = setTimeout(() => router.replace(dest as any), 0);
@@ -39,14 +47,6 @@ export default function AuthLayout() {
       <Stack.Screen name="verification-email" />
       <Stack.Screen name="complete-account-setup" />
       <Stack.Screen name="onboarding/[step]" options={{ animation: 'fade' }} />
-      <Stack.Screen
-        name="admin-web-only"
-        options={{
-          headerShown: false,
-          animation: 'fade',
-          presentation: 'modal',
-        }}
-      />
     </Stack>
   );
 }

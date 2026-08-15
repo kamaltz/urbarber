@@ -17,7 +17,7 @@ export default function BarberOnboardingLayout() {
     if (!isAuthenticated) dest = '/(auth)/login';
     else if (!emailVerified) dest = '/(auth)/verification-email';
     else if (role === 'customer') dest = '/(customer)/home';
-    else if (role === 'admin') dest = '/(auth)/admin-web-only';
+    else if (role === 'admin') dest = '/admin-web-only';
 
     if (!dest) return; // valid barber — no redirect needed
 

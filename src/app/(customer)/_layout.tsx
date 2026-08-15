@@ -28,7 +28,7 @@ export default function CustomerLayout() {
       dest = user?.status === 'pending_verification'
         ? '/(barber-onboarding)/status'
         : '/(barber)/home';
-    } else if (role === 'admin') dest = '/(auth)/admin-web-only';
+    } else if (role === 'admin') dest = '/admin-web-only';
 
     if (!dest) return; // valid customer — no redirect needed
 

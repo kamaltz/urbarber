@@ -54,7 +54,7 @@ export default function BarberLayout() {
     else if (user?.isUninitialized) dest = '/(auth)/complete-account-setup';
     else if (!emailVerified) dest = '/(auth)/verification-email';
     else if (role === 'customer') dest = '/(customer)/home';
-    else if (role === 'admin') dest = '/(auth)/admin-web-only';
+    else if (role === 'admin') dest = '/admin-web-only';
     else if (user?.status === 'suspended') return; // handled in render
     else if (!barberProfile || !verificationStatus || verificationStatus === 'draft') dest = '/(barber-onboarding)/profile';
     else if (verificationStatus === 'pending' || verificationStatus === 'rejected') dest = '/(barber-onboarding)/status';

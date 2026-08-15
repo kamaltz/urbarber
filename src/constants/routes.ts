@@ -23,7 +23,7 @@ export const routes = {
     chat: (conversationId: string) => ({ pathname: '/(barber)/messages/[conversationId]' as const, params: { conversationId } }),
   },
   admin: {
-    webOnly: '/(auth)/admin-web-only',
+    webOnly: '/admin-web-only',
   },
   customer: {
     home: '/(customer)/home',

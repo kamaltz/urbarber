@@ -20,7 +20,7 @@ export default function IndexScreen() {
       dest = routes.auth.completeAccountSetup;
     } else if (isAuthenticated) {
       if (role === 'barber') dest = '/(barber)/home';
-      else if (role === 'admin') dest = '/(auth)/admin-web-only';
+      else if (role === 'admin') dest = '/admin-web-only';
       else dest = '/(customer)/home';
     } else {
       dest = routes.auth.onboarding(0);
