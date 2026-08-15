@@ -12,36 +12,41 @@ export function useChatConversations(role: 'customer' | 'barber') {
   useEffect(() => {
     isMountedRef.current = true;
 
-    const userId = firebaseAuth.currentUser?.uid;
-    if (!userId) {
-      if (isMountedRef.current) {
+    const unsubscribeAuth = firebaseAuth.onAuthStateChanged((user) => {
+      if (!isMountedRef.current) return;
+      if (!user) {
         setError('Not authenticated');
         setLoading(false);
+        setConversations([]);
+        return;
       }
-      return;
-    }
 
-    const unsubscribe = chatRepository.subscribeToConversations(
-      userId,
-      role,
-      (convs) => {
-        if (isMountedRef.current) {
-          setConversations(convs);
-          setLoading(false);
-          setError(null);
+      const unsubscribeConvs = chatRepository.subscribeToConversations(
+        user.uid,
+        role,
+        (convs) => {
+          if (isMountedRef.current) {
+            setConversations(convs);
+            setLoading(false);
+            setError(null);
+          }
+        },
+        (err) => {
+          if (isMountedRef.current) {
+            setError(err.message || 'Failed to load conversations');
+            setLoading(false);
+          }
         }
-      },
-      (err) => {
-        if (isMountedRef.current) {
-          setError(err.message || 'Failed to load conversations');
-          setLoading(false);
-        }
-      }
-    );
+      );
+
+      return () => {
+        unsubscribeConvs();
+      };
+    });
 
     return () => {
       isMountedRef.current = false;
-      unsubscribe();
+      unsubscribeAuth();
     };
   }, [role]);
 
