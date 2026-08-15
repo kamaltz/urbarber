@@ -845,13 +845,13 @@ async function router(ctx: RouteContext): Promise<void> {
 
   // Handle OPTIONS for CORS preflight
   if (method === 'OPTIONS') {
-    if (!handleCors(req, res, ['GET', 'POST', 'OPTIONS'])) return;
-    res.status(204).end();
+    handleCors(req, res, ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']);
     return;
   }
 
   const handler = matchRoute(pathname, method);
   if (!handler) {
+    handleCors(req, res, ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']);
     res.status(404).json({
       error: { code: 'NOT_FOUND', message: `Rute ${method} ${pathname} tidak ditemukan.` },
     });

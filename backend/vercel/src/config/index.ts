@@ -15,6 +15,15 @@ const envSchema = z.object({
     required_error: 'FIREBASE_PRIVATE_KEY wajib diisi.',
   }).min(1, 'FIREBASE_PRIVATE_KEY tidak boleh kosong.'),
   ALLOWED_ORIGINS: z.string().optional().default('http://localhost:8081,http://localhost:19006'),
+  // Comma-separated so the admin app's production alias AND any preview deployment
+  // that genuinely needs API access can each be listed EXPLICITLY. There is
+  // deliberately no hostname pattern for *.vercel.app -- see src/lib/cors.ts.
+  ADMIN_APP_ORIGIN: z.string().optional(),
+  // Opt-in loose localhost matching (any port). Off unless explicitly enabled or
+  // running outside production, so a deployed environment only ever trusts the
+  // origins it was configured with.
+  ALLOW_LOCALHOST_ORIGINS: z.string().optional(),
+  NODE_ENV: z.string().optional(),
   APP_DEEP_LINK_SCHEME: z.string().optional().default('urbarber'),
   PAYMENT_RETURN_BASE_URL: z.string().optional().default('https://urbarber.vercel.app'),
 });
@@ -30,13 +39,28 @@ function loadConfig() {
   // Safely normalize escaped newline characters
   const normalizedPrivateKey = rawKey.replace(/\\n/g, '\n');
 
+  const baseOrigins = result.data.ALLOWED_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean);
+  if (result.data.ADMIN_APP_ORIGIN) {
+    for (const adminOrigin of result.data.ADMIN_APP_ORIGIN.split(',')) {
+      const trimmed = adminOrigin.trim();
+      if (trimmed) baseOrigins.push(trimmed);
+    }
+  }
+
+  const isProduction = result.data.NODE_ENV === 'production';
+  const allowLocalhostOrigins = result.data.ALLOW_LOCALHOST_ORIGINS
+    ? result.data.ALLOW_LOCALHOST_ORIGINS === 'true'
+    : !isProduction;
+
   return {
     midtransServerKey: result.data.MIDTRANS_SERVER_KEY,
     midtransIsProduction: result.data.MIDTRANS_IS_PRODUCTION,
     firebaseProjectId: result.data.FIREBASE_PROJECT_ID,
     firebaseClientEmail: result.data.FIREBASE_CLIENT_EMAIL,
     firebasePrivateKey: normalizedPrivateKey,
-    allowedOrigins: result.data.ALLOWED_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean),
+    allowedOrigins: baseOrigins,
+    adminAppOrigin: result.data.ADMIN_APP_ORIGIN,
+    allowLocalhostOrigins,
     appDeepLinkScheme: result.data.APP_DEEP_LINK_SCHEME,
     paymentReturnBaseUrl: result.data.PAYMENT_RETURN_BASE_URL,
   };
