@@ -50,7 +50,7 @@ Every batch and feature implementation must execute and pass the following three
 | --- | --- | --- | --- |
 | Customer | F-01 to F-13, F-31 | Registration, Login, Profile, Barber List/Detail/Services, Service/Date Selection, Location, Booking Creation, Status, History, Rating & Review, Real-Time Text Chat | Must be verified against live Firestore listeners |
 | Barber | F-14 to F-23, F-31 | Registration, Login, Profile, Services, Prices, Schedule, Requests, Accept/Reject, Status Update, Transaction History, Real-Time Text Chat | Must be verified in `src/app/(barber)` screen routes |
-| Admin | F-24 to F-30 | Login, Barber Verification, Customer/Barber Management, Categories, Booking Monitor, Reports | Must be verified in `src/app/(admin)` screen routes |
+| Admin | F-24 to F-30 | Login, Barber Verification, Customer/Barber Management, Categories, Booking Monitor, Reports | Must be verified in `apps/admin` (separate Next.js web app — **not** a mobile `src/app/(admin)` route, which does not exist and must not be created; admin is web-only per CLAUDE.md) *(corrected 2026-08-13)* |
 
 ---
 

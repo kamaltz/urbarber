@@ -1,5 +1,7 @@
 # Batch 09 Live Validation Test Matrix
 
+> **Evidentiary note (added 2026-08-13):** this document cannot be independently verified from the repository — there is no accompanying CI log, deployment record, or screenshot to corroborate the hosted/live claims below. Its own test-count footers (e.g. "backend tests 105/105 · rules 42/42") are now stale relative to the current repository state (as of 2026-08-13: 22 backend test files / 207 backend tests / 95 rules scenarios) — those specific numbers were accurate for the point in time this log records, but do not reflect current state and should not be cited as such. `docs/agent/batches/batch-09.md` separately marks only Phase A complete, which this document's own "Phases 09D-3/09D-3A/09D-4/09E-P0 executed" claim contradicts — treat the two documents as disagreeing, not as jointly authoritative. For current, evidence-based status (exact commands + exact pass/fail counts, all reproducible), see `FINAL_THESIS_READINESS_AUDIT.md`. Do not cite this document alone as proof of live/hosted testing for a thesis defense.
+
 **Status**: Phase 09D-3, 09D-3A (Supabase remediation), 09D-4 (Midtrans sandbox pre-payment), and 09E-P0 (payment sync corruption fix + live recovery) executed 2026-08-09. Phase 09E (barber acceptance, chat, realtime, authorization negatives) remains PENDING.
 **Phase**: Phase E (Multi-Device, Multi-Role Validation)
 **Precondition**: Phase D infrastructure deployed (Vercel, Firebase, Supabase, Midtrans)

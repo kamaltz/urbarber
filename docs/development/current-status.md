@@ -1,5 +1,7 @@
 # URBarber Repository Status & Implementation Reconciliation Report
 
+> **STALE — corrected 2026-08-13.** This report is frozen at branch `docs/batch-01-scope-roadmap`, an early scope snapshot. Chat (F-31) is fully implemented with real Firestore listeners (not "in-memory mock state" / "planned"); Admin Operations (F-24..F-30) has automated test coverage (not "automated test pending"); Batch 08 Payment-First is fully implemented and test-passing (not "~20% complete, 45 test cases pending"). See `FINAL_THESIS_READINESS_AUDIT.md` for current, evidence-based status. Targeted corrections are marked inline below; the rest of this document has not been re-verified and may still be stale.
+
 ## 1. Executive Summary
 
 This report presents an empirical reconciliation of the URBarber repository status on branch `docs/batch-01-scope-roadmap`.
@@ -26,10 +28,10 @@ All features across the application are categorized according to their explicit 
 | **Geospatial Customer Discovery** | Core (F-04..F-09) | `code implemented` | `automated test passed` | N/A | `live test pending` | Geohash bounds, radius filter & OpenFreeMap integrated (Batch 04) |
 | **Booking & Slot-Lock** | Core (F-10..F-12) | `code implemented` | `automated test passed` | `deployment pending` | `live test pending` | Pure slot engine & transaction guard implemented (Batch 04) |
 | **Foreground Order Tracking** | Core (F-32) | `code implemented` | `automated test passed` | `deployment pending` | `live test pending` | `bookingTracking` Firestore rules & Vercel lifecycle API ready (Batch 04) |
-| **Real-Time Text Chat** | Core (F-31) | `code implemented` (UI shell only) | N/A | N/A | `planned` | Firestore `onSnapshot` listeners & rules scheduled for Batch 05 |
+| **Real-Time Text Chat** | Core (F-31) | `code implemented` *(corrected 2026-08-13: full implementation, not UI shell)* | `automated test passed` (Firestore rules tests #39-41) | N/A | `live test pending` | Firestore `onSnapshot` listeners & rules fully implemented and rules-tested; known gap: conversations never auto-close after booking completes |
 | **Barber Operations & Schedule** | Core (F-14..F-23) | `code implemented` | `automated test passed` | `deployment pending` | `live test pending` | Explicit schedule confirmation required (`SCHEDULE_NOT_CONFIGURED` guard) |
 | **Barber Verification** | Core (F-14, F-25) | `code implemented` | `automated test passed` | `deployment pending` | `live test pending` | Direct barber registration & onboarding wizard implemented (Batch 03) |
-| **Admin Operations** | Core (F-24..F-30) | `code implemented` | `automated test pending` | `deployment pending` | `live test pending` | Global booking monitoring, transaction monitoring, minimal settings page implemented (Batch 06 Phase 3) |
+| **Admin Operations** | Core (F-24..F-30) | `code implemented` | `automated test passed` *(corrected 2026-08-13: 5 Firestore-emulator-backed backend tests exist, not pending)* | `deployment pending` | `live test pending` | Global booking monitoring, transaction monitoring, minimal settings page implemented (Batch 06 Phase 3); server-side role enforcement (`requireAdmin`) on every route |
 | **Location Map Picker** | Preferred Enhancement (E-01) | `code implemented` | `automated test passed` | N/A | `live test pending` | MapLibre + OpenFreeMap tiles configured with text fallback |
 | **Midtrans Sandbox Payment** | Additional Feature (A-01) | `code implemented` (Vercel backend) | `automated test passed` | `deployment pending` | `live test pending` | Vercel deployment & Midtrans webhook setup required |
 
@@ -44,9 +46,10 @@ All features across the application are categorized according to their explicit 
 - **Scope Note**: Classified as **Additional Demonstration Feature (A-01)**. Payment processing is NOT a mandatory gate for Core MVP acceptance.
 
 ### 3.2 Real-Time Customer-Barber Text Chat (F-31)
-- **Code Status**: `code implemented` (Partial UI routes `src/app/(customer)/chat.tsx` & `[conversationId].tsx` exist using in-memory mock state)
-- **Backend Status**: `planned` (Scheduled for Batch 05)
-- **Scope Note**: Classified as **Core Thesis MVP (F-31)**. Text chat between customer and assigned barber for a specific booking is required for thesis completion.
+- **Code Status** *(corrected 2026-08-13)*: `code implemented` — fully implemented, not a UI shell. `chat.repository.ts` uses real Firestore `onSnapshot` listeners on `conversations/{bookingId}` and `messages`, not in-memory mock state. Conversations are created only by the trusted backend (`POST /api/bookings/{bookingId}/chat`) after verifying `paymentStatus=='paid'`, and are strictly 1:1 with the booking.
+- **Backend Status** *(corrected 2026-08-13)*: `implemented` — not planned. Security rules enforce participant-only read/write, block sender-ID spoofing, and give admin explicitly no chat access.
+- **Known gap**: conversations never transition to a `'closed'` state after the booking completes/cancels — chat stays open indefinitely (see FINAL_THESIS_READINESS_AUDIT.md §3 MEDIUM).
+- **Scope Note**: Classified as **Core Thesis MVP (F-31)**. Text chat between customer and assigned barber for a specific booking is required for thesis completion — this requirement is met.
 
 ### 3.3 Admin Operations (F-24..F-30)
 - **Code Status**: `code implemented` (Batch 06 Phase 3 - Complete)
@@ -68,10 +71,10 @@ All features across the application are categorized according to their explicit 
 - **Scope Note**: Classified as **Preferred Core Enhancement (E-01)**. MapLibre React Native + OpenFreeMap stack requires an Expo development build (`npx expo run:android` / `eas build`).
 
 ### 3.5 Batch 08: Payment-First Slot Ownership
-- **Status**: `code implemented` (Core fixes applied)
-- **Testing Status**: `automated test pending` (45 test cases designed, implementation pending)
+- **Status** *(corrected 2026-08-13)*: `code implemented` — fully implemented and hardened, not "core fixes applied" only.
+- **Testing Status** *(corrected 2026-08-13)*: `automated test passed` — the 45+ planned test cases are implemented (`payment-first-booking.test.ts`), plus 4 additional Firestore-emulator-backed reconciliation test files (`payment-sync-reconciliation`, `reconcile-transaction-atomicity`, `webhook-reconciliation`, `sync-payment-service`) and a new `slot-ownership-race.test.ts` (added 2026-08-13, 7 cases) that specifically covers a slot-ownership race condition found and fixed on this date — see FINAL_THESIS_READINESS_AUDIT.md.
 - **Deployment Status**: `deployment pending` (Vercel + Firebase rules ready for deployment)
-- **Completion**: ~20% (core guards implemented, test suite + final validation remaining)
+- **Completion** *(corrected 2026-08-13)*: core guards implemented AND test suite implemented AND a critical concurrency bug (two customers able to obtain a final booking for the same slot) found and fixed with regression tests. Remaining before defense: live Midtrans Sandbox + multi-device validation only (no emulator/local test can substitute for that).
 - **Core Principle**: A customer does NOT own a final booking slot until payment has been authoritatively confirmed as `paymentStatus = 'paid'`
 
 #### Changes Completed
@@ -84,14 +87,7 @@ All features across the application are categorized according to their explicit 
 - ✅ Documentation: ADR-008 created, test plan designed (45 test cases)
 
 #### Remaining Work (In Priority Order)
-1. ⚠️ **Test Suite Implementation** (Batch 08): 45 automated test cases
-   - Slot hold tests (5)
-   - Payment flow tests (11)
-   - Finalization tests (9)
-   - Slot rights tests (1)
-   - Barber operations tests (4)
-   - Legacy cash compatibility tests (4)
-   - Chat regression tests (4)
+1. ✅ **Test Suite Implementation** (Batch 08) *(corrected 2026-08-13, was listed pending)*: implemented — `payment-first-booking.test.ts` (54 cases) plus emulator-backed reconciliation/slot-ownership tests noted above.
 2. ⚠️ **Backend Test Data Migration**: Update existing test fixtures from legacy values (`cash_on_service`, `completed`, `not_required`) to canonical (`midtrans_sandbox`, `paid`, `initiated`/`pending`)
 3. ⚠️ **Barber Cancellation Audit**: Handle barber cancellation of accepted/in_progress bookings with same refund tracking logic
 4. ⚠️ **Admin Validation**: Verify admin web dashboard cannot modify `paymentStatus` field
@@ -114,8 +110,8 @@ All features across the application are categorized according to their explicit 
 
 The following items are current project blockers that must be addressed in their respective upcoming batches:
 
-1. **Chat Real-Time Implementation**: Firestore `conversations/{bookingId}` and `messages` subcollection listeners (`onSnapshot`) absent (Scheduled: Batch 07).
-2. **Chat Security Rules & Indexes**: Firestore rules and index definitions for `conversations` and `messages` absent (Scheduled: Batch 07).
+1. ~~**Chat Real-Time Implementation**~~ *(RESOLVED, corrected 2026-08-13)*: Firestore `conversations/{bookingId}` and `messages` listeners (`onSnapshot`) are implemented, not absent.
+2. ~~**Chat Security Rules & Indexes**~~ *(RESOLVED, corrected 2026-08-13)*: Firestore rules for `conversations` and `messages` exist and are rules-tested; no longer absent.
 3. **Map Development Build**: MapLibre React Native requires an Expo development build (`npx expo run:android`) and cannot run in Expo Go (Scheduled: Batch 06).
 4. **Map Fallback Validation**: Verification that text address entry remains 100% functional when location permission or map tiles fail (Scheduled: Batch 06).
 5. **Optional Payment-Mode Decoupling**: Backend currently requires `paymentStatus == 'paid'` before barber acceptance. Decoupling `paymentMethod == 'cash_on_service'` with `paymentStatus == 'not_required'` is required before Midtrans Sandbox can truthfully be optional (Scheduled: Batch 07).

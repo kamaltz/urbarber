@@ -10,11 +10,12 @@ Read this first. It points to authoritative documentation.
 
 ## Authoritative Documentation
 
-1. **AGENTS.md** - Agent directives (roles, canonical enums, payment-first, security invariants)
-2. **docs/agent/current-architecture.md** - Technology stack, separation of concerns, real-time features
-3. **docs/agent/current-status.md** - Feature status matrix, test suite audit, deployment readiness
-4. **docs/agent/business-rules.md** - Durable invariants, role-based access, legacy compatibility
-5. **docs/agent/batches/batch-09.md** - Current batch phases (A-E), success criteria, test scenarios
+1. **FINAL_THESIS_READINESS_AUDIT.md** (repo root) - Most current, evidence-based status: git state, security/payment audit findings, P0/P1 remediation results, exact test counts. Read this FIRST for "what actually works right now" — it supersedes the docs below wherever they disagree.
+2. **AGENTS.md** - Agent directives (roles, canonical enums, payment-first, security invariants)
+3. **docs/agent/current-architecture.md** - Technology stack, separation of concerns, real-time features
+4. **docs/agent/current-status.md** - Feature status matrix, test suite audit, deployment readiness (verify against FINAL_THESIS_READINESS_AUDIT.md §11 before trusting — several claims here were found stale)
+5. **docs/agent/business-rules.md** - Durable invariants, role-based access, legacy compatibility
+6. **docs/agent/batches/batch-09.md** - Historical batch phases (A-E). No batch-10/11 doc exists yet even though the current branch is `feat/batch-10-device-map-validation` — do not infer scope/progress from the batch-doc series alone.
 
 ## Payment-First Principle (Batch 08)
 
@@ -27,10 +28,10 @@ Read this first. It points to authoritative documentation.
 
 ## Current Branch Status
 
-- **Branch**: `feat/batch-09-infrastructure-live-validation`
-- **Baseline**: `e5c1600 feat: finalize payment-first booking and slot ownership`
-- **Working Tree**: Clean (no uncommitted changes)
-- **Task**: Phase A (context reconciliation) complete; Phase B-E pending
+- **Branch**: `feat/batch-10-device-map-validation`
+- **Working Tree**: Verify with `git status`; do not assume clean.
+- **Task**: A full read-only audit (`FINAL_THESIS_READINESS_AUDIT.md`) found 5 P0 (critical/high) and several P1 issues; all P0 items and the P1 REQUIRED list have since been remediated with targeted tests and full regression passes recorded in that file's "P0 Remediation Results" / P1 sections. Those fixes were reviewed and **committed as 12 conventional commits on this branch** (see `git log`), after a pre-commit cleanup pass that narrowed the CORS origin allowlist to exact configured origins, removed temporary barber-profile debug logging, and dropped dead code. **Nothing has been pushed or merged.** Two sibling worktrees (`feat/batch-10c-tracking-hardening`, `feat/batch-11b-stable-ui-slicing`) were investigated for reconciliation and found to be stale/superseded, not merge candidates (see the audit's branch reconciliation section for the file-by-file evidence).
+- **Before doing new work**: read `FINAL_THESIS_READINESS_AUDIT.md`'s executive verdict and remaining P2/P3 list to avoid duplicating already-completed remediation or re-flagging already-fixed issues.
 
 ## Do NOT
 

@@ -2,7 +2,7 @@
 
 **Batch**: Batch 08  
 **Date**: 2026-08-08  
-**Status**: Test Design (Implementation Pending)
+**Status**: Implemented — `backend/vercel/tests/payment-first-booking.test.ts` exists with 54 passing test cases (mock-domain simulation; see `FINAL_THESIS_READINESS_AUDIT.md` §9 for the additional Firestore-emulator-backed reconciliation tests that cover the same invariant against real production code). *(Corrected 2026-08-13 — was "Test Design (Implementation Pending)".)*
 
 ---
 
