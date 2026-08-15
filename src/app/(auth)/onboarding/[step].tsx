@@ -1,4 +1,5 @@
 import { AppButton } from '@/components/ui/AppButton';
+import { BrandLogo } from '@/components/ui/BrandLogo';
 import { routes } from '@/constants/routes';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Pressable, SafeAreaView, Text, View } from 'react-native';
@@ -79,11 +80,15 @@ export default function OnboardingScreen() {
           <View className="absolute h-64 w-64 rounded-full bg-[#EDEFFB] opacity-80" />
           <View className="absolute h-48 w-48 rounded-full bg-[#D2691E]/10" />
 
-          {/* Elevated Icon Card */}
+          {/* Elevated Icon Card / Brand Showcase */}
           <View className="h-44 w-44 items-center justify-center rounded-3xl bg-white p-4 shadow-lg shadow-slate-200 border border-slate-100">
-            <View className="h-24 w-24 items-center justify-center rounded-2xl bg-[#363062]/5">
-              <Text className="text-6xl text-[#D2691E]">{content.icon}</Text>
-            </View>
+            {step === 0 ? (
+              <BrandLogo variant="large" />
+            ) : (
+              <View className="h-24 w-24 items-center justify-center rounded-2xl bg-[#363062]/5">
+                <Text className="text-6xl text-[#D2691E]">{content.icon}</Text>
+              </View>
+            )}
           </View>
         </View>
 

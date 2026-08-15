@@ -12,7 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppButton } from '@/components/ui/AppButton';
 import { AppInput } from '@/components/ui/AppInput';
-import { BrandLogo } from '@/components/ui/BrandLogo';
+import { BrandText } from '@/components/ui/BrandText';
 import { AuthHeaderBlock } from '@/features/auth/components/AuthHeaderBlock';
 import { SocialLoginButton } from '@/features/auth/components/SocialLoginButton';
 import { useAuth } from '@/features/auth/hooks/use-auth';
@@ -101,7 +101,7 @@ export default function LoginScreen() {
         <ScrollView className="flex-1" contentContainerStyle={{ flexGrow: 1 }}>
           <View className="flex-1 px-6 pt-8 pb-6">
             <View className="flex-1">
-              <BrandLogo className="mb-6" />
+              <BrandText size="md" className="mb-3" />
 
               <AuthHeaderBlock
                 title="Masuk"

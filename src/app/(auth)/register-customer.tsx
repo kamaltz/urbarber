@@ -1,6 +1,6 @@
 import { AppButton } from '@/components/ui/AppButton';
 import { AppInput } from '@/components/ui/AppInput';
-import { BrandLogo } from '@/components/ui/BrandLogo';
+import { BrandText } from '@/components/ui/BrandText';
 import { AuthHeaderBlock } from '@/features/auth/components/AuthHeaderBlock';
 import { SocialLoginButton } from '@/features/auth/components/SocialLoginButton';
 import { TermsAgreement } from '@/features/auth/components/TermsAgreement';
@@ -150,7 +150,7 @@ export default function RegisterCustomerScreen() {
         <ScrollView className="flex-1" contentContainerStyle={{ flexGrow: 1 }}>
           <View className="flex-1 px-6 pt-6 pb-8">
             <View className="flex-1">
-              <BrandLogo className="mb-4" />
+              <BrandText size="md" className="mb-3" />
 
               <AuthHeaderBlock
                 title={selectedRole === 'barber' ? 'Daftar Mitra Barber' : 'Daftar Pelanggan'}
