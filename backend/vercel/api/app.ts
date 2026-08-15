@@ -19,6 +19,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { z } from 'zod';
 import { computeAvailability } from '../src/bookings/availability.js';
+import { isBarberAcceptingBookings } from '../src/bookings/service-booking-guard.js';
 import { getSlotLockId } from '../src/bookings/slot-lock.js';
 import { authenticateRequest } from '../src/lib/auth-middleware.js';
 import { handleCors } from '../src/lib/cors.js';
@@ -416,6 +417,26 @@ async function handleBarberRespondBooking(ctx: RouteContext): Promise<void> {
         },
       });
       return;
+    }
+
+    // P0-3: only an admin-approved, currently-active barber may accept a NEW
+    // booking -- a pending/rejected/suspended barber must not be able to take on
+    // operational responsibility for a customer just because a booking happens to
+    // exist against their account. Rejecting is intentionally NOT gated here: a
+    // barber suspended after already having a paid pending booking must still be
+    // able to release it (see reject's refundRequired handling below), not be
+    // stuck unable to respond at all.
+    if (action === 'accept') {
+      const barberSnap = await db.collection('barbers').doc(barberId).get();
+      if (!isBarberAcceptingBookings(barberSnap.exists ? barberSnap.data() : null)) {
+        res.status(403).json({
+          error: {
+            code: 'BARBER_NOT_AVAILABLE',
+            message: 'Akun barber Anda belum diverifikasi atau sedang tidak aktif menerima pesanan.',
+          },
+        });
+        return;
+      }
     }
 
     const timestamp = new Date().toISOString();

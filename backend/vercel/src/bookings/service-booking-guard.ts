@@ -11,6 +11,23 @@ export function isServiceActive(serviceData: { active?: boolean }): boolean {
   return serviceData.active !== false;
 }
 
+/**
+ * P0-3 (FINAL_THESIS_READINESS_AUDIT.md HIGH finding): a barber may only receive a
+ * NEW paid booking (payment creation) or accept a pending one once admin-approved
+ * (verificationStatus) and listed as active (listingStatus) -- the canonical fields
+ * admin.service.ts already writes on approve/reject/suspend/reactivate. Previously
+ * this was only gated client-side (barber-tab UI); a client bypassing that UI, or
+ * calling the API directly, could still pay/accept against a pending, rejected, or
+ * suspended barber. Missing/undefined listingStatus (legacy data predating the
+ * field) fails closed -- treated as not active -- rather than assumed eligible.
+ */
+export function isBarberAcceptingBookings(
+  barberData: { verificationStatus?: string; listingStatus?: string } | null | undefined
+): boolean {
+  if (!barberData) return false;
+  return barberData.verificationStatus === 'approved' && barberData.listingStatus === 'active';
+}
+
 export type BookingType = 'home' | 'onsite';
 export type ServiceLocationType = 'barbershop' | 'customer_home';
 

@@ -120,24 +120,46 @@ export async function reconcilePaymentTransaction(
         updateBooking.paidAt = timestamp;
       }
 
-      if (!slotLockData || slotLockData.status !== 'finalized' || slotLockData.bookingId !== bookingId) {
-        t.set(
-          slotLockRef,
-          {
-            barberId: bookingData.barberId,
-            date: bookingData.date,
-            startTime: bookingData.startTime,
-            customerId: bookingData.customerId,
-            status: 'finalized',
-            bookingId,
-            finalizedAt: timestamp,
-          },
-          { merge: true }
-        );
-      }
+      // A finalized lock already owned by a DIFFERENT bookingId means another
+      // booking already holds this exact slot as a paid, final booking -- this
+      // should be prevented up front by the transactional slot-lock acquisition in
+      // payments.ts, but as defense-in-depth this transaction must never steal an
+      // already-finalized lock out from under the booking that legitimately holds
+      // it (P0-1: CRITICAL slot ownership race). The payment record still reflects
+      // that money was genuinely received (audit trail preserved), but this
+      // booking does not get the slot: fail safe by marking it cancelled with
+      // refundRequired, mirroring the existing paid-then-rejected/cancelled
+      // pattern (api/app.ts), so it surfaces for manual admin refund instead of
+      // silently creating duplicate slot ownership. Setting refundRequired also
+      // satisfies decideReconciliation's legitimate-cancellation evidence gate, so
+      // a duplicate/delayed webhook or sync retry for this same booking can never
+      // re-attempt stealing the lock (isLegitimateTerminalState short-circuits).
+      const hasConflictingFinalizedLock =
+        !!slotLockData && slotLockData.status === 'finalized' && slotLockData.bookingId !== bookingId;
 
-      if (decision.resurrectBooking) {
-        updateBooking.status = 'pending';
+      if (hasConflictingFinalizedLock) {
+        updateBooking.status = 'cancelled';
+        updateBooking.refundRequired = true;
+      } else {
+        if (!slotLockData || slotLockData.status !== 'finalized' || slotLockData.bookingId !== bookingId) {
+          t.set(
+            slotLockRef,
+            {
+              barberId: bookingData.barberId,
+              date: bookingData.date,
+              startTime: bookingData.startTime,
+              customerId: bookingData.customerId,
+              status: 'finalized',
+              bookingId,
+              finalizedAt: timestamp,
+            },
+            { merge: true }
+          );
+        }
+
+        if (decision.resurrectBooking) {
+          updateBooking.status = 'pending';
+        }
       }
     } else if (decision.releaseSlot) {
       updateBooking.status = 'cancelled';

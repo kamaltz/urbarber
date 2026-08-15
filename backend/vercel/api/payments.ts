@@ -10,8 +10,9 @@
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { z } from 'zod';
-import { isServiceActive, resolveServiceLocationType } from '../src/bookings/service-booking-guard.js';
-import { getSlotLockId } from '../src/bookings/slot-lock.js';
+import { isBarberAcceptingBookings, isServiceActive, resolveServiceLocationType } from '../src/bookings/service-booking-guard.js';
+import { acquireSlotLock, getSlotLockId, SlotNotAvailableError } from '../src/bookings/slot-lock.js';
+import { evaluateSlotEligibility } from '../src/bookings/slot-datetime.js';
 import { config } from '../src/config/index.js';
 import { authenticateRequest } from '../src/lib/auth-middleware.js';
 import { handleCors } from '../src/lib/cors.js';
@@ -117,6 +118,26 @@ async function handleCreatePayment(ctx: RouteContext): Promise<void> {
       return;
     }
 
+    // The requested slot must still be bookable against AUTHORITATIVE SERVER TIME,
+    // not merely against whatever the client's screen last rendered. Availability
+    // (GET /api/bookings/availability) already hides ineligible slots, but that is a
+    // display guarantee only: a screen left open past the lead-time boundary, a
+    // device with a skewed clock, or a direct API call could otherwise buy a slot in
+    // the past. Checked here -- before acquireSlotLock -- so the temporary hold and
+    // the booking are both governed by the same rule as the slot grid.
+    //
+    // Full datetime comparison (date + startTime in Asia/Jakarta vs serverNow + lead
+    // time), never HH:mm against HH:mm: that keeps every future date legitimately
+    // bookable (tomorrow 09:00 is valid at 14:20 today) while still enforcing the
+    // lead time across midnight (tomorrow 00:00 is invalid at 23:30 tonight).
+    const slotEligibility = evaluateSlotEligibility({ date, startTime });
+    if (!slotEligibility.bookable) {
+      res.status(400).json({
+        error: { code: slotEligibility.code, message: slotEligibility.reason },
+      });
+      return;
+    }
+
     // Get service details for pricing. Real services are created by barbers into
     // barberServices/{serviceId} (see src/features/barbers/repository/barber.repository.ts) --
     // there is no separate top-level "services" collection.
@@ -146,38 +167,36 @@ async function handleCreatePayment(ctx: RouteContext): Promise<void> {
       return;
     }
 
-    const price = serviceData.price || 0;
-
-    // Lock the slot
-    const slotLockId = getSlotLockId(barberId, date, startTime);
-    const slotLockRef = db.collection('slotLocks').doc(slotLockId);
-    const lockSnap = await slotLockRef.get();
-
-    if (lockSnap.exists && lockSnap.data()?.customerId !== customerId) {
-      res.status(409).json({
+    // P0-3: a customer must not be able to pay into a booking with a barber who
+    // isn't admin-approved and currently listed active -- otherwise money can be
+    // taken for a barber who was never cleared (or has since been suspended) to
+    // operate. This must be authoritative here, not just gated by the mobile UI.
+    const barberSnap = await db.collection('barbers').doc(barberId).get();
+    if (!isBarberAcceptingBookings(barberSnap.exists ? barberSnap.data() : null)) {
+      res.status(403).json({
         error: {
-          code: 'SLOT_NOT_AVAILABLE',
-          message: 'Slot waktu telah diambil oleh pengguna lain.',
+          code: 'BARBER_NOT_AVAILABLE',
+          message: 'Barber ini belum diverifikasi atau sedang tidak aktif menerima pesanan.',
         },
       });
       return;
     }
 
-    const timestamp = new Date().toISOString();
+    const price = serviceData.price || 0;
 
-    // Create slot lock
-    await slotLockRef.set({
-      barberId,
-      date,
-      startTime,
-      customerId,
-      createdAt: timestamp,
-      expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(), // 15 min expiry
-    });
-
-    // Create booking record
+    // Lock the slot and create the booking atomically. Acquisition (read the
+    // existing lock, validate it, claim it for this booking) and the booking
+    // write happen inside one Firestore transaction so two concurrent requests
+    // for the identical barberId+date+startTime can never both observe the slot
+    // as available: Firestore's optimistic concurrency control fails and retries
+    // whichever transaction commits second, so on retry it observes the lock the
+    // first transaction just wrote and correctly rejects (P0-1: CRITICAL slot
+    // ownership race -- see FINAL_THESIS_READINESS_AUDIT.md).
+    const slotLockId = getSlotLockId(barberId, date, startTime);
+    const slotLockRef = db.collection('slotLocks').doc(slotLockId);
     const bookingRef = db.collection('bookings').doc();
-    const bookingId = bookingRef.path.split('/').pop()!;
+    const bookingId = bookingRef.id;
+    const timestamp = new Date().toISOString();
 
     const bookingData = {
       id: bookingId,
@@ -203,7 +222,23 @@ async function handleCreatePayment(ctx: RouteContext): Promise<void> {
       paymentUrl: null as string | null,
     };
 
-    await bookingRef.set(bookingData);
+    try {
+      await db.runTransaction(async (t) => {
+        await acquireSlotLock(t, slotLockRef, { barberId, date, startTime, customerId });
+        t.set(bookingRef, bookingData);
+      });
+    } catch (lockErr) {
+      if (lockErr instanceof SlotNotAvailableError) {
+        res.status(409).json({
+          error: {
+            code: 'SLOT_NOT_AVAILABLE',
+            message: 'Slot waktu telah diambil oleh pengguna lain.',
+          },
+        });
+        return;
+      }
+      throw lockErr;
+    }
 
     // Create Midtrans transaction
     const snap = new midtransClient.Snap({
