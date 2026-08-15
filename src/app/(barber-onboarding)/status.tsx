@@ -61,42 +61,6 @@ export default function BarberOnboardingStatusScreen() {
     router.push('/(barber-onboarding)/profile' as any);
   };
 
-  const handleApproveDemoAccount = async () => {
-    if (!uid) return;
-    setIsRefreshing(true);
-    try {
-      const { setDoc, doc } = await import('firebase/firestore');
-      const { firestore } = await import('@/lib/firebase');
-      const now = new Date().toISOString();
-      await setDoc(
-        doc(firestore, 'barberRegistrations', uid),
-        {
-          verificationStatus: 'approved',
-          onboardingStatus: 'completed',
-          reviewedAt: now,
-          updatedAt: now,
-        },
-        { merge: true }
-      );
-      await setDoc(
-        doc(firestore, 'barbers', uid),
-        {
-          verificationStatus: 'approved',
-          verified: true,
-          status: 'active',
-          updatedAt: now,
-        },
-        { merge: true }
-      );
-      await reloadUser();
-      router.replace('/(barber)/home');
-    } catch (err) {
-      console.warn('Failed to approve demo account:', err);
-    } finally {
-      setIsRefreshing(false);
-    }
-  };
-
   if (isLoading) {
     return (
       <SafeAreaView className="flex-1 bg-white items-center justify-center">
@@ -154,22 +118,12 @@ export default function BarberOnboardingStatusScreen() {
               className="h-[54px] rounded-xl bg-[#D2691E]"
             />
           ) : (
-            <>
-              <AppButton
-                label={isRefreshing ? 'Memeriksa Status...' : 'Cek Status Verifikasi Terkini'}
-                onPress={handleRefresh}
-                loading={isRefreshing}
-                className="h-[54px] rounded-xl bg-slate-900"
-              />
-              {verifStatus === 'pending' && (
-                <AppButton
-                  label="⚡ Disetujui & Masuk Dashboard Barber"
-                  onPress={handleApproveDemoAccount}
-                  loading={isRefreshing}
-                  className="h-[54px] rounded-xl bg-[#D2691E]"
-                />
-              )}
-            </>
+            <AppButton
+              label={isRefreshing ? 'Memeriksa Status...' : 'Cek Status Verifikasi Terkini'}
+              onPress={handleRefresh}
+              loading={isRefreshing}
+              className="h-[54px] rounded-xl bg-slate-900"
+            />
           )}
 
           <AppButton

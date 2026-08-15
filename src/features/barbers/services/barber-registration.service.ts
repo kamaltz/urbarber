@@ -176,60 +176,19 @@ class BarberRegistrationService {
   }
 
   /**
-   * Submit registration to trusted Vercel endpoint
-  /**
-   * Client-side fallback submission in Firestore
-   */
-  private async fallbackClientSubmitRegistration(uid: string): Promise<{
-    success: boolean;
-    verificationStatus: string;
-    onboardingStatus: string;
-    nextRoute: string;
-  }> {
-    try {
-      const now = new Date().toISOString();
-
-      const regDocRef = doc(firestore, 'barberRegistrations', uid);
-      await setDoc(
-        regDocRef,
-        {
-          verificationStatus: 'pending',
-          onboardingStatus: 'submitted',
-          submittedAt: now,
-          updatedAt: now,
-        },
-        { merge: true }
-      );
-
-      const barberDocRef = doc(firestore, 'barbers', uid);
-      await setDoc(
-        barberDocRef,
-        {
-          verificationStatus: 'pending',
-          status: 'active',
-          updatedAt: now,
-        },
-        { merge: true }
-      );
-
-      return {
-        success: true,
-        verificationStatus: 'pending',
-        onboardingStatus: 'submitted',
-        nextRoute: '/(barber-onboarding)/status',
-      };
-    } catch {
-      return {
-        success: true,
-        verificationStatus: 'pending',
-        onboardingStatus: 'submitted',
-        nextRoute: '/(barber-onboarding)/status',
-      };
-    }
-  }
-
-  /**
-   * Submit registration to trusted Vercel endpoint or client fallback
+   * Submit registration to the trusted Vercel endpoint (POST /api/barber/registration/submit).
+   *
+   * P0-4 (FINAL_THESIS_READINESS_AUDIT.md HIGH finding): this previously fell back to a
+   * direct client-side Firestore write on ANY server error or network failure, and that
+   * fallback returned success:true even when its own write threw (firestore.rules denies
+   * a client write to verificationStatus, so it always throws for a real barber) --
+   * silently telling the barber "submitted, pending review" when nothing was actually
+   * queued. The backend is the only trusted writer of verificationStatus (mirrors
+   * account-bootstrap.service.ts's initializeAccount for the same reason), so there is no
+   * safe client-side fallback: every non-OK response and every network/timeout failure now
+   * surfaces as success:false with a real message, never a false success. Retrying is safe
+   * -- handleBarberRegistrationSubmit (api/app.ts) is transactional and idempotent
+   * (ALREADY_REGISTERED 409 if a prior attempt already went through).
    */
   async submitRegistration(): Promise<{
     success: boolean;
@@ -250,30 +209,45 @@ class BarberRegistrationService {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-        signal: controller.signal,
-      });
+      let response: Response;
+      try {
+        response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${idToken}`,
+          },
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
-      clearTimeout(timeoutId);
-      const json = await response.json();
+      const json = await response.json().catch(() => ({}) as any);
 
       if (!response.ok) {
-        return await this.fallbackClientSubmitRegistration(currentUser.uid);
+        return {
+          success: false,
+          error: json?.error?.message || 'Pendaftaran gagal diproses oleh server. Silakan coba lagi.',
+        };
       }
 
       return {
         success: true,
-        verificationStatus: json.verificationStatus,
+        verificationStatus: json.registration?.verificationStatus,
         onboardingStatus: json.onboardingStatus,
         nextRoute: json.nextRoute,
       };
-    } catch {
-      return await this.fallbackClientSubmitRegistration(currentUser.uid);
+    } catch (err: any) {
+      // Genuine network/timeout failure -- the request may or may not have reached the
+      // server, but we cannot know that it succeeded, so we must not claim it did.
+      const isAbort = err?.name === 'AbortError';
+      return {
+        success: false,
+        error: isAbort
+          ? 'Permintaan waktu habis. Periksa koneksi internet Anda dan coba lagi.'
+          : 'Tidak dapat terhubung ke server. Periksa koneksi internet Anda dan coba lagi.',
+      };
     }
   }
 }
