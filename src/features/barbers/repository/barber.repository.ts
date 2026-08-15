@@ -261,7 +261,7 @@ export const barberRepository = {
   },
 
   /**
-   * Get barber bookings with canonical status mapping
+   * Get barber bookings with canonical status mapping and customer enrichment
    */
   async getBarberBookings(
     barberId: string,
@@ -293,12 +293,42 @@ export const barberRepository = {
       }
 
       const snapshot = await getDocs(q);
-      return snapshot.docs.map((docSnap) => {
-        const data = docSnap.data();
+      const raw = snapshot.docs.map((docSnap) => ({
+        id: docSnap.id,
+        data: docSnap.data(),
+      }));
+
+      // Batch-fetch customer profiles for all unique customerIds
+      const customerIds = Array.from(
+        new Set(raw.map((r) => r.data.customerId).filter((v): v is string => Boolean(v)))
+      );
+      const customerDocs = await Promise.all(
+        customerIds.map((id) => getDoc(doc(firestore, 'customers', id)).catch(() => null))
+      );
+      const customerMap = new Map<string, Record<string, any>>();
+      customerIds.forEach((id, i) => {
+        if (customerDocs[i]?.exists()) customerMap.set(id, customerDocs[i]!.data()!);
+      });
+
+      // Map raw booking data to BarberBooking domain shape
+      return raw.map(({ id, data }) => {
+        const customerProfile = customerMap.get(data.customerId) || {};
+        const bookingDate = data.date || data.bookingDate || '';
+        const bookingTime = data.startTime || data.scheduledTime || '';
+
         return {
-          ...data,
-          bookingId: docSnap.id,
+          bookingId: id,
+          customerId: data.customerId || '',
+          customerName: customerProfile.fullName || customerProfile.name || 'Pelanggan',
+          customerCode: data.customerCode,
+          bookingDate,
+          bookingTime,
           status: mapLegacyBookingStatus(data.status),
+          services: data.services || [],
+          totalAmount: data.price || 0,
+          paymentStatus: data.paymentStatus || 'pending',
+          notes: data.notes,
+          createdAt: data.createdAt?.toISOString?.() || data.createdAt || '',
         } as BarberBooking;
       });
     } catch (error: any) {
@@ -599,15 +629,15 @@ export const barberRepository = {
         };
       }
 
-      // Payment-first visibility: see comment in getBarberBookings above.
-      const q = query(
+      // Payment-first visibility: bookings table counts paid bookings only
+      const bookingsQuery = query(
         collection(firestore, 'bookings'),
         where('barberId', '==', barberId),
         where('paymentStatus', '==', 'paid'),
       );
 
-      const snapshot = await getDocs(q);
-      const bookings = snapshot.docs.map((docSnap) => ({
+      const bookingsSnapshot = await getDocs(bookingsQuery);
+      const bookings = bookingsSnapshot.docs.map((docSnap) => ({
         ...docSnap.data(),
         status: mapLegacyBookingStatus(docSnap.data().status),
       }));
@@ -615,7 +645,22 @@ export const barberRepository = {
       const completed = bookings.filter((b) => b.status === 'completed').length;
       const pending = bookings.filter((b) => b.status === 'pending').length;
       const cancelled = bookings.filter((b) => b.status === 'cancelled').length;
-      const totalRevenue = bookings.reduce((sum, b) => sum + ((b as any).totalPrice || 0), 0);
+
+      // Revenue from actual payment records, not just booking amounts
+      // This gives the true transaction history
+      const paymentsQuery = query(
+        collection(firestore, 'payments'),
+        where('barberId', '==', barberId),
+      );
+
+      const paymentsSnapshot = await getDocs(paymentsQuery);
+      const payments = paymentsSnapshot.docs.map((docSnap) => docSnap.data() as any);
+
+      // Only count paid, settled payments in revenue
+      const paidPayments = payments.filter(
+        (p) => p.status === 'paid' || p.status === 'settlement'
+      );
+      const totalRevenue = paidPayments.reduce((sum, p) => sum + ((p.amount || p.grossAmount || 0)), 0);
 
       return {
         period,

@@ -83,11 +83,11 @@ export default function BarberAnalysisScreen() {
         (b.paymentStatus === 'paid') &&
         (b.bookingDate || b.createdAt || '').startsWith(currentMonthYear)
     )
-    .reduce((sum, b) => sum + (b.totalAmount || (b as any).totalPrice || 0), 0);
+    .reduce((sum, b) => sum + (b.totalAmount || 0), 0);
 
   const totalCompletedRevenue = completedBookings
     .filter((b) => b.paymentStatus === 'paid')
-    .reduce((sum, b) => sum + (b.totalAmount || (b as any).totalPrice || 0), 0);
+    .reduce((sum, b) => sum + (b.totalAmount || 0), 0);
 
   if (loading && !refreshing) return <Loading />;
 
@@ -186,7 +186,7 @@ export default function BarberAnalysisScreen() {
                 </View>
                 <View className="items-end">
                   <Text className="font-extrabold text-[#D2691E] text-sm">
-                    +{formatCurrency(b.totalAmount || (b as any).totalPrice || 0)}
+                    +{formatCurrency(b.totalAmount || 0)}
                   </Text>
                   <View className="mt-0.5 rounded-full bg-emerald-50 px-2 py-0.5 border border-emerald-200">
                     <Text className="text-emerald-800 font-bold text-[9px]">Selesai Lunas ✓</Text>

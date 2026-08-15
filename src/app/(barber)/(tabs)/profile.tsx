@@ -9,7 +9,7 @@ import type { BarberProfile } from '@/features/barbers/types/barber';
 import { uploadService } from '@/features/storage/services/upload.service';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, Image, RefreshControl, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
@@ -83,6 +83,12 @@ export default function BarberProfileScreen() {
       isMounted = false;
     };
   }, [barberId, user?.phoneNumber]);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchProfile();
+    }, [fetchProfile])
+  );
 
   const handleRefresh = () => {
     setRefreshing(true);

@@ -59,21 +59,6 @@ export default function BarberServicesScreen() {
       .then((data) => {
         if (!isMounted) return;
         setServices(data);
-        if (__DEV__) {
-          // TEMP DIAGNOSTIC (Batch 10B-5E-R2) -- remove after live retest confirmed. No tokens/secrets.
-          data.forEach((svc) => {
-            console.warn('[SERVICE_DOMAIN_DEBUG]', {
-              rawCount: data.length,
-              normalizedCount: data.length,
-              serviceIdPresent: Boolean(svc.serviceId),
-              serviceIdLength: svc.serviceId?.length ?? 0,
-              name: svc.name,
-              isActive: svc.isActive,
-              price: svc.price,
-              durationMinutes: svc.durationMinutes,
-            });
-          });
-        }
       })
       .catch((err: any) => {
         if (!isMounted) return;

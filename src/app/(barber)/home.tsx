@@ -8,7 +8,7 @@ import { useAuth } from '@/features/auth/hooks/use-auth';
 import { barberRepository } from '@/features/barbers/repository/barber.repository';
 import type { BarberBooking, BarberProfile } from '@/features/barbers/types/barber';
 import { formatCurrency } from '@/utils/formatters';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { RefreshControl, SafeAreaView, ScrollView, Switch, Text, TouchableOpacity, View } from 'react-native';
 
@@ -68,6 +68,12 @@ export default function BarberHomeScreen() {
     };
   }, [barberId]);
 
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [loadData])
+  );
+
   const handleRefresh = () => {
     setRefreshing(true);
     loadData();
@@ -91,7 +97,7 @@ export default function BarberHomeScreen() {
         (b.paymentStatus === 'paid') &&
         (b.bookingDate || b.createdAt || '').startsWith(currentMonthYear)
     )
-    .reduce((sum, b) => sum + (b.totalAmount || (b as any).totalPrice || 0), 0);
+    .reduce((sum, b) => sum + (b.totalAmount || 0), 0);
 
   const upcomingBookings = bookings
     .filter((b) => b.status === 'accepted' || b.status === 'in_progress')
@@ -139,6 +145,11 @@ export default function BarberHomeScreen() {
               <Text className="text-slate-400 text-xs mt-0.5" numberOfLines={1}>
                 {profile?.shopAddress || user?.email}
               </Text>
+              {profile?.shopDescription ? (
+                <Text className="text-slate-300 text-xs mt-1" numberOfLines={1}>
+                  {profile.shopDescription}
+                </Text>
+              ) : null}
               <View className="flex-row items-center gap-1.5 mt-2">
                 <View className={`w-2 h-2 rounded-full ${isStoreOpen ? 'bg-emerald-400' : 'bg-slate-500'}`} />
                 <Text className={`text-xs font-medium ${isStoreOpen ? 'text-emerald-400' : 'text-slate-400'}`}>
@@ -319,7 +330,7 @@ export default function BarberHomeScreen() {
                     </View>
                     <View className="items-end">
                       <Text className="font-bold text-slate-900 text-sm">
-                        {formatCurrency(b.totalAmount || (b as any).totalPrice || 0)}
+                        {formatCurrency(b.totalAmount || 0)}
                       </Text>
                       <View className="bg-sky-100 px-2 py-0.5 rounded-full mt-1">
                         <Text className="text-sky-700 font-semibold text-[10px]">
