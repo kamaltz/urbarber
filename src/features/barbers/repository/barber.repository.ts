@@ -105,15 +105,32 @@ export const barberRepository = {
    * real document. Firestore document writes (addBarberService,
    * toggleBarberService, updateBarberService) are unchanged -- only this read
    * mapping changes.
+   *
+   * `activeOnly`: firestore.rules' barberServices list() rule allows a
+   * non-owner, non-admin caller to see a document only when
+   * `resource.data.active != false`. A bare `where('barberId','==', id)`
+   * query doesn't constrain on `active`, so the rules engine can't prove the
+   * request stays within that boundary and denies the whole query with
+   * permission-denied -- this is exactly what customer call sites (barber
+   * detail, booking options) hit live. Pass `activeOnly: true` from any
+   * non-owner caller so the query's own filter is a provable subset of the
+   * rule; the barber's own management screen (which must still see its
+   * inactive services) omits it and keeps today's unfiltered behavior.
    */
-  async getBarberServices(barberId: string): Promise<BarberService[]> {
+  async getBarberServices(barberId: string, activeOnly = false): Promise<BarberService[]> {
     try {
       if (!barberId) return [];
 
-      const q = query(
-        collection(firestore, 'barberServices'),
-        where('barberId', '==', barberId),
-      );
+      const q = activeOnly
+        ? query(
+            collection(firestore, 'barberServices'),
+            where('barberId', '==', barberId),
+            where('active', '==', true),
+          )
+        : query(
+            collection(firestore, 'barberServices'),
+            where('barberId', '==', barberId),
+          );
 
       const snapshot = await getDocs(q);
       return snapshot.docs.map((docSnap) => {

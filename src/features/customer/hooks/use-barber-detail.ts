@@ -34,7 +34,7 @@ export function useBarberDetail(barberId: string) {
 
       setBarber(targetBarber);
 
-      const rawServices = await barberRepository.getBarberServices(barberId);
+      const rawServices = await barberRepository.getBarberServices(barberId, true);
       const activeServices = (rawServices || []).filter((s) => s.isActive !== false);
       setServices(activeServices);
       setError(null);

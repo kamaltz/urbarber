@@ -223,8 +223,24 @@ service cloud.firestore {
     // 3. COLLECTION: barbers
     // =========================================================================
     match /barbers/{barberId} {
-      // Public read for barbers so customers can browse & book
-      allow read: if true;
+      // P1-2 (FINAL_THESIS_READINESS_AUDIT.md HIGH finding): get() and list() are
+      // split, no longer a combined "read: if true". get() stays fully public --
+      // a client only ever reaches a specific barberId via an already-filtered
+      // source (a discovery result, a booking, favorites), so a per-document
+      // lookup is not an enumeration vector; restricting it would break
+      // booking-history/detail views for a barber who is later suspended. list()
+      // is the actual enumeration vector this finding is about: previously any
+      // authenticated client could run an unscoped query and receive every
+      // barber regardless of pending/rejected/suspended status. Restricting
+      // list() to listingStatus=='active' matches every existing legitimate
+      // discovery query exactly (discovery.service.ts's primary+fallback
+      // queries, customer.repository.ts's getPublicBarbers all already filter
+      // on this field), so this closes the gap with no change to any legitimate
+      // query's behavior. listingStatus is barber-write-denied (see the update
+      // rule below) and is only ever set 'active' by the trusted admin-approval
+      // backend, so it is a reliable gate on its own.
+      allow get: if true;
+      allow list: if resource.data.listingStatus == 'active' || isAdmin();
 
       // Barber can only create/update their own profile
       allow create: if isOwner(barberId) && request.resource.data.userId == barberId;
@@ -298,8 +314,19 @@ service cloud.firestore {
     // 4. COLLECTION: barberServices
     // =========================================================================
     match /barberServices/{serviceId} {
-      // Public read active services belonging to barbers
-      allow read: if true;
+      // P1-2: mirrors the barbers fix above. get() stays public for the same
+      // reason (no meaningful enumeration risk for a single already-known
+      // serviceId). list() previously allowed any client to dump every service
+      // across every barber, active or not. Both real customer-facing call
+      // sites (resolve-active-services.ts for booking/options.tsx,
+      // use-barber-detail.ts) already filter isActive/active !== false
+      // client-side before ever displaying a service, so restricting list() to
+      // active services changes no user-visible behavior. A barber can still
+      // list their OWN full active+inactive catalog for management
+      // (barberId == uid(), matching (barber)/(tabs)/services.tsx's
+      // always-own-uid query).
+      allow get: if true;
+      allow list: if resource.data.active != false || resource.data.barberId == uid() || isAdmin();
 
       // Barber can only create services for themselves
       allow create: if (

@@ -41,6 +41,7 @@ vi.mock('firebase/firestore', () => ({
 vi.mock('@/lib/firebase', () => ({ firestore: {} }));
 vi.mock('@/lib/promise', () => ({ withTimeout: (p: Promise<unknown>) => p }));
 
+import { where } from 'firebase/firestore';
 import { barberRepository } from '../barber.repository';
 
 function mockSnapshot(docs: Array<{ id: string; data: Record<string, unknown> }>) {
@@ -121,6 +122,29 @@ describe('barberRepository.getBarberServices', () => {
       description: 'Potong rambut',
       price: 25000,
       durationMinutes: 30,
+    });
+  });
+
+  describe('activeOnly parameter (live Phase-6 blocker fix)', () => {
+    it('7. without activeOnly, only the barberId where clause is applied (unchanged barber-management behavior)', async () => {
+      mockSnapshot([]);
+      vi.mocked(where).mockClear();
+
+      await barberRepository.getBarberServices('barber-1');
+
+      expect(where).toHaveBeenCalledTimes(1);
+      expect(where).toHaveBeenCalledWith('barberId', '==', 'barber-1');
+    });
+
+    it("8. with activeOnly: true, an additional where('active','==',true) clause is applied -- the exact live query shape that fixed the deployed permission-denied", async () => {
+      mockSnapshot([]);
+      vi.mocked(where).mockClear();
+
+      await barberRepository.getBarberServices('barber-1', true);
+
+      expect(where).toHaveBeenCalledTimes(2);
+      expect(where).toHaveBeenCalledWith('barberId', '==', 'barber-1');
+      expect(where).toHaveBeenCalledWith('active', '==', true);
     });
   });
 });

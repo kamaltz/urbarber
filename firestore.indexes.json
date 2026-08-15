@@ -137,6 +137,14 @@
       "collectionGroup": "barbers",
       "queryScope": "COLLECTION",
       "fields": [
+        { "fieldPath": "listingStatus", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "barbers",
+      "queryScope": "COLLECTION",
+      "fields": [
         { "fieldPath": "verificationStatus", "order": "ASCENDING" },
         { "fieldPath": "listingStatus", "order": "ASCENDING" }
       ]

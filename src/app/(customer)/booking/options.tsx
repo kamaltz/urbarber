@@ -50,7 +50,7 @@ export default function BookingOptionsScreen() {
       return;
     }
 
-    barberRepository.getBarberServices(barberId).then((raw) => {
+    barberRepository.getBarberServices(barberId, true).then((raw) => {
       if (!isMounted) return;
       const active = resolveActiveBookingServices(raw);
       setServices(active);

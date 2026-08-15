@@ -1573,6 +1573,147 @@ async function runRulesTests() {
       await assertSucceeds(adminDb.collection('favorites').doc('fav_cust6_fav_barb4').delete());
     });
 
+    // 87. P1-2: unscoped list() of ALL barbers (regardless of status) is denied; a
+    // properly-scoped listingStatus=='active' query still succeeds.
+    await test('87. Unscoped barbers list() is denied; listingStatus==active list() succeeds', async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('barbers').doc('barb_p1_2_active').set({
+          uid: 'barb_p1_2_active',
+          verificationStatus: 'approved',
+          listingStatus: 'active',
+        });
+        await context.firestore().collection('barbers').doc('barb_p1_2_pending').set({
+          uid: 'barb_p1_2_pending',
+          verificationStatus: 'pending',
+          listingStatus: 'inactive',
+        });
+      });
+
+      const custDb = testEnv.authenticatedContext('p1_2_cust', { app_role: 'customer' }).firestore();
+      await assertFails(custDb.collection('barbers').get());
+      await assertSucceeds(custDb.collection('barbers').where('listingStatus', '==', 'active').get());
+      // A query attempting to specifically enumerate a non-active status is denied too.
+      await assertFails(custDb.collection('barbers').where('listingStatus', '==', 'inactive').get());
+    });
+
+    // 88. P1-2: get() on a specific barberId remains public regardless of status --
+    // this is not the enumeration vector and legitimate flows (booking history,
+    // detail view for an already-known barber) depend on it.
+    await test('88. Barber get() by known id remains public regardless of verification/listing status', async () => {
+      const custDb = testEnv.authenticatedContext('p1_2_cust2', { app_role: 'customer' }).firestore();
+      await assertSucceeds(custDb.collection('barbers').doc('barb_p1_2_pending').get());
+    });
+
+    // 89. P1-2: unscoped list() of ALL barberServices is denied; an active-only
+    // query (matching what both real customer-facing call sites already filter to
+    // client-side) succeeds.
+    await test('89. Unscoped barberServices list() is denied; active-only list() succeeds', async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('barberServices').doc('svc_p1_2_active').set({
+          barberId: 'barb_p1_2_svcowner',
+          active: true,
+          price: 30000,
+        });
+        await context.firestore().collection('barberServices').doc('svc_p1_2_inactive').set({
+          barberId: 'barb_p1_2_svcowner',
+          active: false,
+          price: 40000,
+        });
+      });
+
+      const custDb = testEnv.authenticatedContext('p1_2_cust3', { app_role: 'customer' }).firestore();
+      await assertFails(custDb.collection('barberServices').get());
+      await assertFails(custDb.collection('barberServices').where('barberId', '==', 'barb_p1_2_svcowner').get());
+      await assertSucceeds(custDb.collection('barberServices').where('active', '==', true).get());
+    });
+
+    // 90. P1-2: a barber can still list their OWN full active+inactive service
+    // catalog (management view), but not another barber's inactive services.
+    await test('90. Barber can list own full service catalog; cannot list another barber\'s unfiltered/inactive services', async () => {
+      const ownerDb = testEnv.authenticatedContext('barb_p1_2_svcowner', { app_role: 'barber' }).firestore();
+      await assertSucceeds(ownerDb.collection('barberServices').where('barberId', '==', 'barb_p1_2_svcowner').get());
+
+      const otherBarberDb = testEnv.authenticatedContext('barb_p1_2_other', { app_role: 'barber' }).firestore();
+      await assertFails(otherBarberDb.collection('barberServices').where('barberId', '==', 'barb_p1_2_svcowner').get());
+    });
+
+    // 91. Live-blocker regression: barberRepository.getBarberServices' real query shape
+    // is `where('barberId','==',id)` combined with `where('active','==',true)` in the
+    // SAME query (not two separate queries like #89 tested) -- this is the exact
+    // shape use-barber-detail.ts and booking/options.tsx now issue after the fix for
+    // the live finding where the deployed rules engine rejected the barberId-only
+    // query outright with permission-denied. Reproduces every case from the live
+    // investigation: allowed+filtered for a customer, denied without the active
+    // filter, denied for unscoped enumeration, and unaffected owner/admin access.
+    await test('91. Live-blocker fix: combined barberId+active query is allowed for customers and excludes inactive services', async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('barberServices').doc('svc_p1_2b_active').set({
+          barberId: 'barb_p1_2b_svcowner',
+          active: true,
+          price: 50000,
+        });
+        await context.firestore().collection('barberServices').doc('svc_p1_2b_inactive').set({
+          barberId: 'barb_p1_2b_svcowner',
+          active: false,
+          price: 60000,
+        });
+      });
+
+      const custDb = testEnv.authenticatedContext('p1_2b_cust', { app_role: 'customer' }).firestore();
+
+      // 1 & 2: customer's combined barberId+active query succeeds and returns
+      // exactly the active service.
+      const activeSnap = await assertSucceeds(
+        custDb
+          .collection('barberServices')
+          .where('barberId', '==', 'barb_p1_2b_svcowner')
+          .where('active', '==', true)
+          .get(),
+      );
+      if (activeSnap.size !== 1) {
+        throw new Error(`expected exactly 1 active service, got ${activeSnap.size}`);
+      }
+      if (activeSnap.docs[0].id !== 'svc_p1_2b_active') {
+        throw new Error(`expected svc_p1_2b_active, got ${activeSnap.docs[0].id}`);
+      }
+
+      // 3: the inactive service for the same barber is never present in that result.
+      const returnedIds = activeSnap.docs.map((d) => d.id);
+      if (returnedIds.includes('svc_p1_2b_inactive')) {
+        throw new Error('inactive service must not appear in the active-only result set');
+      }
+
+      // 4: the bare barberId-only query (the pre-fix shape) is still denied --
+      // confirms the rule itself was never weakened to fix this.
+      await assertFails(custDb.collection('barberServices').where('barberId', '==', 'barb_p1_2b_svcowner').get());
+
+      // 5: unscoped enumeration of the whole collection remains denied.
+      await assertFails(custDb.collection('barberServices').get());
+
+      // 6: the barber owner's own management query (no active filter, same as
+      // before this fix) is unaffected and still sees both services.
+      const ownerDb = testEnv.authenticatedContext('barb_p1_2b_svcowner', { app_role: 'barber' }).firestore();
+      const ownerSnap = await assertSucceeds(
+        ownerDb.collection('barberServices').where('barberId', '==', 'barb_p1_2b_svcowner').get(),
+      );
+      if (ownerSnap.size !== 2) {
+        throw new Error(`expected owner to see both services (2), got ${ownerSnap.size}`);
+      }
+
+      // 7: admin access remains valid via both query shapes.
+      const adminDb = testEnv.authenticatedContext('p1_2b_admin', { app_role: 'admin' }).firestore();
+      await assertSucceeds(
+        adminDb.collection('barberServices').where('barberId', '==', 'barb_p1_2b_svcowner').get(),
+      );
+      await assertSucceeds(
+        adminDb
+          .collection('barberServices')
+          .where('barberId', '==', 'barb_p1_2b_svcowner')
+          .where('active', '==', true)
+          .get(),
+      );
+    });
+
   } finally {
     await testEnv.cleanup();
     console.log(`\nTest Execution Complete: ${passed} Passed, ${failed} Failed.\n`);
