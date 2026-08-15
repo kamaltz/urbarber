@@ -136,6 +136,7 @@ export default function BookingHistoryScreen() {
           <FlatList
             data={bookings}
             keyExtractor={(item) => item.id}
+            removeClippedSubviews={false}
             renderItem={({ item }) => (
               <View className="px-4">
                 <BookingCard booking={item} onPress={() => handleBookingPress(item.id)} />

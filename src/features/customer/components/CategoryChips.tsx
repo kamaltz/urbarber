@@ -16,6 +16,7 @@ export function CategoryChips({ chips, onSelectCategory }: CategoryChipsProps) {
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
+      removeClippedSubviews={false}
       className="flex-row gap-2">
       {chips.map((chip, idx) => (
         <Pressable

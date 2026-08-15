@@ -74,7 +74,7 @@ export default function ExploreScreen() {
       showTabs
       scroll={false}
     >
-      <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
+      <ScrollView className="flex-1" showsVerticalScrollIndicator={false} removeClippedSubviews={false}>
         {/* Default-area notice: never let this look like the Customer's real location */}
         {showDefaultAreaNotice ? (
           <View className="mb-4 rounded-xl bg-amber-50 border border-amber-200 p-3">
@@ -147,7 +147,7 @@ export default function ExploreScreen() {
       {/* Category Filter Chips */}
       {exploreData?.categoryChips && exploreData.categoryChips.length > 0 ? (
         <View className="mb-4">
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row gap-2">
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row gap-2" removeClippedSubviews={false}>
             <Pressable
               onPress={() => onCategorySelect(undefined)}
               className={`rounded-full px-4 py-2 border ${

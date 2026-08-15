@@ -83,7 +83,7 @@ export default function BarberDetailScreen() {
           }),
       }}
     >
-      <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
+      <ScrollView className="flex-1" showsVerticalScrollIndicator={false} removeClippedSubviews={false}>
         {/* Barber Header Card */}
         <View className="rounded-2xl bg-white p-5 shadow-xs border border-slate-200/80 mb-5">
           <View className="flex-row items-start justify-between">
@@ -161,7 +161,7 @@ export default function BarberDetailScreen() {
             <View className="gap-3">
               {services.map((service, idx) => (
                 <View
-                  key={service.serviceId || service.name ? `svc-${service.serviceId || service.name}` : `barber-svc-${idx}`}
+                  key={service.serviceId ? `svc-${service.serviceId}` : `barber-svc-${idx}`}
                   className="rounded-2xl bg-white p-4 border border-slate-200/80 shadow-xs"
                 >
                   <View className="flex-row items-center justify-between mb-1">

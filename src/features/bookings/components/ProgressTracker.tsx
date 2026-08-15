@@ -40,7 +40,7 @@ export function ProgressTracker({ status }: ProgressTrackerProps) {
       {/* Progress Line */}
       <View className="mt-2 flex-row items-center px-2">
         {STAGES.map((_, idx) => (
-          <View key={idx} className="flex-1 flex-row items-center">
+          <View key={`line-${idx}`} className="flex-1 flex-row items-center">
             <View
               className={`h-2 flex-1 rounded-full ${
                 idx <= currentStageIndex ? 'bg-[#D2691E]' : 'bg-slate-200'

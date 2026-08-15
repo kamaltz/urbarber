@@ -51,7 +51,7 @@ export default function BookingHistoryDetailScreen() {
       <KeyboardAvoidingView
         className="flex-1"
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView className="flex-1" contentContainerStyle={{ flexGrow: 1 }}>
+        <ScrollView className="flex-1" contentContainerStyle={{ flexGrow: 1 }} removeClippedSubviews={false}>
           {/* Header Bar */}
           <View className="border-b border-slate-200 bg-white px-4 py-4 flex-row items-center justify-between shadow-xs">
             <Pressable onPress={() => router.back()} className="flex-row items-center gap-2.5">

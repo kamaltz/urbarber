@@ -22,13 +22,13 @@ export function useBookingDetail(bookingId: string) {
     try {
       const result = await bookingRepository.cancelBooking(bookingId);
 
-      if (result.success) {
-        setBooking((prev) => (prev ? { ...prev, status: 'cancelled' } : null));
-        return { success: true };
-      } else {
-        return result;
-      }
-    } catch (err) {
+      // Deliberately NOT updating local state optimistically: mutating this screen's
+      // view tree while the caller is also navigating away crashes Fabric on Android
+      // ("addViewAt: child already has a parent"). The caller defers navigation via
+      // InteractionManager (see booking/detail/[bookingId].tsx, same sequencing as
+      // booking/invoice.tsx), and server state is authoritative on the next read.
+      return result;
+    } catch {
       return {
         success: false,
         error: { message: 'Gagal membatalkan booking' },

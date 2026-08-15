@@ -107,7 +107,7 @@ export default function ChatListScreen() {
           <ActivityIndicator size="large" />
         </View>
       ) : (
-        <ScrollView className="flex-1 px-4" keyboardShouldPersistTaps="handled">
+        <ScrollView className="flex-1 px-4" keyboardShouldPersistTaps="handled" removeClippedSubviews={false}>
           {filtered.map((item) => (
             <Pressable
               key={item.id}

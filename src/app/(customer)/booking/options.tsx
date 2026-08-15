@@ -88,7 +88,7 @@ export default function BookingOptionsScreen() {
       <KeyboardAvoidingView
         className="flex-1"
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView className="flex-1" contentContainerStyle={{ flexGrow: 1 }}>
+        <ScrollView className="flex-1" contentContainerStyle={{ flexGrow: 1 }} removeClippedSubviews={false}>
           {/* Header */}
           <View className="border-b border-slate-200 px-4 py-4">
             <Pressable onPress={() => router.back()} className="flex-row items-center gap-2">

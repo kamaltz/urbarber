@@ -51,7 +51,7 @@ export function CustomerScreen({ title, description, children, action, showTabs 
       </View>
 
       {scroll ? (
-        <ScrollView className="flex-1" contentContainerClassName="flex-grow px-4 py-6">
+        <ScrollView className="flex-1" contentContainerClassName="flex-grow px-4 py-6" removeClippedSubviews={false}>
           {body}
         </ScrollView>
       ) : (

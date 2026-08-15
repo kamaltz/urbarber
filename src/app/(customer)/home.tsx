@@ -67,6 +67,7 @@ export default function HomeScreen() {
       <ScrollView
         className="flex-1"
         contentContainerStyle={{ flexGrow: 1 }}
+        removeClippedSubviews={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={['#D2691E']} />}
       >
         {/* User Greeting Section with Role Badge */}

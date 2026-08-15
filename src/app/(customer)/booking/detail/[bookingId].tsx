@@ -3,6 +3,7 @@ import { useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
+    InteractionManager,
     KeyboardAvoidingView,
     Platform,
     Pressable,
@@ -26,6 +27,7 @@ export default function BookingDetailScreen() {
 
   const { booking, loading, error, cancelBooking } = useBookingDetail(bookingId || '');
   const [chatInitializing, setChatInitializing] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -60,12 +62,41 @@ export default function BookingDetailScreen() {
     );
   }
 
-  const handleCancel = async () => {
-    const result = await cancelBooking();
-    if (result.success) {
-      alert('Booking berhasil dibatalkan');
-      handleBack();
-    }
+  const handleCancel = () => {
+    if (cancelling) return;
+
+    Alert.alert(
+      'Konfirmasi Pembatalan',
+      'Apakah Anda yakin ingin membatalkan pemesanan ini?',
+      [
+        { text: 'Batal', style: 'cancel' },
+        {
+          text: 'Ya, Batalkan',
+          style: 'destructive',
+          onPress: async () => {
+            setCancelling(true);
+            try {
+              const result = await cancelBooking();
+              if (result.success) {
+                // Defer navigation using InteractionManager to allow Fabric to complete
+                // view tree reconciliation before transitioning to new screen.
+                // Critical fix for Fabric crash: "addViewAt: child already has a parent"
+                // Pattern from booking/invoice.tsx (batch 09 remediation)
+                InteractionManager.runAfterInteractions(() => {
+                  handleBack();
+                });
+              } else {
+                setCancelling(false);
+                Alert.alert('Gagal', result.error?.message || 'Gagal membatalkan booking.');
+              }
+            } catch {
+              setCancelling(false);
+              Alert.alert('Error', 'Terjadi kesalahan saat membatalkan booking.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleOpenChat = async () => {
@@ -90,7 +121,7 @@ export default function BookingDetailScreen() {
       <KeyboardAvoidingView
         className="flex-1"
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView className="flex-1" contentContainerStyle={{ flexGrow: 1 }}>
+        <ScrollView className="flex-1" contentContainerStyle={{ flexGrow: 1 }} removeClippedSubviews={false}>
           {/* Top Bar Header */}
           <View className="border-b border-slate-200 bg-white px-4 py-4 flex-row items-center justify-between shadow-xs">
             <Pressable onPress={handleBack} className="flex-row items-center gap-2.5">
@@ -216,9 +247,18 @@ export default function BookingDetailScreen() {
                 {['pending', 'accepted'].includes(booking.status) && (
                   <Pressable
                     onPress={handleCancel}
-                    className="flex-1 items-center gap-1.5 rounded-xl bg-rose-50 border border-rose-200 p-3 active:bg-rose-100">
-                    <Text className="text-xl">❌</Text>
-                    <Text className="text-xs font-bold text-rose-700">Batalkan</Text>
+                    disabled={cancelling}
+                    className={`flex-1 items-center gap-1.5 rounded-xl bg-rose-50 border border-rose-200 p-3 active:bg-rose-100 ${
+                      cancelling ? 'opacity-50' : ''
+                    }`}>
+                    {cancelling ? (
+                      <ActivityIndicator size="small" color="#e11d48" />
+                    ) : (
+                      <Text className="text-xl">❌</Text>
+                    )}
+                    <Text className="text-xs font-bold text-rose-700">
+                      {cancelling ? 'Memproses...' : 'Batalkan'}
+                    </Text>
                   </Pressable>
                 )}
               </View>

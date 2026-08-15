@@ -113,7 +113,7 @@ export default function CustomerTrackingScreen() {
         </Pressable>
       </View>
 
-      <ScrollView className="flex-1" contentContainerStyle={{ flexGrow: 1 }}>
+      <ScrollView className="flex-1" contentContainerStyle={{ flexGrow: 1 }} removeClippedSubviews={false}>
         {/* Status Header Banner */}
         <View className="p-4 bg-slate-900 border-b border-slate-800">
           <View className="flex-row items-center justify-between">

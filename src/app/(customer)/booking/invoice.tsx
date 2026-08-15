@@ -292,7 +292,7 @@ export default function BookingInvoiceScreen() {
       description="Selesaikan pembayaran dengan Midtrans Snap Sandbox (Virtual Account / QRIS / E-Wallet)."
       scroll={false}
     >
-      <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
+      <ScrollView className="flex-1" showsVerticalScrollIndicator={false} removeClippedSubviews={false}>
         {renderStatusBadge()}
 
         {/* Invoice Summary Card */}

@@ -265,6 +265,10 @@ class BookingRepository {
         };
       }
 
+      if (booking.status === 'cancelled') {
+        return { success: true };
+      }
+
       if (!['pending', 'accepted'].includes(booking.status)) {
         return {
           success: false,

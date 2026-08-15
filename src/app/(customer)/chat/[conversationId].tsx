@@ -129,6 +129,7 @@ export default function ChatRoomScreen() {
               className="flex-1 bg-slate-50 px-4"
               contentContainerClassName="py-5"
               keyboardShouldPersistTaps="handled"
+              removeClippedSubviews={false}
             >
               {hasOlder && (
                 <Pressable onPress={handleLoadOlder} className="mb-3 self-center">
