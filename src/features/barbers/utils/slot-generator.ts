@@ -4,6 +4,14 @@
  * and working period constraints.
  */
 
+import {
+  BOOKING_TIME_ZONE,
+  evaluateSlotEligibility,
+  MIN_BOOKING_LEAD_TIME_MINUTES,
+} from '@/features/bookings/utils/slot-datetime';
+
+export { MIN_BOOKING_LEAD_TIME_MINUTES };
+
 export interface BarberTimeSlot {
   id: string;
   time: string; // HH:mm format
@@ -48,6 +56,9 @@ export interface GenerateTimeSlotsParams {
   acceptingNewBookings?: boolean;
   isHomeService?: boolean;
   timeZone?: string; // Default 'Asia/Jakarta'
+  /** Injectable clock for deterministic tests; defaults to real time. Drives both
+   *  slot-lock expiry and date-aware slot eligibility. */
+  now?: Date;
 }
 
 /**
@@ -136,52 +147,30 @@ export function applyTravelBuffer(
 }
 
 /**
- * Filter out slots that have already passed for today's date in Asia/Jakarta timezone
+ * Mark every slot whose full start datetime (date + HH:mm in `timeZone`) is already
+ * elapsed or inside the minimum lead-time window as unavailable.
+ *
+ * Date-aware by construction: eligibility is decided per slot from its own
+ * `date + time` timestamp, so this function no longer needs (and no longer has) a
+ * `date === today` short-circuit, and no longer compares a slot's minutes-from-midnight
+ * against the current minutes-from-midnight. That comparison was date-blind: it made
+ * every slot on a past date look available, and exempted future dates from the
+ * lead-time rule (tomorrow 00:00 bookable at 23:30 tonight).
+ *
+ * `now` is injectable so the rule is testable at a fixed instant.
  */
 export function filterPastSlots(
   slots: BarberTimeSlot[],
   date: string,
-  timeZone = 'Asia/Jakarta'
+  timeZone = BOOKING_TIME_ZONE,
+  now: Date = new Date()
 ): BarberTimeSlot[] {
-  // Get current date string in Asia/Jakarta
-  const now = new Date();
-  const options: Intl.DateTimeFormatOptions = {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  };
-
-  const formatter = new Intl.DateTimeFormat('en-CA', options);
-  const parts = formatter.formatToParts(now);
-
-  const year = parts.find((p) => p.type === 'year')?.value || '';
-  const month = parts.find((p) => p.type === 'month')?.value || '';
-  const day = parts.find((p) => p.type === 'day')?.value || '';
-  const hour = parts.find((p) => p.type === 'hour')?.value || '00';
-  const minute = parts.find((p) => p.type === 'minute')?.value || '00';
-
-  const todayStr = `${year}-${month}-${day}`;
-
-  if (date !== todayStr) {
-    return slots; // Only filter if date matches current date in Asia/Jakarta
-  }
-
-  const currentMinutes = parseInt(hour, 10) * 60 + parseInt(minute, 10);
-
   return slots.map((slot) => {
-    const slotMinutes = timeToMinutes(slot.time);
-    if (slotMinutes <= currentMinutes) {
-      return {
-        ...slot,
-        available: false,
-        reason: 'Waktu telah berlalu',
-      };
+    const eligibility = evaluateSlotEligibility({ date, startTime: slot.time, now, timeZone });
+    if (eligibility.bookable) {
+      return slot;
     }
-    return slot;
+    return { ...slot, available: false, reason: eligibility.reason };
   });
 }
 
@@ -201,7 +190,8 @@ export function generateTimeSlots(params: GenerateTimeSlotsParams): BarberTimeSl
     homeServiceTravelBufferMinutes = 0,
     acceptingNewBookings = true,
     isHomeService = false,
-    timeZone = 'Asia/Jakarta',
+    timeZone = BOOKING_TIME_ZONE,
+    now = new Date(),
   } = params;
 
   // 1. Check if barber accepts new bookings
@@ -238,7 +228,7 @@ export function generateTimeSlots(params: GenerateTimeSlotsParams): BarberTimeSl
     }
   }
 
-  const nowMs = Date.now();
+  const nowMs = now.getTime();
   for (const lock of slotLocks) {
     if (lock.expiresAt > nowMs) {
       const lEnd = calculateSlotEnd(lock.startTime, lock.durationMinutes);
@@ -308,6 +298,6 @@ export function generateTimeSlots(params: GenerateTimeSlotsParams): BarberTimeSl
     currentMins += slotIntervalMinutes;
   }
 
-  // 6. Filter past slots for today's date
-  return filterPastSlots(rawSlots, date, timeZone);
+  // 6. Apply date-aware eligibility (elapsed + minimum lead time) to every slot
+  return filterPastSlots(rawSlots, date, timeZone, now);
 }

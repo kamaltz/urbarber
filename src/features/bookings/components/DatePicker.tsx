@@ -3,6 +3,7 @@
  */
 
 import { Pressable, Text, View } from 'react-native';
+import { getZonedToday } from '../utils/slot-datetime';
 
 export type DatePickerProps = {
   selectedDate: string;
@@ -29,7 +30,14 @@ export function DatePicker({
     return new Date(date.getFullYear(), date.getMonth(), 1).getDay();
   };
 
-  const currentDate = startDate ?? new Date();
+  // Canonical WIB date, not the device's local date: a device in another zone (or an
+  // emulator left on UTC) would otherwise render a different month, and grey out or
+  // open up a day the server disagrees about. Zero-padded ISO dates compare
+  // correctly as plain strings, so no further Date construction is needed to order them.
+  const todayStr = getZonedToday();
+  const [todayYear, todayMonth, todayDay] = todayStr.split('-').map(Number);
+
+  const currentDate = startDate ?? new Date(todayYear, todayMonth - 1, todayDay);
   const daysInMonth = getDaysInMonth(currentDate);
   const firstDay = getFirstDayOfMonth(currentDate);
   const days: (number | null)[] = Array(firstDay).fill(null);
@@ -40,6 +48,10 @@ export function DatePicker({
 
   const formatDateString = (year: number, month: number, day: number): string => {
     return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  };
+
+  const isPastDate = (year: number, month: number, day: number): boolean => {
+    return formatDateString(year, month, day) < todayStr;
   };
 
   return (
@@ -70,17 +82,32 @@ export function DatePicker({
                 day,
               );
               const isSelected = selectedDate === dateStr;
+              const isPast = isPastDate(currentDate.getFullYear(), currentDate.getMonth(), day);
+              const isDisabled = isPast;
 
               return (
                 <Pressable
                   key={dateStr || `day-${weekIdx}-${dayIdx}`}
-                  onPress={() => onDateChange(dateStr)}
+                  onPress={() => {
+                    if (!isDisabled) {
+                      onDateChange(dateStr);
+                    }
+                  }}
+                  disabled={isDisabled}
                   className={`h-12 w-12 items-center justify-center rounded-lg ${
-                    isSelected ? 'bg-orange-600' : 'bg-white border border-slate-200'
+                    isDisabled
+                      ? 'bg-slate-100 border border-slate-300'
+                      : isSelected
+                        ? 'bg-orange-600 border border-orange-600'
+                        : 'bg-white border border-slate-200'
                   }`}>
                   <Text
                     className={`font-semibold ${
-                      isSelected ? 'text-white' : 'text-slate-900'
+                      isDisabled
+                        ? 'text-slate-400'
+                        : isSelected
+                          ? 'text-white'
+                          : 'text-slate-900'
                     }`}>
                     {day}
                   </Text>

@@ -45,6 +45,9 @@ export type PaymentStatus =
   | "refunded"
   | "partially_refunded";
 
+/* Booking Business Rules */
+export const MIN_BOOKING_LEAD_TIME_MINUTES = 60;
+
 /**
  * Explicit legacy status read mapper.
  * Translates old stored database values to canonical BookingStatus.
