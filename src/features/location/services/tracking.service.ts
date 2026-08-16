@@ -130,6 +130,10 @@ class TrackingService {
         },
         (location) => {
           const payload = this.toCoordinates(location);
+          if (typeof payload.latitude !== 'number' || typeof payload.longitude !== 'number') return;
+          if (payload.latitude === 0 && payload.longitude === 0) return;
+          if (payload.accuracy && payload.accuracy > 100) return; // Skip noisy GPS (>100m)
+
           onLocationUpdate?.(payload);
 
           const now = Date.now();
