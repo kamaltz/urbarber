@@ -1,5 +1,6 @@
 import { AppButton } from '@/components/ui/AppButton';
 import { AppInput } from '@/components/ui/AppInput';
+import { routes } from '@/constants/routes';
 import { BrandText } from '@/components/ui/BrandText';
 import { AuthHeaderBlock } from '@/features/auth/components/AuthHeaderBlock';
 import { SocialLoginButton } from '@/features/auth/components/SocialLoginButton';
@@ -130,7 +131,7 @@ export default function RegisterCustomerScreen() {
   };
 
   const handleTermsPress = () => {
-    router.push('/(customer)/terms-condition');
+    router.push(routes.legal.terms);
   };
 
   const isFormValid =

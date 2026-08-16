@@ -17,6 +17,9 @@ export default function BarberDetailPage() {
   const [suspendModal, setSuspendModal] = useState(false);
   const [suspendReason, setSuspendReason] = useState('');
   const [suspending, setSuspending] = useState(false);
+  const [deleteModal, setDeleteModal] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState('');
+  const [deleting, setDeleting] = useState(false);
 
   // Load barber detail
   useEffect(() => {
@@ -42,7 +45,7 @@ export default function BarberDetailPage() {
     }
     setSuspending(true);
     try {
-      await AdminApiClient.updateUserStatus(barberId, 'suspended', suspendReason);
+      await AdminApiClient.suspendBarber(barberId, suspendReason);
       alert('Barber berhasil disuspensus.');
       router.push('/barbers');
     } catch (err: any) {
@@ -56,7 +59,7 @@ export default function BarberDetailPage() {
   // Handle reactivate
   const handleReactivate = async () => {
     try {
-      await AdminApiClient.updateUserStatus(barberId, 'active');
+      await AdminApiClient.reactivateBarber(barberId);
       alert('Barber berhasil diaktifkan kembali.');
       // Reload page
       setLoading(true);
@@ -65,6 +68,31 @@ export default function BarberDetailPage() {
       setLoading(false);
     } catch (err: any) {
       alert(`Gagal reactivate: ${err.message}`);
+    }
+  };
+
+  // Handle delete
+  const handleDelete = async () => {
+    if (deleteConfirmation !== 'HAPUS') {
+      alert('Ketik "HAPUS" untuk mengkonfirmasi penghapusan.');
+      return;
+    }
+    setDeleting(true);
+    try {
+      await AdminApiClient.deleteBarber(barberId);
+      alert('Barber berhasil dihapus.');
+      router.push('/barbers');
+    } catch (err: any) {
+      // Check if error is about active bookings
+      if (err.code === 'CONFLICT') {
+        alert(`Gagal delete: Barber masih memiliki booking aktif. Pastikan semua booking selesai atau dibatalkan terlebih dahulu.`);
+      } else {
+        alert(`Gagal delete: ${err.message}`);
+      }
+    } finally {
+      setDeleting(false);
+      setDeleteModal(false);
+      setDeleteConfirmation('');
     }
   };
 
@@ -186,19 +214,35 @@ export default function BarberDetailPage() {
       {/* Actions */}
       <div className="flex gap-4">
         {isSuspended ? (
-          <button
-            onClick={handleReactivate}
-            className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold"
-          >
-            Aktifkan Kembali
-          </button>
+          <>
+            <button
+              onClick={handleReactivate}
+              className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold"
+            >
+              Aktifkan Kembali
+            </button>
+            <button
+              onClick={() => setDeleteModal(true)}
+              className="px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 font-semibold"
+            >
+              Hapus Akun
+            </button>
+          </>
         ) : (
-          <button
-            onClick={() => setSuspendModal(true)}
-            className="px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 font-semibold"
-          >
-            Suspensus
-          </button>
+          <>
+            <button
+              onClick={() => setSuspendModal(true)}
+              className="px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 font-semibold"
+            >
+              Suspensus
+            </button>
+            <button
+              onClick={() => setDeleteModal(true)}
+              className="px-6 py-3 bg-red-800 text-white rounded-lg hover:bg-red-900 font-semibold"
+            >
+              Hapus Akun
+            </button>
+          </>
         )}
       </div>
 
@@ -206,12 +250,15 @@ export default function BarberDetailPage() {
       {suspendModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white p-8 rounded-lg max-w-md">
-            <h3 className="text-2xl font-semibold mb-4">Suspensus Barber</h3>
+            <h3 className="text-2xl font-semibold mb-4">Bekukan Akun Barber?</h3>
+            <p className="text-gray-600 mb-4">
+              Barber tidak akan dapat login atau menerima booking baru. Riwayat booking dan transaksi tetap tersimpan.
+            </p>
             <textarea
               value={suspendReason}
               onChange={(e) => setSuspendReason(e.target.value)}
-              placeholder="Masukkan alasan suspensus..."
-              className="w-full p-3 border rounded mb-4 h-24"
+              placeholder="Masukkan alasan suspensi (opsional)..."
+              className="w-full p-3 border rounded mb-4 h-20"
             />
             <div className="flex gap-4">
               <button
@@ -222,10 +269,53 @@ export default function BarberDetailPage() {
               </button>
               <button
                 onClick={handleSuspend}
-                disabled={suspending}
+                disabled={suspending || !suspendReason.trim()}
                 className="flex-1 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
               >
-                {suspending ? 'Memproses...' : 'Suspensus'}
+                {suspending ? 'Memproses...' : 'Bekukan'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Modal */}
+      {deleteModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-8 rounded-lg max-w-md">
+            <h3 className="text-2xl font-semibold mb-4 text-red-600">Hapus Akun Barber?</h3>
+            <p className="text-gray-600 mb-4">
+              Tindakan ini tidak dapat dibatalkan. Akun barber akan dihapus dan tidak dapat digunakan kembali.
+            </p>
+            <p className="text-gray-600 mb-4">
+              Riwayat booking dan transaksi akan tetap disimpan untuk keperluan audit.
+            </p>
+            <p className="text-gray-700 font-semibold mb-4">
+              Ketik "HAPUS" untuk mengkonfirmasi:
+            </p>
+            <input
+              type="text"
+              value={deleteConfirmation}
+              onChange={(e) => setDeleteConfirmation(e.target.value)}
+              placeholder='Ketik "HAPUS"'
+              className="w-full p-3 border rounded mb-4 font-mono text-center"
+            />
+            <div className="flex gap-4">
+              <button
+                onClick={() => {
+                  setDeleteModal(false);
+                  setDeleteConfirmation('');
+                }}
+                className="flex-1 px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
+              >
+                Batal
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleting || deleteConfirmation !== 'HAPUS'}
+                className="flex-1 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50 font-semibold"
+              >
+                {deleting ? 'Menghapus...' : 'Hapus'}
               </button>
             </div>
           </div>

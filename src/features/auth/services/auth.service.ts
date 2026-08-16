@@ -45,6 +45,37 @@ export interface AuthResponse {
   error?: AuthError;
 }
 
+/**
+ * Dev-only diagnostic breadcrumb for auth failures.
+ *
+ * Logs the Firebase error *code* and nothing else — never the email, password,
+ * ID token, API key or any part of the Firebase config. `auth/invalid-api-key`
+ * and `auth/network-request-failed` are the two codes that distinguish a broken
+ * build-time environment from a genuine connectivity problem, which is exactly
+ * what collapsing everything into a single generic code used to hide.
+ */
+function logAuthErrorCode(operation: string, error: unknown): void {
+  if (!__DEV__) return;
+  const code = (error as FirebaseAuthError)?.code;
+  console.warn('[auth]', operation, 'failed with code:', code ?? 'unknown');
+}
+
+/** Friendly Indonesian copy for the failure modes shared by all auth entry points. */
+function commonAuthErrorMessage(code: string | undefined): string | undefined {
+  switch (code) {
+    case 'auth/network-request-failed':
+      return 'Koneksi ke Firebase bermasalah. Periksa internet atau pemblokir browser.';
+    case 'auth/invalid-api-key':
+    case 'auth/api-key-not-valid':
+    case 'auth/app-not-authorized':
+      return 'Konfigurasi aplikasi bermasalah. Hubungi admin URBarber.';
+    case 'auth/too-many-requests':
+      return 'Terlalu banyak permintaan. Tunggu beberapa menit lalu coba lagi.';
+    default:
+      return undefined;
+  }
+}
+
 function verificationEmailError(error: unknown): AuthError {
   const firebaseError = error as FirebaseAuthError;
 
@@ -259,23 +290,26 @@ class FirebaseAuthService {
         emailVerified: firebaseAuth.currentUser?.emailVerified ?? false,
       };
     } catch (error: any) {
+      logAuthErrorCode('loginWithEmail', error);
+
       const firebaseError = error as FirebaseAuthError;
+      const isTimeout = error instanceof Error && error.message === 'Login request timed out';
+      const code = isTimeout ? 'auth/network-request-failed' : firebaseError.code;
+
       const invalidCredentials = [
         'auth/invalid-credential',
         'auth/invalid-email',
         'auth/user-not-found',
         'auth/wrong-password',
-      ].includes(firebaseError.code);
-      const isTimeout = error instanceof Error && error.message === 'Login request timed out';
+      ].includes(code);
+
       const message = invalidCredentials
         ? 'Email atau password salah'
-        : isTimeout || firebaseError.code === 'auth/network-request-failed'
-          ? 'Koneksi ke Firebase bermasalah. Periksa internet atau pemblokir browser.'
-          : 'Login gagal. Coba lagi.';
+        : (commonAuthErrorMessage(code) ?? 'Login gagal. Coba lagi.');
 
       return {
         success: false,
-        error: { code: firebaseError.code || 'LOGIN_FAILED', message },
+        error: { code: code || 'LOGIN_FAILED', message },
       };
     }
   }
@@ -292,12 +326,31 @@ class FirebaseAuthService {
         };
       }
 
-      await sendPasswordResetEmail(firebaseAuth, identifier);
+      await withTimeout(
+        sendPasswordResetEmail(firebaseAuth, identifier.trim()),
+        15_000,
+        'Password reset request timed out',
+      );
       return { success: true };
     } catch (error: any) {
+      logAuthErrorCode('requestPasswordReset', error);
+
+      const firebaseError = error as FirebaseAuthError;
+      const isTimeout =
+        error instanceof Error && error.message === 'Password reset request timed out';
+      const code = isTimeout ? 'auth/network-request-failed' : firebaseError.code;
+
+      const message =
+        commonAuthErrorMessage(code) ??
+        (code === 'auth/invalid-email' || code === 'auth/user-not-found'
+          ? // Deliberately non-committal: confirming whether an address is
+            // registered would leak account existence.
+            'Jika email terdaftar, link reset password akan dikirim.'
+          : 'Gagal mengirim link reset password');
+
       return {
         success: false,
-        error: { code: 'RESET_FAILED', message: 'Gagal mengirim link reset password' },
+        error: { code: code || 'RESET_FAILED', message },
       };
     }
   }

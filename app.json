@@ -12,12 +12,16 @@
     },
     "android": {
       "package": "com.kamaltz.urbarber",
-      "googleServicesFile": "./google-services.json",
+      //"googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#363062",
         "foregroundImage": "./assets/images/urbarber-icon-foreground.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
     },
     "web": {
       "output": "static",
@@ -46,6 +50,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "857c8ba2-f03e-4012-931b-8ddc00b327c6"
+      }
     }
   }
 }

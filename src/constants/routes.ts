@@ -25,13 +25,16 @@ export const routes = {
   admin: {
     webOnly: '/admin-web-only',
   },
+  /** Public routes reachable with or without an authenticated session. */
+  legal: {
+    terms: '/terms-condition',
+  },
   customer: {
     home: '/(customer)/home',
     explore: '/(customer)/explore',
     favorites: '/(customer)/favorites',
     chats: '/(customer)/chat',
     profile: '/(customer)/profile',
-    terms: '/(customer)/terms-condition',
     bookingOptions: '/(customer)/booking/options',
     bookingSchedule: '/(customer)/booking/schedule',
     bookingLocation: '/(customer)/booking/location',

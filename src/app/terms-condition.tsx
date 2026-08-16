@@ -1,4 +1,5 @@
 import { AppButton } from '@/components/ui/AppButton';
+import { routes } from '@/constants/routes';
 import { backOrReplace } from '@/lib/navigation';
 import { Pressable, SafeAreaView, ScrollView, Text, View } from 'react-native';
 
@@ -29,9 +30,17 @@ const TERMS_SECTIONS = [
   },
 ] as const;
 
+/**
+ * Public legal screen. Deliberately lives at the router root, outside both the
+ * protected `(customer)` group and the authenticated-user-redirecting `(auth)`
+ * group, so registration (unauthenticated) and profile (authenticated) can both
+ * open it without triggering a layout guard redirect.
+ */
 export default function TermsScreen() {
+  // No history only happens on a cold deep link; `(auth)/login` is the one route
+  // valid for both states — its layout forwards an already-signed-in user home.
   const handleAccept = () => {
-    backOrReplace('/(customer)/home');
+    backOrReplace(routes.auth.login);
   };
 
   return (

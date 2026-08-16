@@ -399,6 +399,42 @@ export class AdminApiClient {
     return response.data!;
   }
 
+  /**
+   * POST /api/admin/barbers/:barberId/suspend
+   * Suspend a barber account
+   */
+  static async suspendBarber(barberId: string, reason: string): Promise<{ success: boolean; message: string }> {
+    const response = await this.request<ApiResponse<{ success: boolean; message: string }>>(
+      `/api/admin/barbers/${barberId}/suspend`,
+      { method: 'POST', body: JSON.stringify({ reason }) }
+    );
+    return response.data!;
+  }
+
+  /**
+   * POST /api/admin/barbers/:barberId/reactivate
+   * Reactivate a suspended barber account
+   */
+  static async reactivateBarber(barberId: string): Promise<{ success: boolean; message: string }> {
+    const response = await this.request<ApiResponse<{ success: boolean; message: string }>>(
+      `/api/admin/barbers/${barberId}/reactivate`,
+      { method: 'POST' }
+    );
+    return response.data!;
+  }
+
+  /**
+   * DELETE /api/admin/barbers/:barberId
+   * Delete a barber account (soft delete)
+   */
+  static async deleteBarber(barberId: string): Promise<{ success: boolean; message: string }> {
+    const response = await this.request<ApiResponse<{ success: boolean; message: string }>>(
+      `/api/admin/barbers/${barberId}`,
+      { method: 'DELETE' }
+    );
+    return response.data!;
+  }
+
   // ============================================================================
   // Phase 2: Category Management
   // ============================================================================

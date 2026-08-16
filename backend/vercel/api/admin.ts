@@ -20,6 +20,8 @@
  * - GET /api/admin/barbers
  * - GET /api/admin/barbers/:barberId
  * - POST /api/admin/barbers/:barberId/suspend
+ * - POST /api/admin/barbers/:barberId/reactivate
+ * - DELETE /api/admin/barbers/:barberId
  * - GET /api/admin/categories
  * - POST /api/admin/categories
  * - PATCH /api/admin/categories/:categoryId
@@ -51,6 +53,11 @@ import {
     updateCategory,
     updateUserStatus
 } from '../src/admin/admin.service.js';
+import {
+    deleteBarber,
+    reactivateBarber,
+    suspendBarber,
+} from '../src/admin/barber-account-management.js';
 import {
     validateCategoryName,
     validateDocumentType,
@@ -487,6 +494,130 @@ async function handleGetBarberDetail(ctx: RouteContext): Promise<void> {
   }
 }
 
+/**
+ * POST /api/admin/barbers/:barberId/suspend - Suspend barber account
+ */
+async function handleSuspendBarber(ctx: RouteContext): Promise<void> {
+  const { req, res } = ctx;
+  if (!handleCors(req, res, ['POST', 'OPTIONS'])) return;
+  const admin = await requireAdmin(req, res);
+  if (!admin) return;
+
+  const barberId = req.url?.split('/barbers/')[1]?.split('/')[0];
+  if (!barberId) {
+    res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'barberId diperlukan.' } });
+    return;
+  }
+
+  const { reason } = req.body || {};
+
+  try {
+    const result = await suspendBarber(barberId, admin.uid, reason || '');
+    res.status(200).json({
+      data: {
+        success: result.success,
+        message: result.message,
+      },
+    });
+  } catch (err: any) {
+    console.error('[Admin/suspend]', err.message);
+    if (err.message === 'USER_NOT_FOUND') {
+      res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Barber tidak ditemukan.' } });
+    } else if (err.message === 'USER_NOT_BARBER') {
+      res.status(403).json({ error: { code: 'FORBIDDEN', message: 'User bukan barber.' } });
+    } else if (err.message === 'AUTH_USER_NOT_FOUND') {
+      res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Firebase Auth user tidak ditemukan.' } });
+    } else if (err.message?.includes('AUTH_UPDATE_FAILED')) {
+      res.status(500).json({ error: { code: 'AUTH_ERROR', message: 'Gagal disable Firebase Auth.' } });
+    } else {
+      res.status(500).json({ error: { code: 'INTERNAL_SERVER_ERROR', message: 'Gagal suspend barber.' } });
+    }
+  }
+}
+
+/**
+ * POST /api/admin/barbers/:barberId/reactivate - Reactivate suspended barber
+ */
+async function handleReactivateBarber(ctx: RouteContext): Promise<void> {
+  const { req, res } = ctx;
+  if (!handleCors(req, res, ['POST', 'OPTIONS'])) return;
+  const admin = await requireAdmin(req, res);
+  if (!admin) return;
+
+  const barberId = req.url?.split('/barbers/')[1]?.split('/')[0];
+  if (!barberId) {
+    res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'barberId diperlukan.' } });
+    return;
+  }
+
+  try {
+    const result = await reactivateBarber(barberId, admin.uid);
+    res.status(200).json({
+      data: {
+        success: result.success,
+        message: result.message,
+      },
+    });
+  } catch (err: any) {
+    console.error('[Admin/reactivate]', err.message);
+    if (err.message === 'USER_NOT_FOUND') {
+      res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Barber tidak ditemukan.' } });
+    } else if (err.message === 'USER_NOT_BARBER') {
+      res.status(403).json({ error: { code: 'FORBIDDEN', message: 'User bukan barber.' } });
+    } else if (err.message === 'AUTH_USER_NOT_FOUND') {
+      res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Firebase Auth user tidak ditemukan.' } });
+    } else if (err.message?.includes('AUTH_UPDATE_FAILED')) {
+      res.status(500).json({ error: { code: 'AUTH_ERROR', message: 'Gagal enable Firebase Auth.' } });
+    } else {
+      res.status(500).json({ error: { code: 'INTERNAL_SERVER_ERROR', message: 'Gagal reactivate barber.' } });
+    }
+  }
+}
+
+/**
+ * DELETE /api/admin/barbers/:barberId - Delete barber account (soft delete)
+ */
+async function handleDeleteBarber(ctx: RouteContext): Promise<void> {
+  const { req, res } = ctx;
+  if (!handleCors(req, res, ['DELETE', 'OPTIONS'])) return;
+  const admin = await requireAdmin(req, res);
+  if (!admin) return;
+
+  const barberId = req.url?.split('/barbers/')[1]?.split('?')[0];
+  if (!barberId) {
+    res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'barberId diperlukan.' } });
+    return;
+  }
+
+  try {
+    const result = await deleteBarber(barberId, admin.uid);
+    res.status(200).json({
+      data: {
+        success: result.success,
+        message: result.message,
+      },
+    });
+  } catch (err: any) {
+    console.error('[Admin/delete]', err.message);
+    if (err.message === 'USER_NOT_FOUND') {
+      res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Barber tidak ditemukan.' } });
+    } else if (err.message === 'USER_NOT_BARBER') {
+      res.status(403).json({ error: { code: 'FORBIDDEN', message: 'User bukan barber.' } });
+    } else if (err.message === 'BARBER_HAS_ACTIVE_BOOKINGS') {
+      res.status(409).json({
+        error: {
+          code: 'CONFLICT',
+          message: 'Barber masih memiliki booking aktif dan tidak dapat dihapus.',
+        },
+      });
+    } else if (err.message?.includes('AUTH_DELETE_FAILED')) {
+      res.status(500).json({ error: { code: 'AUTH_ERROR', message: 'Gagal delete Firebase Auth account.' } });
+    } else {
+      res.status(500).json({ error: { code: 'INTERNAL_SERVER_ERROR', message: 'Gagal delete barber.' } });
+    }
+  }
+}
+
 // ============================================================================
 // Phase 2: Category Management
 // ============================================================================
@@ -821,6 +952,14 @@ function matchRoute(pathname: string, method: string): RouteHandler | null {
     if (pathname.match(/^\/api\/admin\/users\/[^/]+\/status$/)) {
       return handleUpdateUserStatus;
     }
+    // /api/admin/barbers/:barberId/suspend
+    if (pathname.match(/^\/api\/admin\/barbers\/[^/]+\/suspend$/)) {
+      return handleSuspendBarber;
+    }
+    // /api/admin/barbers/:barberId/reactivate
+    if (pathname.match(/^\/api\/admin\/barbers\/[^/]+\/reactivate$/)) {
+      return handleReactivateBarber;
+    }
   }
 
   if (method === 'PATCH') {
@@ -834,6 +973,10 @@ function matchRoute(pathname: string, method: string): RouteHandler | null {
     // /api/admin/categories/:categoryId (Phase 2)
     if (pathname.match(/^\/api\/admin\/categories\/[^/]+$/)) {
       return handleDeactivateCategory;
+    }
+    // /api/admin/barbers/:barberId
+    if (pathname.match(/^\/api\/admin\/barbers\/[^/]+$/) && pathname !== '/api/admin/barbers') {
+      return handleDeleteBarber;
     }
   }
 
