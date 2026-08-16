@@ -7,6 +7,8 @@ import { useAuth } from '@/features/auth/hooks/use-auth';
 import { barberRepository } from '@/features/barbers/repository/barber.repository';
 import type { BarberProfile } from '@/features/barbers/types/barber';
 import { uploadService } from '@/features/storage/services/upload.service';
+import { MAP_CONFIG } from '@/config/map.config';
+import { Camera, Map, Marker } from '@maplibre/maplibre-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { router, useFocusEffect } from 'expo-router';
@@ -311,18 +313,42 @@ export default function BarberProfileScreen() {
         {/* Shop Location */}
         <AppCard className="mb-6 p-4 gap-3">
           <Text className="font-bold text-slate-900 text-base border-b border-slate-100 pb-2">
-            Lokasi Barber
+            Lokasi Barber & Barbershop (Permanent Shop Base)
           </Text>
 
           {profile?.location && typeof profile.location.latitude === 'number' && typeof profile.location.longitude === 'number' ? (
-            <View className="flex-row items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200 p-3">
-              <Text className="text-base">📍</Text>
-              <View className="flex-1">
-                <Text className="text-xs font-bold text-emerald-900">Lokasi Sudah Dikonfigurasi (Configured)</Text>
-                <Text className="text-[11px] text-emerald-700 font-medium">
-                  {profile.location.latitude.toFixed(4)}, {profile.location.longitude.toFixed(4)}
-                  {profile.geohash ? ` (geohash: ${profile.geohash})` : ''}
-                </Text>
+            <View className="gap-2">
+              <View className="flex-row items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200 p-3">
+                <Text className="text-base">📍</Text>
+                <View className="flex-1">
+                  <Text className="text-xs font-bold text-emerald-900">Lokasi Sudah Dikonfigurasi (Configured)</Text>
+                  <Text className="text-[11px] text-emerald-700 font-medium">
+                    Koordinat: {profile.location.latitude.toFixed(5)}, {profile.location.longitude.toFixed(5)}
+                    {profile.geohash ? ` (geohash: ${profile.geohash})` : ''}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Map Preview */}
+              <View className="h-44 overflow-hidden rounded-xl border border-slate-200 mt-1">
+                <Map mapStyle={MAP_CONFIG.styleUrl} style={{ flex: 1 }}>
+                  <Camera
+                    initialViewState={{
+                      center: [profile.location.longitude, profile.location.latitude],
+                      zoom: 14,
+                    }}
+                  />
+                  <Marker
+                    id="barber-shop-marker"
+                    coordinates={[profile.location.longitude, profile.location.latitude]}>
+                    <View className="bg-slate-900 px-2.5 py-1.5 rounded-full border-2 border-white shadow-md flex-row items-center gap-1">
+                      <Text className="text-xs">💈</Text>
+                      <Text className="text-white text-[11px] font-bold">
+                        {shopName || 'Outlet Barber'}
+                      </Text>
+                    </View>
+                  </Marker>
+                </Map>
               </View>
             </View>
           ) : (
@@ -335,11 +361,11 @@ export default function BarberProfileScreen() {
           )}
 
           <Text className="text-xs text-slate-500">
-            Gunakan lokasi Anda saat ini sebagai lokasi barbershop. Ini hanya diambil sekali saat Anda menekan tombol -- bukan pelacakan berkelanjutan.
+            Lokasi ini digunakan untuk pencarian barber terdekat oleh Pelanggan (~10 km radius). Lokasi disimpan secara permanen di server dan dapat diperbarui kapan saja.
           </Text>
 
           <AppButton
-            label={savingLocation ? 'Mengambil Lokasi...' : 'Gunakan Lokasi Saat Ini'}
+            label={savingLocation ? 'Mengambil & Menyimpan Lokasi...' : '📍 Deteksi & Simpan Lokasi GPS Saat Ini'}
             onPress={handleUpdateLocation}
             variant="secondary"
             disabled={savingLocation}

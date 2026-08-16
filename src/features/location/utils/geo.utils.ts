@@ -16,6 +16,7 @@ export interface Coordinates {
 export function validateCoordinates(latitude: number, longitude: number): boolean {
   if (typeof latitude !== 'number' || typeof longitude !== 'number') return false;
   if (isNaN(latitude) || isNaN(longitude)) return false;
+  if (latitude === 0 && longitude === 0) return false;
   return latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180;
 }
 
