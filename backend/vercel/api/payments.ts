@@ -80,6 +80,7 @@ async function handleCreatePayment(ctx: RouteContext): Promise<void> {
       required_error: 'bookingType wajib diisi.',
       invalid_type_error: 'bookingType harus home atau onsite.',
     }),
+    tipAmount: z.number().min(0, 'Tip tidak boleh negatif.').optional().default(0),
   });
 
   const parseResult = createPaymentSchema.safeParse(req.body);
@@ -93,7 +94,7 @@ async function handleCreatePayment(ctx: RouteContext): Promise<void> {
     return;
   }
 
-  const { requestId, barberId, serviceId, date, startTime, address, notes, bookingType } = parseResult.data;
+  const { requestId, barberId, serviceId, date, startTime, address, notes, bookingType, tipAmount: rawTip } = parseResult.data;
   const customerId = authUser.uid;
   const serviceLocationType = resolveServiceLocationType(bookingType);
 
@@ -182,7 +183,11 @@ async function handleCreatePayment(ctx: RouteContext): Promise<void> {
       return;
     }
 
-    const price = serviceData.price || 0;
+    const HOME_SERVICE_FEE_IDR = 10000;
+    const baseAmount = Math.round(serviceData.price || 0);
+    const homeServiceFee = bookingType === 'home' ? HOME_SERVICE_FEE_IDR : 0;
+    const tipAmount = Math.max(0, Math.floor(rawTip || 0));
+    const totalAmount = baseAmount + homeServiceFee + tipAmount;
 
     // Lock the slot and create the booking atomically. Acquisition (read the
     // existing lock, validate it, claim it for this booking) and the booking
@@ -215,7 +220,12 @@ async function handleCreatePayment(ctx: RouteContext): Promise<void> {
       bookingType,
       serviceLocationType,
       notes,
-      price,
+      price: baseAmount,
+      baseAmount,
+      homeServiceFee,
+      tipAmount,
+      totalPrice: totalAmount,
+      grossAmount: totalAmount,
       status: 'pending',
       createdAt: timestamp,
       updatedAt: timestamp,
@@ -253,12 +263,40 @@ async function handleCreatePayment(ctx: RouteContext): Promise<void> {
     const transactionData = {
       transaction_details: {
         order_id: orderId,
-        gross_amount: Math.round(price),
+        gross_amount: totalAmount,
       },
       customer_details: {
         email: authUser.email || customerId,
         customer_id: customerId,
       },
+      item_details: [
+        {
+          id: serviceId,
+          price: baseAmount,
+          quantity: 1,
+          name: String(serviceData.name || 'Layanan Barber').substring(0, 50),
+        },
+        ...(homeServiceFee > 0
+          ? [
+              {
+                id: 'HOME_FEE',
+                price: homeServiceFee,
+                quantity: 1,
+                name: 'Biaya Layanan ke Rumah',
+              },
+            ]
+          : []),
+        ...(tipAmount > 0
+          ? [
+              {
+                id: 'TIP_BARBER',
+                price: tipAmount,
+                quantity: 1,
+                name: 'Tip Barber',
+              },
+            ]
+          : []),
+      ],
     };
 
     try {
@@ -271,8 +309,11 @@ async function handleCreatePayment(ctx: RouteContext): Promise<void> {
         bookingId,
         customerId,
         orderId,
-        amount: price,
-        grossAmount: price,
+        amount: totalAmount,
+        grossAmount: totalAmount,
+        baseAmount,
+        homeServiceFee,
+        tipAmount,
         currency: 'IDR',
         method: 'midtrans_sandbox',
         // Admin's transaction list (admin.service.ts getTransactionsList) filters
@@ -296,7 +337,11 @@ async function handleCreatePayment(ctx: RouteContext): Promise<void> {
         success: true,
         bookingId,
         orderId,
-        amount: price,
+        amount: totalAmount,
+        baseAmount,
+        homeServiceFee,
+        tipAmount,
+        totalAmount,
         paymentUrl,
         message: 'Transaksi pembayaran berhasil dibuat',
       });

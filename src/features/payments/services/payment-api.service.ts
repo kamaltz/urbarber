@@ -17,6 +17,7 @@ export interface CreateBookingPaymentPayload {
   address: string;
   notes?: string;
   bookingType: 'home' | 'onsite';
+  tipAmount?: number;
 }
 
 /**

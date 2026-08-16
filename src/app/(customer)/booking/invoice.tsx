@@ -2,7 +2,9 @@ import { CustomerScreen } from '@/components/navigation/CustomerScreen';
 import { AppButton } from '@/components/ui/AppButton';
 import { AppCard } from '@/components/ui/AppCard';
 import { Loading } from '@/components/ui/Loading';
+import { HOME_SERVICE_FEE_IDR, TIP_OPTIONS } from '@/constants/payment';
 import { routes } from '@/constants/routes';
+import { PaymentSummary } from '@/features/bookings/components/PaymentSummary';
 import { paymentRepository } from '@/features/payments/repository/payment.repository';
 import { createPaidCheckoutGuard } from '@/features/payments/utils/paid-checkout-guard';
 import { isPayButtonDisabled } from '@/features/payments/utils/pay-button-state';
@@ -10,7 +12,7 @@ import type { PaymentRecord, PaymentStatus } from '@/types/domain';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, InteractionManager, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, InteractionManager, Pressable, ScrollView, Text, View } from 'react-native';
 
 export default function BookingInvoiceScreen() {
   const params = useLocalSearchParams<{
@@ -43,6 +45,7 @@ export default function BookingInvoiceScreen() {
 
   const [bookingId, setBookingId] = useState<string | null>(params.bookingId || null);
   const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
+  const [selectedTip, setSelectedTip] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(!params.bookingId);
   const [error, setError] = useState<string | null>(null);
   const [paymentRecord, setPaymentRecord] = useState<PaymentRecord | null>(null);
@@ -99,6 +102,7 @@ export default function BookingInvoiceScreen() {
       address: params.address || 'Alamat Pelanggan',
       notes: params.notes || '',
       bookingType: params.bookingType as 'home' | 'onsite',
+      tipAmount: selectedTip,
     });
 
     if (res.success && res.data) {
@@ -108,7 +112,7 @@ export default function BookingInvoiceScreen() {
       setError(res.error?.message || 'Gagal menyiapkan tagihan pembayaran.');
     }
     setLoading(false);
-  }, [bookingId, paymentUrl, params, getRequestId]);
+  }, [bookingId, paymentUrl, params, selectedTip, getRequestId]);
 
   useEffect(() => {
     let isMounted = true;
@@ -123,6 +127,7 @@ export default function BookingInvoiceScreen() {
           address: params.address || 'Alamat Pelanggan',
           notes: params.notes || '',
           bookingType: params.bookingType as 'home' | 'onsite',
+          tipAmount: selectedTip,
         })
         .then((res) => {
           if (!isMounted) return;
@@ -149,6 +154,7 @@ export default function BookingInvoiceScreen() {
     params.address,
     params.notes,
     params.bookingType,
+    selectedTip,
     getRequestId,
   ]);
 
@@ -215,7 +221,10 @@ export default function BookingInvoiceScreen() {
     }
   };
 
-  const price = Number(params.servicePrice || paymentRecord?.grossAmount || 0);
+  const baseServicePrice = Number(params.servicePrice || (paymentRecord as any)?.baseAmount || paymentRecord?.grossAmount || 0);
+  const isHomeBooking = params.bookingType === 'home';
+  const computedHomeFee = isHomeBooking ? HOME_SERVICE_FEE_IDR : 0;
+  const computedTotal = paymentRecord?.grossAmount || (baseServicePrice + computedHomeFee + selectedTip);
   const currentStatus: PaymentStatus = paymentRecord?.status || 'initiated';
 
   const renderStatusBadge = () => {
@@ -295,10 +304,42 @@ export default function BookingInvoiceScreen() {
       <ScrollView className="flex-1" showsVerticalScrollIndicator={false} removeClippedSubviews={false}>
         {renderStatusBadge()}
 
+        {/* Tip Barber Selection (before payment is created) */}
+        {!bookingId ? (
+          <AppCard className="p-4 mb-4 border-amber-200 bg-amber-50/50">
+            <Text className="text-xs font-bold text-amber-900 uppercase tracking-wider mb-1">
+              💡 Tip Barber (Opsional)
+            </Text>
+            <Text className="text-xs text-amber-800 mb-3">
+              Berikan apresiasi terbaik untuk hasil potongan rambut Master Barber Anda.
+            </Text>
+
+            <View className="flex-row flex-wrap gap-2">
+              {TIP_OPTIONS.map((option) => (
+                <Pressable
+                  key={option.value}
+                  onPress={() => setSelectedTip(option.value)}
+                  className={`px-3 py-2 rounded-xl border ${
+                    selectedTip === option.value
+                      ? 'bg-slate-900 border-slate-900'
+                      : 'bg-white border-slate-200'
+                  }`}>
+                  <Text
+                    className={`text-xs font-semibold ${
+                      selectedTip === option.value ? 'text-white' : 'text-slate-700'
+                    }`}>
+                    {option.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </AppCard>
+        ) : null}
+
         {/* Invoice Summary Card */}
         <AppCard className="p-5 mb-5 border-slate-200">
           <Text className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">
-            Rincian Pemesanan
+            Rincian Pemesanan & Layanan
           </Text>
 
           <View className="mb-3 pb-3 border-b border-slate-100">
@@ -318,17 +359,18 @@ export default function BookingInvoiceScreen() {
             </Text>
           </View>
 
-          <View className="mb-1">
-            <Text className="text-xs text-slate-500">Alamat Panggilan (Home Service)</Text>
+          <View className="mb-4">
+            <Text className="text-xs text-slate-500">Alamat Panggilan</Text>
             <Text className="text-xs font-medium text-slate-700 mt-0.5">{params.address || '-'}</Text>
           </View>
 
-          <View className="mt-4 pt-4 border-t border-slate-200 flex-row items-center justify-between">
-            <Text className="text-sm font-bold text-slate-900">Total Pembayaran</Text>
-            <Text className="text-lg font-black text-[#D2691E]">
-              Rp {price.toLocaleString('id-ID')}
-            </Text>
-          </View>
+          {/* Detailed Price Breakdown */}
+          <PaymentSummary
+            subtotal={baseServicePrice}
+            homeServiceFee={isHomeBooking ? 10000 : 0}
+            tipAmount={selectedTip}
+            totalPrice={computedTotal}
+          />
         </AppCard>
 
         {/* Errors & Feedback */}
