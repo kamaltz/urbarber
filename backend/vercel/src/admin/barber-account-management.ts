@@ -329,14 +329,19 @@ export async function deleteBarber(
 
     previousStatus = userData.status;
 
-    // Check for active bookings
+    // Check for active bookings (pending, accepted, in_progress, en_route, arrived)
     const activeBookingsSnap = await db
       .collection('bookings')
       .where('barberId', '==', barberId)
-      .where('status', 'in', ['pending', 'accepted', 'in_progress'])
+      .where('status', 'in', ['pending', 'accepted', 'in_progress', 'en_route', 'arrived'])
       .get();
 
-    if (activeBookingsSnap.size > 0) {
+    const nonFinishedBookings = activeBookingsSnap.docs.filter((docSnap) => {
+      const d = docSnap.data();
+      return d.status !== 'completed' && d.status !== 'cancelled' && d.status !== 'rejected';
+    });
+
+    if (nonFinishedBookings.length > 0) {
       throw new Error('BARBER_HAS_ACTIVE_BOOKINGS');
     }
 

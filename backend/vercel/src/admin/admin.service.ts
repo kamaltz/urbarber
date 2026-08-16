@@ -76,7 +76,7 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
     // Bookings by status
     const bookingSnap = await db.collection('bookings').get();
     const bookings = bookingSnap.docs.map(d => d.data());
-    const activeBookings = bookings.filter(b => b.status === 'in_progress').length;
+    const activeBookings = bookings.filter(b => ['pending', 'accepted', 'in_progress', 'en_route', 'arrived'].includes(b.status)).length;
     const completedBookings = bookings.filter(b => b.status === 'completed').length;
     const cancelledBookings = bookings.filter(b => b.status === 'cancelled').length;
 
@@ -90,13 +90,14 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
 
     // Sum transaction value: only paid/cash-eligible bookings
     const currentMonthServiceValue = completedThisMonth.reduce((sum, booking) => {
+      const amount = booking.totalPrice || booking.grossAmount || booking.price || 0;
       // Cash on service: no payment check needed
       if (booking.paymentMethod === 'cash_on_service') {
-        return sum + (booking.price || 0);
+        return sum + amount;
       }
       // Midtrans: only if paid
-      if (booking.paymentMethod === 'midtrans_sandbox' && booking.paymentStatus === 'paid') {
-        return sum + (booking.price || 0);
+      if (booking.paymentStatus === 'paid') {
+        return sum + amount;
       }
       return sum;
     }, 0);
