@@ -71,6 +71,8 @@
     "seed:discovery:live": "node ./scripts/seed-discovery-data.js --live",
     "seed:barber": "node ./scripts/seed-barber-operations.js",
     "seed:barber:live": "node ./scripts/seed-barber-operations.js --live",
+    "migrate:backfill-geohash": "node ./scripts/migrations/backfill-barber-geohash.mjs",
+    "migrate:backfill-geohash:live": "node ./scripts/migrations/backfill-barber-geohash.mjs --live",
     "check": "npm run typecheck && npm run lint"
   },
   "private": true
