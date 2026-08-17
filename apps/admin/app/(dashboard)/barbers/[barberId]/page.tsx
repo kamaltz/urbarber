@@ -2,15 +2,41 @@
 
 import { useAdminAuth } from '@/features/auth/AdminAuthProvider';
 import { AdminApiClient, type AdminBarberDetail } from '@/lib/api-client';
-import { ApiError, getErrorMessage } from '@/lib/errors';
+import { getAdminErrorMessage } from '@/lib/errors';
+import { useToast } from '@/components/ui/Toast';
+import { ConfirmDeleteModal } from '@/components/ui/ConfirmDeleteModal';
+import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
+
+function statusBadgeClass(status: string) {
+  switch (status) {
+    case 'active':
+    case 'approved':
+      return 'bg-green-100 text-green-800';
+    case 'suspended':
+    case 'rejected':
+      return 'bg-red-100 text-red-800';
+    case 'pending':
+    case 'pending_verification':
+      return 'bg-amber-100 text-amber-800';
+    default:
+      return 'bg-slate-100 text-slate-700';
+  }
+}
+
+function formatDate(value?: string) {
+  if (!value) return '-';
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? '-' : d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+}
 
 export default function BarberDetailPage() {
   const router = useRouter();
   const { admin } = useAdminAuth();
   const params = useParams();
   const barberId = params.barberId as string;
+  const { showToast, toastElement } = useToast();
 
   const [barber, setBarber] = useState<AdminBarberDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -18,260 +44,250 @@ export default function BarberDetailPage() {
   const [suspendModal, setSuspendModal] = useState(false);
   const [suspendReason, setSuspendReason] = useState('');
   const [suspending, setSuspending] = useState(false);
+  const [reactivating, setReactivating] = useState(false);
   const [deleteModal, setDeleteModal] = useState(false);
-  const [deleteConfirmation, setDeleteConfirmation] = useState('');
   const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  // Load barber detail
-  useEffect(() => {
-    async function load() {
-      if (!admin) return;
-      try {
-        const data = await AdminApiClient.getBarberDetail(barberId);
-        setBarber(data);
-      } catch (err) {
-        setError(getErrorMessage(err, 'Gagal load detail.'));
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
-  }, [barberId, admin]);
-
-  // Handle suspend
-  const handleSuspend = async () => {
-    if (!barber || !suspendReason.trim()) {
-      alert('Alasan suspensi diperlukan.');
-      return;
-    }
-    setSuspending(true);
+  const loadDetail = async () => {
+    if (!admin) return;
     try {
-      await AdminApiClient.suspendBarber(barberId, suspendReason);
-      alert('Barber berhasil disuspensus.');
-      router.push('/barbers');
-    } catch (err) {
-      alert(`Gagal suspend: ${getErrorMessage(err)}`);
-    } finally {
-      setSuspending(false);
-      setSuspendModal(false);
-    }
-  };
-
-  // Handle reactivate
-  const handleReactivate = async () => {
-    try {
-      await AdminApiClient.reactivateBarber(barberId);
-      alert('Barber berhasil diaktifkan kembali.');
-      // Reload page
-      setLoading(true);
+      setError(null);
       const data = await AdminApiClient.getBarberDetail(barberId);
       setBarber(data);
-      setLoading(false);
     } catch (err) {
-      alert(`Gagal reactivate: ${getErrorMessage(err)}`);
+      setError(getAdminErrorMessage(err));
+    } finally {
+      setLoading(false);
     }
   };
 
-  // Handle delete
-  const handleDelete = async () => {
-    if (deleteConfirmation !== 'HAPUS') {
-      alert('Ketik "HAPUS" untuk mengkonfirmasi penghapusan.');
-      return;
-    }
-    setDeleting(true);
+  useEffect(() => {
+    setLoading(true);
+    loadDetail();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [barberId, admin]);
+
+  const handleSuspend = async () => {
+    if (!suspendReason.trim()) return;
+    setSuspending(true);
     try {
-      await AdminApiClient.deleteBarber(barberId);
-      alert('Barber berhasil dihapus.');
+      await AdminApiClient.suspendBarber(barberId, suspendReason.trim());
+      showToast('Barber berhasil ditangguhkan.');
+      setSuspendModal(false);
+      setSuspendReason('');
+      await loadDetail();
+    } catch (err) {
+      showToast(getAdminErrorMessage(err), 'error');
+    } finally {
+      setSuspending(false);
+    }
+  };
+
+  const handleReactivate = async () => {
+    setReactivating(true);
+    try {
+      await AdminApiClient.reactivateBarber(barberId);
+      showToast('Barber berhasil diaktifkan kembali.');
+      await loadDetail();
+    } catch (err) {
+      showToast(getAdminErrorMessage(err), 'error');
+    } finally {
+      setReactivating(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      const result = await AdminApiClient.deleteBarber(barberId);
+      let message = 'Barber berhasil dihapus.';
+      if (result.cancelledBookingsCount > 0) {
+        message += ` ${result.cancelledBookingsCount} booking aktif dibatalkan.`;
+      }
+      if (result.paidBookingsNeedingReviewCount > 0) {
+        message += ` ${result.paidBookingsNeedingReviewCount} transaksi lunas memerlukan tinjauan refund manual.`;
+      }
+      showToast(message);
       router.push('/barbers');
     } catch (err) {
-      // Check if error is about active bookings
-      if (err instanceof ApiError && err.code === 'CONFLICT') {
-        alert(`Gagal delete: Barber masih memiliki booking aktif. Pastikan semua booking selesai atau dibatalkan terlebih dahulu.`);
-      } else {
-        alert(`Gagal delete: ${getErrorMessage(err)}`);
-      }
+      setDeleteError(getAdminErrorMessage(err));
     } finally {
       setDeleting(false);
-      setDeleteModal(false);
-      setDeleteConfirmation('');
     }
   };
 
   if (loading) {
-    return <div className="p-8">Memuat...</div>;
+    return (
+      <div className="p-8">
+        <div className="mb-6 h-8 w-64 animate-pulse rounded bg-slate-200" />
+        <div className="h-40 animate-pulse rounded-xl bg-white shadow-sm" />
+      </div>
+    );
   }
 
   if (error || !barber) {
-    return <div className="p-8 text-red-600">Error: {error}</div>;
+    return (
+      <div className="p-8">
+        <div className="rounded-lg bg-red-50 p-4 text-sm text-red-800">{error || 'Barber tidak ditemukan.'}</div>
+        <Link href="/barbers" className="mt-4 inline-block text-sm font-medium text-blue-600 hover:underline">
+          ← Kembali ke Manajemen Barber
+        </Link>
+      </div>
+    );
   }
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'active':
-        return 'bg-green-100 text-green-800';
-      case 'suspended':
-        return 'bg-red-100 text-red-800';
-      case 'pending_verification':
-        return 'bg-yellow-100 text-yellow-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  };
-
   const isSuspended = barber.accountStatus === 'suspended';
+  const isDeleted = barber.accountStatus === 'deleted';
 
   return (
-    <div className="p-8 max-w-4xl">
-      {/* Header */}
-      <div className="mb-8">
-        <div className="flex items-start justify-between">
-          <div>
-            <h1 className="text-4xl font-bold mb-2">{barber.displayName}</h1>
-            <p className="text-gray-600">{barber.businessName}</p>
+    <div className="max-w-4xl p-8">
+      <Link href="/barbers" className="mb-4 inline-block text-sm font-medium text-blue-600 hover:underline">
+        ← Manajemen Barber
+      </Link>
+
+      <div className="mb-6 flex items-start justify-between gap-4 rounded-xl bg-white p-6 shadow-sm">
+        <div className="flex items-center gap-4">
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xl font-bold text-blue-700">
+            {barber.displayName?.[0]?.toUpperCase() || '?'}
           </div>
-          <span className={`px-4 py-2 rounded font-semibold ${getStatusColor(barber.accountStatus)}`}>
-            {barber.accountStatus === 'active' ? 'Aktif' : barber.accountStatus === 'suspended' ? 'Disuspensus' : 'Pending'}
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">{barber.displayName}</h1>
+            <p className="text-sm text-slate-500">{barber.businessName || '-'}</p>
+          </div>
+        </div>
+        <div className="flex flex-col items-end gap-1.5">
+          <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusBadgeClass(barber.accountStatus)}`}>
+            {barber.accountStatus}
+          </span>
+          <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusBadgeClass(barber.verificationStatus)}`}>
+            {barber.verificationStatus}
           </span>
         </div>
       </div>
 
-      {/* Personal Information */}
-      <div className="bg-white rounded-lg shadow p-6 mb-8">
-        <h2 className="text-2xl font-semibold mb-4">Informasi Pribadi</h2>
-        <div className="grid grid-cols-2 gap-4">
+      <div className="mb-6 rounded-xl bg-white p-6 shadow-sm">
+        <h2 className="mb-4 text-base font-bold text-slate-900">Informasi Pribadi</h2>
+        <div className="grid grid-cols-2 gap-4 text-sm">
           <div>
-            <label className="block text-sm font-medium text-gray-700">Email</label>
-            <p className="text-lg">{barber.email || '-'}</p>
+            <p className="text-xs font-medium text-slate-500">Email</p>
+            <p className="mt-0.5 text-slate-800">{barber.email || '-'}</p>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700">Nomor Telepon</label>
-            <p className="text-lg">{barber.phoneNumber || '-'}</p>
+            <p className="text-xs font-medium text-slate-500">Nomor Telepon</p>
+            <p className="mt-0.5 text-slate-800">{barber.phoneNumber || '-'}</p>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700">Bergabung</label>
-            <p className="text-lg">
-              {barber.createdAt ? new Date(barber.createdAt).toLocaleDateString('id-ID') : '-'}
-            </p>
+            <p className="text-xs font-medium text-slate-500">Bergabung</p>
+            <p className="mt-0.5 text-slate-800">{formatDate(barber.createdAt)}</p>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700">Disetujui</label>
-            <p className="text-lg">
-              {barber.approvedAt ? new Date(barber.approvedAt).toLocaleDateString('id-ID') : '-'}
-            </p>
+            <p className="text-xs font-medium text-slate-500">Disetujui</p>
+            <p className="mt-0.5 text-slate-800">{formatDate(barber.approvedAt)}</p>
           </div>
         </div>
       </div>
 
-      {/* Business Information */}
-      <div className="bg-white rounded-lg shadow p-6 mb-8">
-        <h2 className="text-2xl font-semibold mb-4">Informasi Bisnis</h2>
-        <div className="grid grid-cols-2 gap-4">
+      <div className="mb-6 rounded-xl bg-white p-6 shadow-sm">
+        <h2 className="mb-4 text-base font-bold text-slate-900">Informasi Bisnis</h2>
+        <div className="grid grid-cols-2 gap-4 text-sm">
           <div>
-            <label className="block text-sm font-medium text-gray-700">Alamat Bisnis</label>
-            <p className="text-lg">{barber.businessAddress || '-'}</p>
+            <p className="text-xs font-medium text-slate-500">Alamat Bisnis</p>
+            <p className="mt-0.5 text-slate-800">{barber.businessAddress || '-'}</p>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700">Area Layanan</label>
-            <p className="text-lg">{barber.serviceArea || '-'}</p>
+            <p className="text-xs font-medium text-slate-500">Area Layanan</p>
+            <p className="mt-0.5 text-slate-800">{barber.serviceArea || '-'}</p>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700">Status Verifikasi</label>
-            <p className="text-lg">
-              <span className={`px-3 py-1 rounded ${getStatusColor(barber.verificationStatus)}`}>
-                {barber.verificationStatus}
-              </span>
-            </p>
+            <p className="text-xs font-medium text-slate-500">Status Listing</p>
+            <p className="mt-0.5 text-slate-800">{barber.listingStatus || '-'}</p>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700">Status Listing</label>
-            <p className="text-lg">{barber.listingStatus || '-'}</p>
+            <p className="text-xs font-medium text-slate-500">Menerima Pemesanan Baru</p>
+            <p className="mt-0.5 text-slate-800">{barber.acceptingNewBookings ? '✓ Ya' : '✗ Tidak'}</p>
           </div>
         </div>
       </div>
 
-      {/* Performance */}
-      <div className="bg-white rounded-lg shadow p-6 mb-8">
-        <h2 className="text-2xl font-semibold mb-4">Performa</h2>
-        <div className="grid grid-cols-2 gap-4">
+      <div className="mb-6 rounded-xl bg-white p-6 shadow-sm">
+        <h2 className="mb-4 text-base font-bold text-slate-900">Performa</h2>
+        <div className="grid grid-cols-3 gap-4 text-sm">
           <div>
-            <label className="block text-sm font-medium text-gray-700">Rating Rata-rata</label>
-            <p className="text-lg">
-              {barber.ratingAverage ? barber.ratingAverage.toFixed(1) : '-'} ★
-            </p>
+            <p className="text-xs font-medium text-slate-500">Rating Rata-rata</p>
+            <p className="mt-0.5 text-slate-800">{barber.ratingAverage ? `${barber.ratingAverage.toFixed(1)} ★` : '-'}</p>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700">Jumlah Review</label>
-            <p className="text-lg">{barber.reviewCount || 0}</p>
+            <p className="text-xs font-medium text-slate-500">Jumlah Review</p>
+            <p className="mt-0.5 text-slate-800">{barber.reviewCount || 0}</p>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700">Menerima Pemesanan Baru</label>
-            <p className="text-lg">
-              {barber.acceptingNewBookings ? '✓ Ya' : '✗ Tidak'}
-            </p>
+            <p className="text-xs font-medium text-slate-500">Booking Aktif</p>
+            <p className="mt-0.5 text-slate-800">{barber.activeBookingsCount ?? 0}</p>
           </div>
         </div>
       </div>
 
-      {/* Actions */}
-      <div className="flex gap-4">
-        {isSuspended ? (
-          <>
+      {!isDeleted && (
+        <div className="flex gap-3">
+          {isSuspended ? (
             <button
               onClick={handleReactivate}
-              className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold"
+              disabled={reactivating}
+              className="rounded-lg bg-green-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-green-700 disabled:opacity-50"
             >
-              Aktifkan Kembali
+              {reactivating ? 'Memproses...' : 'Aktifkan Kembali'}
             </button>
-            <button
-              onClick={() => setDeleteModal(true)}
-              className="px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 font-semibold"
-            >
-              Hapus Akun
-            </button>
-          </>
-        ) : (
-          <>
+          ) : (
             <button
               onClick={() => setSuspendModal(true)}
-              className="px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 font-semibold"
+              className="rounded-lg border border-red-200 bg-red-50 px-5 py-2.5 text-sm font-semibold text-red-700 shadow-sm transition hover:bg-red-100"
             >
-              Suspensus
+              Suspend
             </button>
-            <button
-              onClick={() => setDeleteModal(true)}
-              className="px-6 py-3 bg-red-800 text-white rounded-lg hover:bg-red-900 font-semibold"
-            >
-              Hapus Akun
-            </button>
-          </>
-        )}
-      </div>
+          )}
+          <button
+            onClick={() => {
+              setDeleteError(null);
+              setDeleteModal(true);
+            }}
+            className="rounded-lg bg-red-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700"
+          >
+            Hapus Akun
+          </button>
+        </div>
+      )}
 
-      {/* Suspend Modal */}
       {suspendModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-8 rounded-lg max-w-md">
-            <h3 className="text-2xl font-semibold mb-4">Bekukan Akun Barber?</h3>
-            <p className="text-gray-600 mb-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-bold text-slate-900">Bekukan Akun Barber?</h3>
+            <p className="mt-2 text-sm text-slate-600">
               Barber tidak akan dapat login atau menerima booking baru. Riwayat booking dan transaksi tetap tersimpan.
             </p>
             <textarea
               value={suspendReason}
               onChange={(e) => setSuspendReason(e.target.value)}
+              disabled={suspending}
               placeholder="Masukkan alasan suspensi (wajib diisi)..."
-              className="w-full p-3 border rounded mb-4 h-20"
+              className="mt-4 h-20 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
             />
-            <div className="flex gap-4">
+            <div className="mt-5 flex gap-3">
               <button
-                onClick={() => setSuspendModal(false)}
-                className="flex-1 px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
+                onClick={() => {
+                  setSuspendModal(false);
+                  setSuspendReason('');
+                }}
+                disabled={suspending}
+                className="flex-1 rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
               >
                 Batal
               </button>
               <button
                 onClick={handleSuspend}
                 disabled={suspending || !suspendReason.trim()}
-                className="flex-1 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
+                className="flex-1 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {suspending ? 'Memproses...' : 'Bekukan'}
               </button>
@@ -280,48 +296,42 @@ export default function BarberDetailPage() {
         </div>
       )}
 
-      {/* Delete Modal */}
-      {deleteModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-8 rounded-lg max-w-md">
-            <h3 className="text-2xl font-semibold mb-4 text-red-600">Hapus Akun Barber?</h3>
-            <p className="text-gray-600 mb-4">
-              Tindakan ini tidak dapat dibatalkan. Akun barber akan dihapus dan tidak dapat digunakan kembali.
+      <ConfirmDeleteModal
+        open={deleteModal}
+        title="Hapus Akun Barber"
+        confirmWord="HAPUS"
+        confirmLabel="Hapus Akun"
+        loading={deleting}
+        error={deleteError}
+        description={
+          <>
+            <p>
+              Anda akan menghapus <strong>{barber.displayName}</strong>
+              {barber.businessName ? ` (${barber.businessName})` : ''}.
             </p>
-            <p className="text-gray-600 mb-4">
-              Riwayat booking dan transaksi akan tetap disimpan untuk keperluan audit.
+            {(barber.activeBookingsCount ?? 0) > 0 && (
+              <p className="mt-2 rounded-lg bg-blue-50 p-3 text-xs text-blue-800">
+                Barber ini memiliki <strong>{barber.activeBookingsCount}</strong> booking aktif
+                {(barber.paidActiveBookingsCount ?? 0) > 0 && (
+                  <> ({barber.paidActiveBookingsCount} sudah lunas)</>
+                )}
+                . Semua akan dibatalkan secara otomatis.
+              </p>
+            )}
+            <p className="mt-2 rounded-lg bg-amber-50 p-3 text-xs text-amber-800">
+              Menghapus barber akan menonaktifkan akun dan membatalkan booking yang masih aktif.
+              Riwayat booking dan transaksi tetap disimpan.
             </p>
-            <p className="text-gray-700 font-semibold mb-4">
-              Ketik &quot;HAPUS&quot; untuk mengkonfirmasi:
-            </p>
-            <input
-              type="text"
-              value={deleteConfirmation}
-              onChange={(e) => setDeleteConfirmation(e.target.value)}
-              placeholder='Ketik "HAPUS"'
-              className="w-full p-3 border rounded mb-4 font-mono text-center"
-            />
-            <div className="flex gap-4">
-              <button
-                onClick={() => {
-                  setDeleteModal(false);
-                  setDeleteConfirmation('');
-                }}
-                className="flex-1 px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
-              >
-                Batal
-              </button>
-              <button
-                onClick={handleDelete}
-                disabled={deleting || deleteConfirmation !== 'HAPUS'}
-                className="flex-1 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50 font-semibold"
-              >
-                {deleting ? 'Menghapus...' : 'Hapus'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          </>
+        }
+        onCancel={() => {
+          if (deleting) return;
+          setDeleteModal(false);
+        }}
+        onConfirm={handleDelete}
+      />
+
+      {toastElement}
     </div>
   );
 }

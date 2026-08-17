@@ -33,6 +33,7 @@ export interface AdminSuspendedBarber {
 
 export interface DashboardMetrics {
   totalActiveCustomers: number;
+  totalBarbers: number;
   totalApprovedBarbers: number;
   pendingBarberRegistrations: number;
   suspendedAccounts: number;
@@ -69,10 +70,19 @@ export const DOCUMENT_TYPE_LABELS: Record<AllowedDocType, string> = {
 
 export const ALL_DOCUMENT_TYPES: AllowedDocType[] = ['ktp', 'business_license', 'certificate'];
 
+export interface AdminBarberServicePreview {
+  serviceId: string;
+  name: string;
+  price: number;
+  durationMinutes?: number;
+  isActive: boolean;
+}
+
 export interface AdminBarberRegistration {
   barberId: string;
   ownerName: string;
   businessName: string;
+  email?: string;
   phoneNumber: string;
   businessAddress: string;
   serviceArea: string;
@@ -84,6 +94,9 @@ export interface AdminBarberRegistration {
   // Presence-only map; the Admin browser never receives or needs raw storage paths.
   // A signed URL is requested on demand via getDocumentUrl(barberId, documentType).
   documentsAvailable?: Record<AllowedDocType, boolean>;
+  services?: AdminBarberServicePreview[];
+  galleryImageUrls?: string[];
+  galleryCount?: number;
 }
 
 // User Management
@@ -92,7 +105,7 @@ export interface AdminUserRecord {
   email: string;
   displayName?: string;
   role: 'customer' | 'barber' | 'admin';
-  status: 'active' | 'pending_verification' | 'suspended';
+  status: 'active' | 'pending_verification' | 'suspended' | 'deleted';
   phoneNumber?: string;
   createdAt: string;
 }
@@ -178,17 +191,29 @@ export interface PaginationResult<T> {
   hasMore: boolean;
 }
 
+// Shared shape for the force-delete account endpoints (barbers and users) --
+// active bookings are cancelled rather than blocking deletion.
+export interface AccountDeleteResult {
+  success: boolean;
+  message: string;
+  cancelledBookingsCount: number;
+  paidBookingsNeedingReviewCount: number;
+}
+
 // Phase 2: Barber Management
 export interface AdminBarberSummary {
   uid: string;
   displayName: string;
   businessName?: string;
+  email?: string;
+  phoneNumber?: string;
   verificationStatus: 'pending' | 'approved' | 'rejected';
-  listingStatus?: 'active' | 'inactive';
-  accountStatus: 'active' | 'pending_verification' | 'suspended';
+  listingStatus?: 'active' | 'inactive' | 'suspended';
+  accountStatus: 'active' | 'pending_verification' | 'suspended' | 'deleted';
   ratingAverage?: number;
   reviewCount?: number;
   approvedAt?: string;
+  createdAt?: string;
 }
 
 export interface AdminBarberDetail extends AdminBarberSummary {
@@ -199,6 +224,8 @@ export interface AdminBarberDetail extends AdminBarberSummary {
   acceptingNewBookings?: boolean;
   createdAt?: string;
   updatedAt?: string;
+  activeBookingsCount?: number;
+  paidActiveBookingsCount?: number;
 }
 
 // Phase 2: Category Management
@@ -461,6 +488,20 @@ export class AdminApiClient {
     return response.data!;
   }
 
+  /**
+   * DELETE /api/admin/users/:userId
+   * Delete a user account (soft delete, force semantics -- active bookings
+   * are safely cancelled rather than blocking deletion). A barber-role
+   * target is handled by the same backend delegation deleteBarber() uses.
+   */
+  static async deleteUser(userId: string): Promise<AccountDeleteResult> {
+    const response = await this.request<ApiResponse<AccountDeleteResult>>(
+      `/api/admin/users/${userId}`,
+      { method: 'DELETE' }
+    );
+    return response.data!;
+  }
+
   // ============================================================================
   // Phase 2: Barber Management
   // ============================================================================
@@ -524,10 +565,12 @@ export class AdminApiClient {
 
   /**
    * DELETE /api/admin/barbers/:barberId
-   * Delete a barber account (soft delete)
+   * Delete a barber account (soft delete, force semantics). Active bookings
+   * are cancelled rather than blocking deletion -- cancelledBookingsCount/
+   * paidBookingsNeedingReviewCount report what was safely wound down.
    */
-  static async deleteBarber(barberId: string): Promise<{ success: boolean; message: string }> {
-    const response = await this.request<ApiResponse<{ success: boolean; message: string }>>(
+  static async deleteBarber(barberId: string): Promise<AccountDeleteResult> {
+    const response = await this.request<ApiResponse<AccountDeleteResult>>(
       `/api/admin/barbers/${barberId}`,
       { method: 'DELETE' }
     );

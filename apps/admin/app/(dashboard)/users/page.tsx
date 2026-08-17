@@ -2,13 +2,16 @@
 
 import { useAdminAuth } from '@/features/auth/AdminAuthProvider';
 import { AdminApiClient, type AdminUserRecord } from '@/lib/api-client';
-import { getErrorMessage } from '@/lib/errors';
+import { getAdminErrorMessage } from '@/lib/errors';
+import { useToast } from '@/components/ui/Toast';
+import { ConfirmDeleteModal } from '@/components/ui/ConfirmDeleteModal';
 import { useEffect, useState } from 'react';
 
 type ModalState = null | { type: 'suspend'; userId: string; displayName: string };
 
 export default function UsersPage() {
   const { admin } = useAdminAuth();
+  const { showToast, toastElement } = useToast();
   const [users, setUsers] = useState<AdminUserRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -19,6 +22,9 @@ export default function UsersPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [nextCursor, setNextCursor] = useState<string | undefined>(undefined);
+  const [deleteTarget, setDeleteTarget] = useState<AdminUserRecord | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const loadUsers = async (filterValue?: typeof roleFilter) => {
     try {
@@ -29,8 +35,7 @@ export default function UsersPage() {
       setHasMore(data.hasMore);
       setNextCursor(data.nextPageStartAfter);
     } catch (err) {
-      setError(getErrorMessage(err, 'Gagal memuat pengguna'));
-      console.error('Load error:', err);
+      setError(getAdminErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -45,7 +50,7 @@ export default function UsersPage() {
       setHasMore(data.hasMore);
       setNextCursor(data.nextPageStartAfter);
     } catch (err) {
-      setError(getErrorMessage(err, 'Gagal memuat pengguna'));
+      showToast(getAdminErrorMessage(err), 'error');
     } finally {
       setLoadingMore(false);
     }
@@ -53,41 +58,59 @@ export default function UsersPage() {
 
   useEffect(() => {
     loadUsers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roleFilter]);
 
   const handleReactivate = async (userId: string) => {
     try {
       setActionLoading(true);
       await AdminApiClient.updateUserStatus(userId, 'active', 'Reaktivasi');
+      showToast('Pengguna berhasil diaktifkan kembali.');
       loadUsers();
     } catch (err) {
-      alert(getErrorMessage(err, 'Gagal mengaktifkan pengguna'));
+      showToast(getAdminErrorMessage(err), 'error');
     } finally {
       setActionLoading(false);
     }
   };
 
   const handleSuspend = async (userId: string) => {
-    if (!actionReason.trim()) {
-      alert('Alasan penangguhan tidak boleh kosong');
-      return;
-    }
-
-    if (userId === admin?.uid) {
-      alert('Admin tidak dapat menangguhkan diri sendiri');
-      return;
-    }
+    if (!actionReason.trim()) return;
 
     try {
       setActionLoading(true);
       await AdminApiClient.updateUserStatus(userId, 'suspended', actionReason);
+      showToast('Pengguna berhasil ditangguhkan.');
       setModal(null);
       setActionReason('');
       loadUsers();
     } catch (err) {
-      alert(getErrorMessage(err, 'Gagal menangguhkan pengguna'));
+      showToast(getAdminErrorMessage(err), 'error');
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      const result = await AdminApiClient.deleteUser(deleteTarget.uid);
+      let message = `Pengguna "${deleteTarget.displayName || deleteTarget.email}" berhasil dihapus.`;
+      if (result.cancelledBookingsCount > 0) {
+        message += ` ${result.cancelledBookingsCount} booking aktif dibatalkan.`;
+      }
+      if (result.paidBookingsNeedingReviewCount > 0) {
+        message += ` ${result.paidBookingsNeedingReviewCount} transaksi lunas memerlukan tinjauan refund manual.`;
+      }
+      showToast(message);
+      setDeleteTarget(null);
+      setUsers((prev) => prev.filter((u) => u.uid !== deleteTarget.uid));
+    } catch (err) {
+      setDeleteError(getAdminErrorMessage(err));
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -218,59 +241,91 @@ export default function UsersPage() {
                               ? '#dcfce7'
                               : user.status === 'pending_verification'
                                 ? '#fef3c7'
-                                : '#fee2e2',
+                                : user.status === 'deleted'
+                                  ? '#e2e8f0'
+                                  : '#fee2e2',
                           color:
                             user.status === 'active'
                               ? '#166534'
                               : user.status === 'pending_verification'
                                 ? '#92400e'
-                                : '#991b1b',
+                                : user.status === 'deleted'
+                                  ? '#475569'
+                                  : '#991b1b',
                         }}
                       >
                         {user.status === 'active'
                           ? 'Aktif'
                           : user.status === 'pending_verification'
                             ? 'Menunggu Verifikasi'
-                            : 'Ditangguhkan'}
+                            : user.status === 'deleted'
+                              ? 'Dihapus'
+                              : 'Ditangguhkan'}
                       </span>
                     </td>
                     <td style={{ padding: '1rem' }}>
-                      {user.status === 'suspended' ? (
-                        <button
-                          onClick={() => handleReactivate(user.uid)}
-                          disabled={actionLoading}
-                          style={{
-                            padding: '0.375rem 0.75rem',
-                            borderRadius: '0.375rem',
-                            border: 'none',
-                            backgroundColor: '#10b981',
-                            color: 'white',
-                            cursor: actionLoading ? 'not-allowed' : 'pointer',
-                            fontSize: '0.875rem',
-                            fontWeight: '500',
-                            opacity: actionLoading ? 0.6 : 1,
-                          }}
-                        >
-                          {actionLoading ? 'Proses...' : 'Aktifkan'}
-                        </button>
+                      {user.status === 'deleted' ? (
+                        <span style={{ fontSize: '0.8125rem', color: '#94a3b8' }}>-</span>
                       ) : (
-                        <button
-                          onClick={() => setModal({ type: 'suspend', userId: user.uid, displayName: user.displayName || user.email })}
-                          style={{
-                            padding: '0.375rem 0.75rem',
-                            borderRadius: '0.375rem',
-                            border: '1px solid #e5e7eb',
-                            backgroundColor: user.uid === admin?.uid ? '#f3f4f6' : 'white',
-                            color: user.uid === admin?.uid ? '#9ca3af' : '#ef4444',
-                            cursor: user.uid === admin?.uid ? 'not-allowed' : 'pointer',
-                            fontSize: '0.875rem',
-                            fontWeight: '500',
-                            opacity: user.uid === admin?.uid ? 0.5 : 1,
-                          }}
-                          disabled={user.uid === admin?.uid}
-                        >
-                          Tangguhkan
-                        </button>
+                        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                          {user.status === 'suspended' ? (
+                            <button
+                              onClick={() => handleReactivate(user.uid)}
+                              disabled={actionLoading}
+                              style={{
+                                padding: '0.375rem 0.75rem',
+                                borderRadius: '0.375rem',
+                                border: 'none',
+                                backgroundColor: '#10b981',
+                                color: 'white',
+                                cursor: actionLoading ? 'not-allowed' : 'pointer',
+                                fontSize: '0.875rem',
+                                fontWeight: '500',
+                                opacity: actionLoading ? 0.6 : 1,
+                              }}
+                            >
+                              {actionLoading ? 'Proses...' : 'Aktifkan'}
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => setModal({ type: 'suspend', userId: user.uid, displayName: user.displayName || user.email })}
+                              style={{
+                                padding: '0.375rem 0.75rem',
+                                borderRadius: '0.375rem',
+                                border: '1px solid #e5e7eb',
+                                backgroundColor: user.uid === admin?.uid ? '#f3f4f6' : 'white',
+                                color: user.uid === admin?.uid ? '#9ca3af' : '#ef4444',
+                                cursor: user.uid === admin?.uid ? 'not-allowed' : 'pointer',
+                                fontSize: '0.875rem',
+                                fontWeight: '500',
+                                opacity: user.uid === admin?.uid ? 0.5 : 1,
+                              }}
+                              disabled={user.uid === admin?.uid}
+                            >
+                              Tangguhkan
+                            </button>
+                          )}
+                          {user.uid !== admin?.uid && user.role !== 'admin' && (
+                            <button
+                              onClick={() => {
+                                setDeleteError(null);
+                                setDeleteTarget(user);
+                              }}
+                              style={{
+                                padding: '0.375rem 0.75rem',
+                                borderRadius: '0.375rem',
+                                border: 'none',
+                                backgroundColor: 'transparent',
+                                color: '#dc2626',
+                                cursor: 'pointer',
+                                fontSize: '0.875rem',
+                                fontWeight: '600',
+                              }}
+                            >
+                              Hapus
+                            </button>
+                          )}
+                        </div>
                       )}
                     </td>
                   </tr>
@@ -351,17 +406,17 @@ export default function UsersPage() {
                 </button>
                 <button
                   onClick={() => handleSuspend(modal.userId)}
-                  disabled={actionLoading}
+                  disabled={actionLoading || !actionReason.trim()}
                   style={{
                     padding: '0.5rem 1rem',
                     borderRadius: '0.375rem',
                     border: 'none',
                     backgroundColor: '#ef4444',
                     color: 'white',
-                    cursor: actionLoading ? 'not-allowed' : 'pointer',
+                    cursor: actionLoading || !actionReason.trim() ? 'not-allowed' : 'pointer',
                     fontSize: '0.875rem',
                     fontWeight: '500',
-                    opacity: actionLoading ? 0.6 : 1,
+                    opacity: actionLoading || !actionReason.trim() ? 0.6 : 1,
                   }}
                 >
                   {actionLoading ? 'Proses...' : 'Tangguhkan'}
@@ -371,6 +426,34 @@ export default function UsersPage() {
           </div>
         </div>
       )}
+
+      <ConfirmDeleteModal
+        open={!!deleteTarget}
+        title="Hapus Pengguna"
+        confirmWord="HAPUS"
+        confirmLabel="Hapus Pengguna"
+        loading={deleting}
+        error={deleteError}
+        description={
+          <>
+            <p>
+              Anda akan menghapus <strong>{deleteTarget?.displayName || deleteTarget?.email}</strong>
+              {' '}({deleteTarget?.role === 'customer' ? 'Pelanggan' : 'Barber'}).
+            </p>
+            <p className="mt-2 rounded-lg bg-amber-50 p-3 text-xs text-amber-800">
+              Menghapus pengguna akan menonaktifkan akun dan membatalkan booking yang masih aktif.
+              Riwayat booking dan transaksi tetap disimpan.
+            </p>
+          </>
+        }
+        onCancel={() => {
+          if (deleting) return;
+          setDeleteTarget(null);
+        }}
+        onConfirm={handleDelete}
+      />
+
+      {toastElement}
     </div>
   );
 }
