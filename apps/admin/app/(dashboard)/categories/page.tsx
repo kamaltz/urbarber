@@ -2,117 +2,120 @@
 
 import { useAdminAuth } from '@/features/auth/AdminAuthProvider';
 import { AdminApiClient, type AdminCategory } from '@/lib/api-client';
-import { getErrorMessage } from '@/lib/errors';
+import { getAdminErrorMessage } from '@/lib/errors';
+import { useToast } from '@/components/ui/Toast';
 import { useEffect, useState } from 'react';
+
+const EMPTY_FORM = { name: '', description: '', icon: '', active: true, order: 0 };
 
 export default function CategoriesPage() {
   const { admin } = useAdminAuth();
+  const { showToast, toastElement } = useToast();
 
   const [categories, setCategories] = useState<AdminCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [createModal, setCreateModal] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [formData, setFormData] = useState({
-    name: '',
-    description: '',
-    icon: '',
-    active: true,
-    order: 0,
-  });
+  const [formData, setFormData] = useState(EMPTY_FORM);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
-  // Load categories
-  useEffect(() => {
-    async function load() {
-      if (!admin) return;
-      try {
-        const data = await AdminApiClient.getCategories();
-        setCategories(data);
-      } catch (err) {
-        setError(getErrorMessage(err, 'Gagal load kategori.'));
-      } finally {
-        setLoading(false);
-      }
+  const loadCategories = async () => {
+    if (!admin) return;
+    try {
+      setError(null);
+      const data = await AdminApiClient.getCategories();
+      setCategories(data);
+    } catch (err) {
+      setError(getAdminErrorMessage(err));
+    } finally {
+      setLoading(false);
     }
+  };
+
+  useEffect(() => {
     setLoading(true);
-    load();
+    loadCategories();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [admin]);
 
-  // Reset form
   const resetForm = () => {
-    setFormData({
-      name: '',
-      description: '',
-      icon: '',
-      active: true,
-      order: 0,
-    });
+    setFormData(EMPTY_FORM);
     setEditingId(null);
+    setNameError(null);
   };
 
-  // Handle create
-  const handleCreate = async () => {
+  const closeModal = () => {
+    if (saving) return;
+    setModalOpen(false);
+    resetForm();
+  };
+
+  const handleSubmit = async () => {
     if (!formData.name.trim()) {
-      alert('Nama kategori diperlukan.');
+      setNameError('Nama kategori wajib diisi.');
       return;
     }
+    setNameError(null);
+    setSaving(true);
+
     try {
-      const newCat = await AdminApiClient.createCategory(
-        formData.name,
-        formData.description,
-        formData.icon,
-        formData.active,
-        formData.order
-      );
-      setCategories([...categories, newCat]);
-      resetForm();
-      setCreateModal(false);
-      alert('Kategori berhasil dibuat.');
-    } catch (err) {
-      if (getErrorMessage(err).includes('CATEGORY_ALREADY_EXISTS')) {
-        alert('Kategori dengan nama ini sudah ada.');
+      if (editingId) {
+        const updated = await AdminApiClient.updateCategory(editingId, {
+          name: formData.name.trim(),
+          description: formData.description.trim(),
+          icon: formData.icon.trim(),
+          active: formData.active,
+          order: formData.order,
+        });
+        setCategories((prev) => prev.map((c) => (c.id === editingId ? updated : c)));
+        showToast('Kategori berhasil diperbarui.');
       } else {
-        alert(`Gagal buat kategori: ${getErrorMessage(err)}`);
+        const created = await AdminApiClient.createCategory(
+          formData.name.trim(),
+          formData.description.trim(),
+          formData.icon.trim(),
+          formData.active,
+          formData.order
+        );
+        setCategories((prev) => [...prev, created]);
+        showToast('Kategori berhasil dibuat.');
       }
-    }
-  };
-
-  // Handle update
-  const handleUpdate = async (catId: string) => {
-    if (!formData.name.trim()) {
-      alert('Nama kategori diperlukan.');
-      return;
-    }
-    try {
-      const updated = await AdminApiClient.updateCategory(catId, {
-        name: formData.name,
-        description: formData.description,
-        icon: formData.icon,
-        active: formData.active,
-        order: formData.order,
-      });
-      setCategories(categories.map((c) => (c.id === catId ? updated : c)));
+      setModalOpen(false);
       resetForm();
-      setCreateModal(false);
-      alert('Kategori berhasil diperbarui.');
     } catch (err) {
-      alert(`Gagal update kategori: ${getErrorMessage(err)}`);
+      const message = getAdminErrorMessage(err);
+      if (message.includes('CATEGORY_ALREADY_EXISTS')) {
+        setNameError('Kategori dengan nama ini sudah ada.');
+      } else {
+        showToast(message, 'error');
+      }
+    } finally {
+      setSaving(false);
     }
   };
 
-  // Handle delete
-  const handleDelete = async (catId: string) => {
-    if (!confirm('Yakin ingin deactivate kategori ini?')) return;
+  const handleToggleActive = async (cat: AdminCategory) => {
+    setTogglingId(cat.id);
     try {
-      await AdminApiClient.deactivateCategory(catId);
-      setCategories(categories.filter((c) => c.id !== catId));
-      alert('Kategori berhasil dideactivate.');
+      if (cat.active) {
+        await AdminApiClient.deactivateCategory(cat.id);
+        setCategories((prev) => prev.map((c) => (c.id === cat.id ? { ...c, active: false } : c)));
+        showToast(`"${cat.name}" dinonaktifkan.`);
+      } else {
+        const updated = await AdminApiClient.updateCategory(cat.id, { active: true });
+        setCategories((prev) => prev.map((c) => (c.id === cat.id ? updated : c)));
+        showToast(`"${cat.name}" diaktifkan.`);
+      }
     } catch (err) {
-      alert(`Gagal deactivate kategori: ${getErrorMessage(err)}`);
+      showToast(getAdminErrorMessage(err), 'error');
+    } finally {
+      setTogglingId(null);
     }
   };
 
-  // Handle edit
   const handleEdit = (cat: AdminCategory) => {
     setFormData({
       name: cat.name,
@@ -122,178 +125,213 @@ export default function CategoriesPage() {
       order: cat.order,
     });
     setEditingId(cat.id);
-    setCreateModal(true);
+    setNameError(null);
+    setModalOpen(true);
   };
 
-  if (loading) {
-    return <div className="p-8">Memuat...</div>;
-  }
+  const activeCount = categories.filter((c) => c.active).length;
 
   return (
     <div className="p-8">
-      <div className="flex justify-between items-center mb-8">
-        <h1 className="text-4xl font-bold">Manajemen Kategori</h1>
+      <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-900">Kategori Layanan</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Kelola kategori layanan yang tersedia di aplikasi.
+          </p>
+        </div>
         <button
           onClick={() => {
             resetForm();
-            setCreateModal(true);
+            setModalOpen(true);
           }}
-          className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold"
+          className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700"
         >
-          + Buat Kategori
+          + Tambah Kategori
         </button>
       </div>
 
-      {/* Error State */}
-      {error && <div className="bg-red-100 text-red-800 p-4 rounded mb-4">{error}</div>}
+      {!loading && !error && (
+        <p className="mb-4 text-sm text-slate-500">
+          {categories.length} kategori total &middot; {activeCount} aktif
+        </p>
+      )}
 
-      {/* Categories Table */}
-      {categories.length > 0 && (
-        <div className="bg-white rounded-lg shadow overflow-hidden">
-          <table className="min-w-full">
-            <thead className="bg-gray-100">
-              <tr>
-                <th className="px-6 py-3 text-left text-sm font-semibold">Nama</th>
-                <th className="px-6 py-3 text-left text-sm font-semibold">Deskripsi</th>
-                <th className="px-6 py-3 text-left text-sm font-semibold">Urutan</th>
-                <th className="px-6 py-3 text-left text-sm font-semibold">Status</th>
-                <th className="px-6 py-3 text-left text-sm font-semibold">Aksi</th>
-              </tr>
-            </thead>
-            <tbody>
-              {categories.map((cat) => (
-                <tr key={cat.id} className="border-t hover:bg-gray-50">
-                  <td className="px-6 py-4 font-medium">{cat.name}</td>
-                  <td className="px-6 py-4 text-gray-600">{cat.description || '-'}</td>
-                  <td className="px-6 py-4">{cat.order}</td>
-                  <td className="px-6 py-4">
-                    <span
-                      className={`px-3 py-1 rounded text-sm font-medium ${
-                        cat.active
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-gray-100 text-gray-800'
-                      }`}
-                    >
-                      {cat.active ? 'Aktif' : 'Nonaktif'}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 flex gap-2">
-                    <button
-                      onClick={() => handleEdit(cat)}
-                      className="text-blue-600 hover:text-blue-800 font-medium"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => handleDelete(cat.id)}
-                      className="text-red-600 hover:text-red-800 font-medium"
-                    >
-                      Hapus
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {error && (
+        <div className="mb-6 flex items-center justify-between rounded-lg bg-red-50 p-4 text-sm text-red-800">
+          <span>{error}</span>
+          <button onClick={loadCategories} className="font-semibold underline">
+            Coba lagi
+          </button>
         </div>
       )}
 
-      {/* Empty State */}
-      {categories.length === 0 && (
-        <div className="text-center py-12 text-gray-500">
-          Tidak ada kategori. Buat yang pertama!
+      {loading && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-32 animate-pulse rounded-xl bg-white shadow-sm" />
+          ))}
         </div>
       )}
 
-      {/* Create/Edit Modal */}
-      {createModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-8 rounded-lg max-w-md w-full">
-            <h3 className="text-2xl font-semibold mb-6">
+      {!loading && !error && categories.length > 0 && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {categories
+            .slice()
+            .sort((a, b) => a.order - b.order)
+            .map((cat) => (
+              <div
+                key={cat.id}
+                className={`rounded-xl border bg-white p-5 shadow-sm transition ${
+                  cat.active ? 'border-slate-200' : 'border-slate-200 opacity-70'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-blue-50 text-xl">
+                      {cat.icon || '📂'}
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-slate-900">{cat.name}</h3>
+                      <span className="text-xs text-slate-400">Urutan: {cat.order}</span>
+                    </div>
+                  </div>
+                  <span
+                    className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                      cat.active ? 'bg-green-100 text-green-800' : 'bg-slate-100 text-slate-600'
+                    }`}
+                  >
+                    {cat.active ? 'Aktif' : 'Nonaktif'}
+                  </span>
+                </div>
+
+                <p className="mt-3 min-h-[2.5rem] text-sm text-slate-600">
+                  {cat.description || <span className="italic text-slate-400">Tidak ada deskripsi.</span>}
+                </p>
+
+                <div className="mt-4 flex items-center gap-4 border-t border-slate-100 pt-3 text-sm font-medium">
+                  <button onClick={() => handleEdit(cat)} className="text-blue-600 hover:text-blue-800">
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => handleToggleActive(cat)}
+                    disabled={togglingId === cat.id}
+                    className={`disabled:opacity-50 ${
+                      cat.active ? 'text-red-600 hover:text-red-800' : 'text-green-600 hover:text-green-800'
+                    }`}
+                  >
+                    {togglingId === cat.id ? 'Memproses...' : cat.active ? 'Nonaktifkan' : 'Aktifkan'}
+                  </button>
+                </div>
+              </div>
+            ))}
+        </div>
+      )}
+
+      {!loading && !error && categories.length === 0 && (
+        <div className="rounded-xl border border-dashed border-slate-300 bg-white py-16 text-center text-slate-500">
+          <p className="text-3xl">📂</p>
+          <p className="mt-2 font-medium">Belum ada kategori.</p>
+          <p className="text-sm">Buat kategori pertama untuk mulai mengelompokkan layanan.</p>
+        </div>
+      )}
+
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-bold text-slate-900">
               {editingId ? 'Edit Kategori' : 'Buat Kategori Baru'}
             </h3>
 
-            <div className="space-y-4">
+            <div className="mt-4 space-y-4">
               <div>
-                <label className="block text-sm font-medium mb-1">Nama *</label>
+                <label className="mb-1 block text-xs font-medium text-slate-700">Nama *</label>
                 <input
                   type="text"
                   value={formData.name}
-                  onChange={(e) =>
-                    setFormData({ ...formData, name: e.target.value })
-                  }
-                  className="w-full p-2 border rounded"
-                  placeholder="Nama kategori"
+                  onChange={(e) => {
+                    setFormData({ ...formData, name: e.target.value });
+                    if (nameError) setNameError(null);
+                  }}
+                  disabled={saving}
+                  className={`w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 ${
+                    nameError
+                      ? 'border-red-400 focus:border-red-500 focus:ring-red-100'
+                      : 'border-slate-300 focus:border-blue-500 focus:ring-blue-100'
+                  }`}
+                  placeholder="Contoh: Potong Rambut"
                 />
+                {nameError && <p className="mt-1 text-xs text-red-600">{nameError}</p>}
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-1">Deskripsi</label>
+                <label className="mb-1 block text-xs font-medium text-slate-700">Deskripsi</label>
                 <textarea
                   value={formData.description}
-                  onChange={(e) =>
-                    setFormData({ ...formData, description: e.target.value })
-                  }
-                  className="w-full p-2 border rounded h-20"
-                  placeholder="Deskripsi kategori"
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  disabled={saving}
+                  className="h-20 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                  placeholder="Deskripsi singkat kategori (opsional)"
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium mb-1">Icon</label>
-                <input
-                  type="text"
-                  value={formData.icon}
-                  onChange={(e) =>
-                    setFormData({ ...formData, icon: e.target.value })
-                  }
-                  className="w-full p-2 border rounded"
-                  placeholder="Icon (emoji atau nama)"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-slate-700">Icon</label>
+                  <input
+                    type="text"
+                    value={formData.icon}
+                    onChange={(e) => setFormData({ ...formData, icon: e.target.value })}
+                    disabled={saving}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                    placeholder="✂️ (opsional)"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-slate-700">Urutan</label>
+                  <input
+                    type="number"
+                    value={formData.order}
+                    onChange={(e) => setFormData({ ...formData, order: parseInt(e.target.value, 10) || 0 })}
+                    disabled={saving}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                  />
+                </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium mb-1">Urutan</label>
-                <input
-                  type="number"
-                  value={formData.order}
-                  onChange={(e) =>
-                    setFormData({ ...formData, order: parseInt(e.target.value, 10) || 0 })
-                  }
-                  className="w-full p-2 border rounded"
-                />
-              </div>
-
-              <div className="flex items-center gap-2">
+              <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
                 <input
                   type="checkbox"
                   checked={formData.active}
-                  onChange={(e) =>
-                    setFormData({ ...formData, active: e.target.checked })
-                  }
-                  className="w-4 h-4"
+                  onChange={(e) => setFormData({ ...formData, active: e.target.checked })}
+                  disabled={saving}
+                  className="h-4 w-4 rounded border-slate-300"
                 />
-                <label className="text-sm font-medium">Aktif</label>
-              </div>
+                Aktif (tampil di aplikasi)
+              </label>
             </div>
 
-            <div className="flex gap-4 mt-6">
+            <div className="mt-6 flex gap-3">
               <button
-                onClick={() => setCreateModal(false)}
-                className="flex-1 px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
+                onClick={closeModal}
+                disabled={saving}
+                className="flex-1 rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
               >
                 Batal
               </button>
               <button
-                onClick={() => (editingId ? handleUpdate(editingId) : handleCreate())}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                onClick={handleSubmit}
+                disabled={saving}
+                className="flex-1 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {editingId ? 'Update' : 'Buat'}
+                {saving ? 'Menyimpan...' : editingId ? 'Simpan Perubahan' : 'Buat Kategori'}
               </button>
             </div>
           </div>
         </div>
       )}
+
+      {toastElement}
     </div>
   );
 }

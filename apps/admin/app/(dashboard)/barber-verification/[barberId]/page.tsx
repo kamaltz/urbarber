@@ -8,7 +8,9 @@ import {
   type AdminBarberRegistration,
   type AllowedDocType,
 } from '@/lib/api-client';
-import { ApiError, getErrorMessage } from '@/lib/errors';
+import { ApiError, getAdminErrorMessage } from '@/lib/errors';
+import { useToast } from '@/components/ui/Toast';
+import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
@@ -46,11 +48,30 @@ function documentErrorMessage(code: string | undefined): string {
   }
 }
 
+function formatDateTime(value?: string) {
+  if (!value) return '-';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '-';
+  return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function statusBadgeClass(status: string) {
+  switch (status) {
+    case 'approved':
+      return 'bg-green-100 text-green-800';
+    case 'rejected':
+      return 'bg-red-100 text-red-800';
+    default:
+      return 'bg-amber-100 text-amber-800';
+  }
+}
+
 export default function BarberVerificationDetailPage() {
   const router = useRouter();
   const { admin } = useAdminAuth();
   const params = useParams();
   const barberId = params.barberId as string;
+  const { showToast, toastElement } = useToast();
 
   const [registration, setRegistration] = useState<AdminBarberRegistration | null>(null);
   const [loading, setLoading] = useState(true);
@@ -58,29 +79,27 @@ export default function BarberVerificationDetailPage() {
   const [approving, setApproving] = useState(false);
   const [rejectModal, setRejectModal] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
+  const [rejecting, setRejecting] = useState(false);
   const [documents, setDocuments] = useState<DocumentPreview[]>([]);
   const [previewingDoc, setPreviewingDoc] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
 
-  // Load barber registration detail
   useEffect(() => {
     async function load() {
       if (!admin) return;
       try {
+        setError(null);
         const data = await AdminApiClient.getBarberRegistrationDetail(barberId);
         setRegistration(data);
-
-        // Initialize documents array from the presence-only map -- the browser
-        // never receives raw storage paths, only whether each document type exists.
-        const docTypes: DocumentPreview[] = ALL_DOCUMENT_TYPES.map((type) => ({
-          type,
-          label: DOCUMENT_TYPE_LABELS[type],
-          available: !!data.documentsAvailable?.[type],
-        }));
-        setDocuments(docTypes);
+        setDocuments(
+          ALL_DOCUMENT_TYPES.map((type) => ({
+            type,
+            label: DOCUMENT_TYPE_LABELS[type],
+            available: !!data.documentsAvailable?.[type],
+          }))
+        );
       } catch (err) {
-        setError(getErrorMessage(err, 'Gagal load detail.'));
+        setError(getAdminErrorMessage(err));
       } finally {
         setLoading(false);
       }
@@ -88,142 +107,156 @@ export default function BarberVerificationDetailPage() {
     load();
   }, [barberId, admin]);
 
-  // Handle approve
   const handleApprove = async () => {
     if (!registration) return;
     setApproving(true);
     try {
       await AdminApiClient.approveBarber(barberId);
-      alert('Barber berhasil disetujui.');
+      showToast('Barber berhasil disetujui.');
       router.push('/barber-verification');
     } catch (err) {
-      alert(`Gagal approve: ${getErrorMessage(err)}`);
+      showToast(getAdminErrorMessage(err), 'error');
     } finally {
       setApproving(false);
     }
   };
 
-  // Handle reject
   const handleReject = async () => {
-    if (!registration || !rejectReason.trim()) {
-      alert('Alasan penolakan diperlukan.');
-      return;
-    }
-    setApproving(true);
+    if (!registration || !rejectReason.trim()) return;
+    setRejecting(true);
     try {
-      await AdminApiClient.rejectBarber(barberId, rejectReason);
-      alert('Barber berhasil ditolak.');
+      await AdminApiClient.rejectBarber(barberId, rejectReason.trim());
+      showToast('Pendaftaran barber ditolak.');
       router.push('/barber-verification');
     } catch (err) {
-      alert(`Gagal reject: ${getErrorMessage(err)}`);
+      showToast(getAdminErrorMessage(err), 'error');
     } finally {
-      setApproving(false);
+      setRejecting(false);
       setRejectModal(false);
     }
   };
 
-  // Load document preview -- sends only barberId + documentType, never a storage
-  // path. The returned signed URL is short-lived and kept only in-memory (React
-  // state) for the preview modal; it is never persisted to Firestore or any
-  // browser storage.
   const loadDocumentPreview = async (docType: AllowedDocType) => {
     setPreviewingDoc(docType);
-    setPreviewLoading(true);
+    setDocuments((prev) => prev.map((d) => (d.type === docType ? { ...d, loading: true, error: undefined } : d)));
     try {
       const { url, expiresAt } = await AdminApiClient.getDocumentUrl(barberId, docType);
       setPreviewUrl(url);
-
-      // Update documents array
       setDocuments((prev) =>
-        prev.map((d) =>
-          d.type === docType ? { ...d, url, expiresAt, loading: false, error: undefined } : d
-        )
+        prev.map((d) => (d.type === docType ? { ...d, url, expiresAt, loading: false, error: undefined } : d))
       );
     } catch (err) {
       const message = documentErrorMessage(err instanceof ApiError ? err.code : undefined);
-      alert(message);
-      setDocuments((prev) =>
-        prev.map((d) => (d.type === docType ? { ...d, error: message, loading: false } : d))
-      );
-    } finally {
-      setPreviewLoading(false);
+      setDocuments((prev) => prev.map((d) => (d.type === docType ? { ...d, error: message, loading: false } : d)));
     }
   };
 
   if (loading) {
-    return <div className="p-8">Memuat...</div>;
+    return (
+      <div className="p-8">
+        <div className="mb-6 h-8 w-64 animate-pulse rounded bg-slate-200" />
+        <div className="h-40 animate-pulse rounded-xl bg-white shadow-sm" />
+      </div>
+    );
   }
 
   if (error || !registration) {
-    return <div className="p-8 text-red-600">Error: {error}</div>;
+    return (
+      <div className="p-8">
+        <div className="rounded-lg bg-red-50 p-4 text-sm text-red-800">{error || 'Registrasi tidak ditemukan.'}</div>
+        <Link href="/barber-verification" className="mt-4 inline-block text-sm font-medium text-blue-600 hover:underline">
+          ← Kembali ke Verifikasi Barber
+        </Link>
+      </div>
+    );
   }
 
   const isPending = registration.verificationStatus === 'pending';
-  const statusColor = {
-    pending: 'bg-yellow-100 text-yellow-800',
-    approved: 'bg-green-100 text-green-800',
-    rejected: 'bg-red-100 text-red-800',
-  }[registration.verificationStatus];
 
   return (
-    <div className="p-8 max-w-4xl">
+    <div className="max-w-4xl p-8 pb-28">
+      <Link href="/barber-verification" className="mb-4 inline-block text-sm font-medium text-blue-600 hover:underline">
+        ← Verifikasi Barber
+      </Link>
+
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-4xl font-bold mb-4">{registration.businessName}</h1>
-        <div className="flex gap-4 items-center">
-          <span className={`px-4 py-2 rounded font-semibold ${statusColor}`}>
-            {registration.verificationStatus.charAt(0).toUpperCase() + registration.verificationStatus.slice(1)}
-          </span>
-          <span className="text-gray-600">
-            Diajukan: {registration.submittedAt ? new Date(registration.submittedAt).toLocaleDateString('id-ID') : '-'}
-          </span>
+      <div className="mb-6 flex items-start justify-between gap-4 rounded-xl bg-white p-6 shadow-sm">
+        <div className="flex items-center gap-4">
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xl font-bold text-blue-700">
+            {registration.businessName?.[0]?.toUpperCase() || '?'}
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">{registration.businessName}</h1>
+            <p className="text-sm text-slate-500">Pemilik: {registration.ownerName}</p>
+          </div>
+        </div>
+        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusBadgeClass(registration.verificationStatus)}`}>
+          {registration.verificationStatus === 'pending' ? 'Menunggu' : registration.verificationStatus === 'approved' ? 'Disetujui' : 'Ditolak'}
+        </span>
+      </div>
+
+      {/* A. Informasi Barber */}
+      <div className="mb-6 rounded-xl bg-white p-6 shadow-sm">
+        <h2 className="mb-4 text-base font-bold text-slate-900">Informasi Barber</h2>
+        <div className="grid grid-cols-2 gap-4 text-sm">
+          <div>
+            <p className="text-xs font-medium text-slate-500">Nama Pemilik</p>
+            <p className="mt-0.5 text-slate-800">{registration.ownerName}</p>
+          </div>
+          <div>
+            <p className="text-xs font-medium text-slate-500">Nama Bisnis</p>
+            <p className="mt-0.5 text-slate-800">{registration.businessName}</p>
+          </div>
+          <div>
+            <p className="text-xs font-medium text-slate-500">Email</p>
+            <p className="mt-0.5 text-slate-800">{registration.email || '-'}</p>
+          </div>
+          <div>
+            <p className="text-xs font-medium text-slate-500">Nomor Telepon</p>
+            <p className="mt-0.5 text-slate-800">{registration.phoneNumber || '-'}</p>
+          </div>
+          <div>
+            <p className="text-xs font-medium text-slate-500">Diajukan</p>
+            <p className="mt-0.5 text-slate-800">{formatDateTime(registration.submittedAt)}</p>
+          </div>
         </div>
       </div>
 
-      {/* Business Details */}
-      <div className="bg-white rounded-lg shadow p-6 mb-8">
-        <h2 className="text-2xl font-semibold mb-4">Informasi Bisnis</h2>
-        <div className="grid grid-cols-2 gap-4">
+      {/* B. Lokasi */}
+      <div className="mb-6 rounded-xl bg-white p-6 shadow-sm">
+        <h2 className="mb-4 text-base font-bold text-slate-900">Lokasi</h2>
+        <div className="grid grid-cols-2 gap-4 text-sm">
           <div>
-            <label className="block text-sm font-medium text-gray-700">Nama Pemilik</label>
-            <p className="text-lg">{registration.ownerName}</p>
+            <p className="text-xs font-medium text-slate-500">Alamat Bisnis</p>
+            <p className="mt-0.5 text-slate-800">{registration.businessAddress || '-'}</p>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700">Nama Bisnis</label>
-            <p className="text-lg">{registration.businessName}</p>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Nomor Telepon</label>
-            <p className="text-lg">{registration.phoneNumber || '-'}</p>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Alamat</label>
-            <p className="text-lg">{registration.businessAddress || '-'}</p>
-          </div>
-          <div className="col-span-2">
-            <label className="block text-sm font-medium text-gray-700">Area Layanan</label>
-            <p className="text-lg">{registration.serviceArea || '-'}</p>
+            <p className="text-xs font-medium text-slate-500">Area Layanan</p>
+            <p className="mt-0.5 text-slate-800">{registration.serviceArea || '-'}</p>
           </div>
         </div>
+        <p className="mt-3 text-xs italic text-slate-400">
+          Koordinat lokasi toko diatur oleh barber setelah akun disetujui, belum tersedia pada tahap pendaftaran ini.
+        </p>
       </div>
 
-      {/* Documents */}
-      <div className="bg-white rounded-lg shadow p-6 mb-8">
-        <h2 className="text-2xl font-semibold mb-4">Dokumen Verifikasi</h2>
+      {/* C. Dokumen Verifikasi */}
+      <div className="mb-6 rounded-xl bg-white p-6 shadow-sm">
+        <h2 className="mb-4 text-base font-bold text-slate-900">Dokumen Verifikasi</h2>
         <div className="space-y-3">
           {documents.map((doc) => (
-            <div key={doc.type} className="flex items-center justify-between p-4 border rounded">
+            <div key={doc.type} className="flex items-center justify-between rounded-lg border border-slate-200 p-4">
               <div>
-                <p className="font-medium">{doc.label}</p>
+                <p className="text-sm font-medium text-slate-800">{doc.label}</p>
                 {doc.available ? (
-                  <p className="text-sm text-green-600">✓ Tersedia</p>
+                  <p className="text-xs text-green-600">✓ Tersedia</p>
                 ) : (
-                  <p className="text-sm text-gray-500">Tidak ada dokumen</p>
+                  <p className="text-xs text-slate-400">Tidak ada dokumen</p>
                 )}
-                {doc.error && <p className="text-sm text-red-600">Error: {doc.error}</p>}
+                {doc.error && <p className="text-xs text-red-600">{doc.error}</p>}
                 {doc.expiresAt && (
-                  <p className="text-xs text-gray-500">
-                    Kadaluarsa: {new Date(doc.expiresAt).toLocaleTimeString('id-ID')}
+                  <p className="text-xs text-slate-400">
+                    Tautan berlaku hingga {new Date(doc.expiresAt).toLocaleTimeString('id-ID')}
                   </p>
                 )}
               </div>
@@ -231,7 +264,7 @@ export default function BarberVerificationDetailPage() {
                 <button
                   onClick={() => loadDocumentPreview(doc.type)}
                   disabled={doc.loading}
-                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                  className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:opacity-50"
                 >
                   {doc.loading ? 'Memuat...' : 'Lihat'}
                 </button>
@@ -240,12 +273,11 @@ export default function BarberVerificationDetailPage() {
           ))}
         </div>
 
-        {/* Preview Modal */}
         {previewingDoc && previewUrl && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white p-8 rounded-lg max-w-3xl max-h-96 overflow-auto">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-xl font-semibold">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <div className="max-h-[80vh] w-full max-w-3xl overflow-auto rounded-xl bg-white p-6 shadow-xl">
+              <div className="mb-4 flex items-center justify-between">
+                <h3 className="text-lg font-bold text-slate-900">
                   {documents.find((d) => d.type === previewingDoc)?.label}
                 </h3>
                 <button
@@ -253,78 +285,140 @@ export default function BarberVerificationDetailPage() {
                     setPreviewingDoc(null);
                     setPreviewUrl(null);
                   }}
-                  className="text-gray-500 hover:text-gray-700"
+                  className="text-slate-400 hover:text-slate-700"
                 >
                   ✕
                 </button>
               </div>
-              <img
-                src={previewUrl}
-                alt="Document preview"
-                className="max-w-full h-auto rounded"
-              />
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={previewUrl} alt="Pratinjau dokumen" className="h-auto max-w-full rounded-lg" />
             </div>
           </div>
         )}
       </div>
 
-      {/* Review Notes */}
-      {registration.rejectionReason && (
-        <div className="bg-red-50 rounded-lg p-6 mb-8 border border-red-200">
-          <h3 className="font-semibold text-red-900 mb-2">Alasan Penolakan</h3>
-          <p className="text-red-800">{registration.rejectionReason}</p>
-        </div>
-      )}
+      {/* D. Layanan */}
+      <div className="mb-6 rounded-xl bg-white p-6 shadow-sm">
+        <h2 className="mb-4 text-base font-bold text-slate-900">Layanan</h2>
+        {registration.services && registration.services.length > 0 ? (
+          <div className="space-y-2">
+            {registration.services.map((svc) => (
+              <div key={svc.serviceId} className="flex items-center justify-between rounded-lg border border-slate-100 px-4 py-2.5 text-sm">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium text-slate-800">{svc.name}</span>
+                  {!svc.isActive && (
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">Nonaktif</span>
+                  )}
+                </div>
+                <span className="font-semibold text-slate-700">Rp {svc.price.toLocaleString('id-ID')}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm italic text-slate-400">Belum ada layanan ditambahkan.</p>
+        )}
+      </div>
 
-      {/* Actions */}
+      {/* E. Gallery */}
+      <div className="mb-6 rounded-xl bg-white p-6 shadow-sm">
+        <h2 className="mb-4 text-base font-bold text-slate-900">
+          Galeri {registration.galleryCount ? `(${registration.galleryCount})` : ''}
+        </h2>
+        {registration.galleryImageUrls && registration.galleryImageUrls.length > 0 ? (
+          <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
+            {registration.galleryImageUrls.map((url, i) => (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img key={i} src={url} alt={`Galeri ${i + 1}`} className="h-20 w-full rounded-lg object-cover" />
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm italic text-slate-400">Barber ini belum menambahkan foto galeri.</p>
+        )}
+      </div>
+
+      {/* F. Verification History / Status */}
+      <div className="mb-6 rounded-xl bg-white p-6 shadow-sm">
+        <h2 className="mb-4 text-base font-bold text-slate-900">Status Verifikasi</h2>
+        <div className="grid grid-cols-2 gap-4 text-sm">
+          <div>
+            <p className="text-xs font-medium text-slate-500">Status</p>
+            <span className={`mt-1 inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${statusBadgeClass(registration.verificationStatus)}`}>
+              {registration.verificationStatus}
+            </span>
+          </div>
+          <div>
+            <p className="text-xs font-medium text-slate-500">Ditinjau Pada</p>
+            <p className="mt-0.5 text-slate-800">{formatDateTime(registration.reviewedAt)}</p>
+          </div>
+        </div>
+        {registration.rejectionReason && (
+          <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4">
+            <p className="text-xs font-semibold text-red-900">Alasan Penolakan</p>
+            <p className="mt-1 text-sm text-red-800">{registration.rejectionReason}</p>
+          </div>
+        )}
+      </div>
+
+      {/* Sticky action bar */}
       {isPending && (
-        <div className="flex gap-4">
-          <button
-            onClick={handleApprove}
-            disabled={approving}
-            className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 font-semibold"
-          >
-            {approving ? 'Memproses...' : 'Setujui'}
-          </button>
-          <button
-            onClick={() => setRejectModal(true)}
-            disabled={approving}
-            className="px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 font-semibold"
-          >
-            Tolak
-          </button>
+        <div className="fixed bottom-0 left-0 right-0 z-30 border-t border-slate-200 bg-white/95 p-4 backdrop-blur">
+          <div className="mx-auto flex max-w-4xl gap-3">
+            <button
+              onClick={handleApprove}
+              disabled={approving}
+              className="flex-1 rounded-lg bg-green-600 px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-green-700 disabled:opacity-50"
+            >
+              {approving ? 'Memproses...' : 'Setujui Barber'}
+            </button>
+            <button
+              onClick={() => setRejectModal(true)}
+              disabled={approving}
+              className="flex-1 rounded-lg border border-red-200 bg-red-50 px-6 py-3 text-sm font-semibold text-red-700 shadow-sm transition hover:bg-red-100 disabled:opacity-50"
+            >
+              Tolak Pendaftaran
+            </button>
+          </div>
         </div>
       )}
 
-      {/* Reject Modal */}
       {rejectModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-8 rounded-lg max-w-md">
-            <h3 className="text-2xl font-semibold mb-4">Tolak Pendaftaran</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-bold text-slate-900">Tolak Pendaftaran</h3>
+            <p className="mt-2 text-sm text-slate-600">
+              Barber akan diberi tahu alasan penolakan ini. Tindakan tidak dapat dibatalkan.
+            </p>
             <textarea
               value={rejectReason}
               onChange={(e) => setRejectReason(e.target.value)}
-              placeholder="Masukkan alasan penolakan..."
-              className="w-full p-3 border rounded mb-4 h-24"
+              disabled={rejecting}
+              placeholder="Masukkan alasan penolakan (wajib diisi)..."
+              className="mt-4 h-24 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
             />
-            <div className="flex gap-4">
+            <div className="mt-5 flex gap-3">
               <button
-                onClick={() => setRejectModal(false)}
-                className="flex-1 px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
+                onClick={() => {
+                  setRejectModal(false);
+                  setRejectReason('');
+                }}
+                disabled={rejecting}
+                className="flex-1 rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
               >
                 Batal
               </button>
               <button
                 onClick={handleReject}
-                disabled={approving}
-                className="flex-1 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
+                disabled={rejecting || !rejectReason.trim()}
+                className="flex-1 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {approving ? 'Memproses...' : 'Tolak'}
+                {rejecting ? 'Memproses...' : 'Tolak Pendaftaran'}
               </button>
             </div>
           </div>
         </div>
       )}
+
+      {toastElement}
     </div>
   );
 }
