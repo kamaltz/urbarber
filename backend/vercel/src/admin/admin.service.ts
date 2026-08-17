@@ -8,6 +8,7 @@ import type { DocumentSnapshot } from 'firebase-admin/firestore';
 import { FieldValue } from 'firebase-admin/firestore';
 import { db } from '../lib/firebase-admin.js';
 import { getSupabaseAdminClient } from '../lib/supabase-admin.js';
+import { ACTIVE_BOOKING_STATUSES } from './barber-account-management.js';
 import type { AdminBookingIdentities } from './admin-booking-dto.js';
 import {
   mapAdminBookingDetail,
@@ -22,6 +23,7 @@ import { ALLOWED_DOC_TYPES, assertPathFromFirestore, validateStoragePathNamespac
 import type {
     AdminBarberDetail,
     AdminBarberRegistration,
+    AdminBarberServicePreview,
     AdminBarberSummary,
     AdminBookingRecord,
     AdminCategory,
@@ -66,6 +68,10 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
     
     const users = allUsersSnap.docs.map(d => d.data());
     const totalActiveCustomers = users.filter(u => u.role === 'customer' && u.status === 'active').length;
+    // All non-deleted barber accounts, any verification/account status -- the
+    // Barber Management page's "Total Barber" summary card, distinct from
+    // totalApprovedBarbers (active+approved only).
+    const totalBarbers = users.filter(u => u.role === 'barber' && u.status !== 'deleted').length;
     const totalApprovedBarbers = users.filter(u => u.role === 'barber' && u.status === 'active').length;
     const suspendedBarbers = users.filter(u => u.role === 'barber' && u.status === 'suspended').length;
     const suspendedAccounts = users.filter(u => u.status === 'suspended').length;
@@ -217,6 +223,7 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
 
     return {
       totalActiveCustomers,
+      totalBarbers,
       totalApprovedBarbers,
       pendingBarberRegistrations,
       suspendedAccounts,
@@ -324,10 +331,36 @@ export async function getBarberRegistrationDetail(barberId: string): Promise<Adm
       documentsAvailable[docType] = Boolean(documentPaths?.[docType]);
     }
 
+    const [userSnap, servicesSnap, gallerySnap] = await Promise.all([
+      db.collection('users').doc(barberId).get(),
+      db.collection('barberServices').where('barberId', '==', barberId).get(),
+      db.collection('barberGallery').where('barberId', '==', barberId).get(),
+    ]);
+
+    const services: AdminBarberServicePreview[] = servicesSnap.docs.map((d) => {
+      const s = d.data();
+      return {
+        serviceId: d.id,
+        name: s.name || 'Layanan',
+        price: typeof s.price === 'number' ? s.price : 0,
+        durationMinutes: s.durationMinutes,
+        isActive: s.isActive !== false,
+      };
+    });
+
+    const galleryImageUrls = gallerySnap.docs
+      .map((d) => d.data().publicUrl)
+      .filter((url): url is string => typeof url === 'string')
+      .slice(0, 8);
+
     return {
       barberId,
       ...safeData,
+      email: userSnap.data()?.email,
       documentsAvailable,
+      services,
+      galleryImageUrls,
+      galleryCount: gallerySnap.size,
     } as AdminBarberRegistration;
   } catch (err: any) {
     throw new Error(`Failed to get registration detail: ${err.message}`);
@@ -708,12 +741,15 @@ export async function getBarberList(
         uid: doc.id,
         displayName: barberData.displayName || userData?.displayName || 'N/A',
         businessName: barberData.shopName || barberData.businessName,
+        email: userData?.email,
+        phoneNumber: userData?.phoneNumber || barberData.phoneNumber || barberData.phone,
         verificationStatus: barberData.verificationStatus || 'pending',
         listingStatus: barberData.listingStatus,
         accountStatus: userData?.status || 'active',
         ratingAverage: barberData.ratingAverage,
         reviewCount: barberData.reviewCount,
         approvedAt: barberData.approvedAt,
+        createdAt: barberData.createdAt || userData?.createdAt,
       });
     }
 
@@ -743,6 +779,18 @@ export async function getBarberDetail(barberId: string): Promise<AdminBarberDeta
     const userSnap = await db.collection('users').doc(barberId).get();
     const userData = userSnap.data() || {};
 
+    // Preview counts for the delete-confirmation UI (Admin sees these BEFORE
+    // confirming deletion, matching what deleteBarber will actually cancel).
+    const activeBookingsSnap = await db
+      .collection('bookings')
+      .where('barberId', '==', barberId)
+      .where('status', 'in', ACTIVE_BOOKING_STATUSES)
+      .get();
+    const activeBookingsCount = activeBookingsSnap.size;
+    const paidActiveBookingsCount = activeBookingsSnap.docs.filter(
+      (d) => d.data().paymentStatus === 'paid'
+    ).length;
+
     return {
       uid: barberId,
       displayName: barberData.displayName || userData.displayName || 'N/A',
@@ -760,6 +808,8 @@ export async function getBarberDetail(barberId: string): Promise<AdminBarberDeta
       approvedAt: barberData.approvedAt,
       createdAt: barberData.createdAt,
       updatedAt: barberData.updatedAt,
+      activeBookingsCount,
+      paidActiveBookingsCount,
     };
   } catch (err: any) {
     throw new Error(`Failed to get barber detail: ${err.message}`);

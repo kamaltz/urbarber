@@ -72,6 +72,33 @@ describe('requireAdmin (route authorization)', () => {
     expect(result?.uid).toBe('admin1');
     expect(fakeRes.status).not.toHaveBeenCalled();
   });
+
+  it('rejects a barber token with 403 and returns null (not just customer)', async () => {
+    const fakeReq: any = { headers: { authorization: 'Bearer some-token' } };
+    const fakeRes = makeFakeRes();
+
+    vi.spyOn(adminAuth, 'verifyIdToken').mockResolvedValueOnce({
+      uid: 'barber1',
+      app_role: 'barber',
+    } as any);
+
+    const result = await requireAdmin(fakeReq, fakeRes);
+
+    expect(result).toBeNull();
+    expect(fakeRes.status).toHaveBeenCalledWith(403);
+  });
+
+  it('rejects a request with no Authorization header at all with 401, never reaching Firebase Auth', async () => {
+    const fakeReq: any = { headers: {} };
+    const fakeRes = makeFakeRes();
+    const verifySpy = vi.spyOn(adminAuth, 'verifyIdToken');
+
+    const result = await requireAdmin(fakeReq, fakeRes);
+
+    expect(result).toBeNull();
+    expect(fakeRes.status).toHaveBeenCalledWith(401);
+    expect(verifySpy).not.toHaveBeenCalled();
+  });
 });
 
 describe('getSupabaseServerConfig (lazy server config)', () => {

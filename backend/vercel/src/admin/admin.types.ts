@@ -8,7 +8,7 @@ import type { VoucherRecord } from '../payments/voucher-service.js';
 
 export type VerificationStatus = 'draft' | 'pending' | 'approved' | 'rejected';
 export type ListingStatus = 'active' | 'inactive' | 'suspended';
-export type UserStatus = 'active' | 'pending_verification' | 'suspended';
+export type UserStatus = 'active' | 'pending_verification' | 'suspended' | 'deleted';
 export type UserRole = 'customer' | 'barber' | 'admin';
 // Canonical document types actually written by the mobile upload flow
 // (src/app/(barber-onboarding)/documents.tsx + barber-registration.service.ts).
@@ -18,13 +18,23 @@ export type AllowedDocType = 'ktp' | 'business_license' | 'certificate';
 // Barber Registration
 // ============================================================================
 
+export interface AdminBarberServicePreview {
+  serviceId: string;
+  name: string;
+  price: number;
+  durationMinutes?: number;
+  isActive: boolean;
+}
+
 export interface AdminBarberRegistration {
   barberId: string;
   ownerName: string;
   businessName: string;
+  email?: string;
   phoneNumber?: string;
   businessAddress?: string;
   serviceArea?: string;
+  description?: string;
   verificationStatus: VerificationStatus;
   onboardingStatus?: string;
   submittedAt?: any; // Firestore Timestamp
@@ -36,6 +46,11 @@ export interface AdminBarberRegistration {
   // storage paths (see getSignedDocumentUrl). Only a presence map is exposed; the actual
   // path is resolved server-side again when the Admin requests a signed URL.
   documentsAvailable?: Record<AllowedDocType, boolean>;
+  // Section D/E of the verification detail redesign -- summary-only previews,
+  // not full management (that stays on the Barber Management/mobile side).
+  services?: AdminBarberServicePreview[];
+  galleryImageUrls?: string[];
+  galleryCount?: number;
 }
 
 export interface ApproveBarberResult {
@@ -153,6 +168,8 @@ export interface AdminSuspendedBarber {
 
 export interface DashboardMetrics {
   totalActiveCustomers: number;
+  // All non-deleted barber accounts, any verification/account status.
+  totalBarbers: number;
   totalApprovedBarbers: number;
   pendingBarberRegistrations: number;
   suspendedAccounts: number;
@@ -231,12 +248,15 @@ export interface AdminBarberSummary {
   uid: string;
   displayName: string;
   businessName?: string;
+  email?: string;
+  phoneNumber?: string;
   verificationStatus: VerificationStatus;
   listingStatus?: ListingStatus;
   accountStatus: UserStatus;
   ratingAverage?: number;
   reviewCount?: number;
   approvedAt?: any;
+  createdAt?: any;
 }
 
 export interface AdminBarberDetail extends AdminBarberSummary {
@@ -247,6 +267,9 @@ export interface AdminBarberDetail extends AdminBarberSummary {
   acceptingNewBookings?: boolean;
   createdAt?: any;
   updatedAt?: any;
+  /** Preview for the delete-confirmation UI -- what deleteBarber would cancel. */
+  activeBookingsCount?: number;
+  paidActiveBookingsCount?: number;
 }
 
 // ============================================================================

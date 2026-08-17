@@ -12,9 +12,18 @@
  * 7. Every operation is logged in adminAuditLogs for audit trail
  */
 
-import type { DocumentSnapshot } from 'firebase-admin/firestore';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminAuth, db } from '../lib/firebase-admin.js';
+import { getSlotLockId } from '../bookings/slot-lock.js';
+
+/**
+ * Statuses considered "active" (not yet in a final state) for a booking.
+ * Matches deleteBarber's pre-existing query filter -- kept as a single source
+ * so the force-delete cancellation loop below can never drift from what the
+ * eligibility check itself queried for. Exported for reuse by
+ * user-account-management.ts's customer-deletion cancellation loop.
+ */
+export const ACTIVE_BOOKING_STATUSES = ['pending', 'accepted', 'in_progress', 'en_route', 'arrived'];
 
 // ============================================================================
 // Types
@@ -33,13 +42,16 @@ export interface BarberReactivateResult {
 export interface BarberDeleteResult {
   success: boolean;
   message: string;
+  cancelledBookingsCount: number;
+  paidBookingsNeedingReviewCount: number;
 }
 
 // ============================================================================
 // Audit Logging
 // ============================================================================
 
-async function logAdminAction(
+/** Exported for reuse by user-account-management.ts -- same adminAuditLogs shape applies to any account-lifecycle action, not just barber ones. */
+export async function logAdminAction(
   adminId: string,
   targetUserId: string,
   targetRole: string,
@@ -110,7 +122,16 @@ export async function suspendBarber(
     }
 
     const userData = userSnap.data()!;
-    if (userData.role !== 'barber') {
+    // A barbers/{barberId} doc is what actually makes an account appear as a
+    // barber to the admin (getBarberList queries the `barbers` collection
+    // directly, not users.role) -- so it, not users.role, is the authoritative
+    // signal here. users.role can legitimately drift from it (e.g. an account
+    // that registered as a customer before ever completing barber onboarding,
+    // or any account whose role was never backfilled), and previously any such
+    // drift made a barber shown in the admin's own list permanently
+    // un-suspendable with a 403, even though the admin UI presented it as a
+    // manageable barber.
+    if (userData.role !== 'barber' && !barberSnap.exists) {
       throw new Error('USER_NOT_BARBER');
     }
 
@@ -209,7 +230,9 @@ export async function reactivateBarber(
     }
 
     const userData = userSnap.data()!;
-    if (userData.role !== 'barber') {
+    // See suspendBarber's identical check above for why barberSnap.exists,
+    // not users.role, is authoritative here.
+    if (userData.role !== 'barber' && !barberSnap.exists) {
       throw new Error('USER_NOT_BARBER');
     }
 
@@ -284,81 +307,116 @@ export async function reactivateBarber(
 // ============================================================================
 
 /**
- * Delete a barber account (soft delete).
+ * Delete a barber account (soft delete, FORCE semantics).
+ *
+ * Admin must be able to delete a barber account regardless of whether it
+ * still has active bookings -- this is a deliberate policy change from the
+ * account's earlier behavior, which refused deletion outright
+ * (BARBER_HAS_ACTIVE_BOOKINGS, HTTP 409) whenever any active booking existed.
+ * That hard block is gone; active bookings are now safely wound down as part
+ * of the same deletion instead of blocking it.
  *
  * Operations:
- * 1. Verify barber exists
- * 2. Check for active bookings (paid, accepted, in_progress)
- * 3. Delete Firebase Auth account
- * 4. Update Firestore: users/{barberId}.status = deleted (soft delete)
- * 5. Update Firestore: barbers/{barberId}.status = deleted, isDiscoverable = false
- * 6. Preserve all payment and booking history
- * 7. Log action in adminAuditLogs
+ * 1. Verify barber exists (barbers/{barberId} doc, or users.role === 'barber')
+ * 2. Find active (non-final) bookings and force-cancel each one:
+ *    - status -> 'cancelled', with cancellationReason/cancelledBy/
+ *      cancelledByAdminId/cancelledAt metadata
+ *    - release the booking's slot lock
+ *    - if paymentStatus === 'paid': set refundRequired = true (the existing
+ *      canonical manual-refund marker already used by customer/barber-
+ *      initiated cancellations elsewhere in this codebase) -- paymentStatus
+ *      itself is never touched, so paid history stays truthful
+ * 3. Delete the Firebase Auth account
+ * 4. Soft-delete users/{barberId} and barbers/{barberId} (status='deleted',
+ *    isDiscoverable=false, listingStatus='inactive', acceptingNewBookings=false)
+ * 5. Preserve all payment/booking/review/transaction history -- nothing in
+ *    this function ever deletes a bookings/payments/reviews document
+ * 6. Log action in adminAuditLogs, including the cancellation counts
  *
- * Rules:
- * - Cannot delete if barber has active paid/accepted/in_progress bookings
- * - Soft delete: profile remains in database, marked as deleted
- * - Deleted barber cannot receive new bookings
- * - Deleted barber cannot login (Firebase Auth account deleted)
- * - Cannot reactivate a deleted account (must contact admin)
- * - All transaction history is preserved for audit trail
+ * Not fully atomic by design: the active-booking scan/cancellation happens
+ * before the account-deletion transaction, matching this codebase's existing
+ * precedent (api/app.ts's handleCancelBooking similarly cancels a booking and
+ * releases its slot lock as separate non-transactional writes) rather than
+ * forcing an unbounded number of booking documents into one Firestore
+ * transaction.
  */
 export async function deleteBarber(
   barberId: string,
   adminId: string,
 ): Promise<BarberDeleteResult> {
-  let previousStatus = 'unknown';
+  const userRef = db.collection('users').doc(barberId);
+  const barberRef = db.collection('barbers').doc(barberId);
 
-  return db.runTransaction(async tx => {
-    const userRef = db.collection('users').doc(barberId);
-    const barberRef = db.collection('barbers').doc(barberId);
+  const [userSnap, barberSnap] = await Promise.all([userRef.get(), barberRef.get()]);
 
-    const [userSnap, barberSnap] = await Promise.all([
-      tx.get(userRef),
-      tx.get(barberRef),
-    ]);
+  if (!userSnap.exists) {
+    throw new Error('USER_NOT_FOUND');
+  }
 
-    if (!userSnap.exists) {
-      throw new Error('USER_NOT_FOUND');
+  const userData = userSnap.data()!;
+  // See suspendBarber's identical check for why barberSnap.exists, not
+  // users.role, is authoritative.
+  if (userData.role !== 'barber' && !barberSnap.exists) {
+    throw new Error('USER_NOT_BARBER');
+  }
+
+  const previousStatus = userData.status;
+
+  // Force-cancel every active (non-final) booking before deleting the account.
+  const activeBookingsSnap = await db
+    .collection('bookings')
+    .where('barberId', '==', barberId)
+    .where('status', 'in', ACTIVE_BOOKING_STATUSES)
+    .get();
+
+  let cancelledBookingsCount = 0;
+  let paidBookingsNeedingReviewCount = 0;
+  const cancelTimestamp = FieldValue.serverTimestamp();
+
+  for (const bookingDoc of activeBookingsSnap.docs) {
+    const bookingData = bookingDoc.data();
+
+    const updateData: Record<string, unknown> = {
+      status: 'cancelled',
+      cancellationReason: 'barber_deleted_by_admin',
+      cancelledBy: 'admin',
+      cancelledByAdminId: adminId,
+      cancelledAt: cancelTimestamp,
+      updatedAt: cancelTimestamp,
+    };
+
+    // Never touch paymentStatus, never fabricate a refund -- flag for the
+    // existing manual admin-refund workflow instead (same field used by
+    // handleCancelBooking/handleBarberRespondBooking's paid-cancellation path).
+    if (bookingData.paymentStatus === 'paid') {
+      updateData.refundRequired = true;
+      paidBookingsNeedingReviewCount++;
     }
 
-    const userData = userSnap.data()!;
-    if (userData.role !== 'barber') {
-      throw new Error('USER_NOT_BARBER');
+    await bookingDoc.ref.update(updateData);
+    cancelledBookingsCount++;
+
+    if (bookingData.barberId && bookingData.date && bookingData.startTime) {
+      const slotLockId = getSlotLockId(bookingData.barberId, bookingData.date, bookingData.startTime);
+      await db.collection('slotLocks').doc(slotLockId).delete();
     }
+  }
 
-    previousStatus = userData.status;
-
-    // Check for active bookings (pending, accepted, in_progress, en_route, arrived)
-    const activeBookingsSnap = await db
-      .collection('bookings')
-      .where('barberId', '==', barberId)
-      .where('status', 'in', ['pending', 'accepted', 'in_progress', 'en_route', 'arrived'])
-      .get();
-
-    const nonFinishedBookings = activeBookingsSnap.docs.filter((docSnap) => {
-      const d = docSnap.data();
-      return d.status !== 'completed' && d.status !== 'cancelled' && d.status !== 'rejected';
-    });
-
-    if (nonFinishedBookings.length > 0) {
-      throw new Error('BARBER_HAS_ACTIVE_BOOKINGS');
+  // Delete Firebase Auth account
+  try {
+    await adminAuth.deleteUser(barberId);
+  } catch (err: any) {
+    if (err.code === 'auth/user-not-found') {
+      // User doesn't exist in Auth, continue with Firestore deletion
+      console.warn(`[deleteBarber] Firebase Auth user not found for ${barberId}`);
+    } else {
+      throw new Error(`AUTH_DELETE_FAILED: ${err.message}`);
     }
+  }
 
-    // Delete Firebase Auth account
-    try {
-      await adminAuth.deleteUser(barberId);
-    } catch (err: any) {
-      if (err.code === 'auth/user-not-found') {
-        // User doesn't exist in Auth, continue with Firestore deletion
-        console.warn(`[deleteBarber] Firebase Auth user not found for ${barberId}`);
-      } else {
-        throw new Error(`AUTH_DELETE_FAILED: ${err.message}`);
-      }
-    }
+  const now = FieldValue.serverTimestamp();
 
-    const now = FieldValue.serverTimestamp();
-
+  await db.runTransaction(async (tx) => {
     // Soft delete: Mark as deleted instead of physically removing
     tx.update(userRef, {
       status: 'deleted',
@@ -368,7 +426,10 @@ export async function deleteBarber(
       updatedAt: now,
     });
 
-    // Soft delete barber profile
+    // Soft delete barber profile -- listingStatus:'inactive' is what actually
+    // removes this barber from discovery/search/nearby results (both
+    // discovery.service.ts and customer.repository.ts query
+    // listingStatus=='active' only).
     if (barberSnap.exists) {
       tx.update(barberRef, {
         status: 'deleted',
@@ -380,17 +441,30 @@ export async function deleteBarber(
         updatedAt: now,
       });
     }
-
-    // Log action (done outside transaction)
-    setImmediate(() => {
-      logAdminAction(adminId, barberId, 'barber', 'BARBER_DELETED', '', previousStatus, 'deleted').catch(
-        (err) => console.error('[deleteBarber] Audit log failed:', err),
-      );
-    });
-
-    return {
-      success: true,
-      message: 'Barber account deleted successfully.',
-    };
   });
+
+  // Log action (done outside transaction)
+  setImmediate(() => {
+    logAdminAction(adminId, barberId, 'barber', 'BARBER_DELETED', '', previousStatus, 'deleted').catch(
+      (err) => console.error('[deleteBarber] Audit log failed:', err),
+    );
+    if (cancelledBookingsCount > 0) {
+      logAdminAction(
+        adminId,
+        barberId,
+        'barber',
+        'BARBER_DELETE_CANCELLED_BOOKINGS',
+        `cancelled=${cancelledBookingsCount}, paidNeedingReview=${paidBookingsNeedingReviewCount}`,
+        'active',
+        'cancelled',
+      ).catch((err) => console.error('[deleteBarber] Audit log failed:', err));
+    }
+  });
+
+  return {
+    success: true,
+    message: 'Barber account deleted successfully.',
+    cancelledBookingsCount,
+    paidBookingsNeedingReviewCount,
+  };
 }
