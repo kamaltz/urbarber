@@ -19,7 +19,7 @@ import { firestore } from '@/lib/firebase';
 import { BookingStatus } from '@/types/domain';
 import { availabilityApiService } from '../api/availability-api.service';
 import { mapRawBookingToDomain } from '../utils/map-booking';
-import { Booking, BookingReview, CouponCode, TimeSlotAvailability } from '../types/booking';
+import { Booking, BookingReview, TimeSlotAvailability } from '../types/booking';
 
 class BookingRepository {
   /**
@@ -324,34 +324,6 @@ class BookingRepository {
         success: false,
         error: { code: 'UPDATE_FAILED', message: error?.message || 'Gagal mengupdate booking' },
       };
-    }
-  }
-
-  /**
-   * Validate coupon code
-   */
-  async validateCoupon(code: string): Promise<CouponCode | null> {
-    try {
-      if (!code) return null;
-      const docRef = doc(firestore, 'coupons', code);
-      const snapshot = await getDoc(docRef);
-
-      if (!snapshot.exists()) {
-        return null;
-      }
-
-      const data = snapshot.data() as any;
-      return {
-        code: data.code,
-        discount: data.discount,
-        description: data.description,
-        isValid: data.isValid ?? true,
-      };
-    } catch (error: any) {
-      if (__DEV__) {
-        console.warn('[BookingRepository validateCoupon Error]', error?.code, error?.message || error);
-      }
-      return null;
     }
   }
 

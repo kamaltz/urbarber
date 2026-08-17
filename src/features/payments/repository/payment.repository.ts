@@ -9,9 +9,10 @@ import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import {
   paymentApiService,
   type CreateBookingPaymentPayload,
+  type CreateBookingPaymentResult,
+  type ValidateVoucherResult,
 } from '../services/payment-api.service';
 import type {
-  CreateBookingPaymentResponse,
   SyncPaymentStatusResponse,
 } from '../types/payment';
 
@@ -21,7 +22,7 @@ class PaymentRepository {
    */
   async createBookingPayment(
     payload: CreateBookingPaymentPayload
-  ): Promise<{ success: boolean; data?: CreateBookingPaymentResponse; error?: any }> {
+  ): Promise<{ success: boolean; data?: CreateBookingPaymentResult; error?: any }> {
     const res = await paymentApiService.createBookingPayment(payload);
     if (res.success) {
       return {
@@ -52,6 +53,21 @@ class PaymentRepository {
       success: false,
       error: res.error,
     };
+  }
+
+  /**
+   * Validate a voucher code for checkout preview (server re-validates
+   * authoritatively again inside createBookingPayment).
+   */
+  async validateVoucher(
+    code: string,
+    serviceId: string
+  ): Promise<{ success: boolean; data?: ValidateVoucherResult; error?: any }> {
+    const res = await paymentApiService.validateVoucher(code, serviceId);
+    if (res.success) {
+      return { success: true, data: res.data };
+    }
+    return { success: false, error: res.error };
   }
 
   /**

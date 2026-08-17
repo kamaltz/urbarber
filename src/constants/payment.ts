@@ -1,9 +1,9 @@
 /**
  * Payment Constants
- * Centralized Home Service Fee and Barber Tip Options.
+ * Barber Tip Options. Home Service Fee and Application Fee are admin-configurable
+ * and always server-computed (backend/vercel/src/payments/pricing-calculator.ts) --
+ * never estimated or hardcoded client-side.
  */
-
-export const HOME_SERVICE_FEE_IDR = 10000;
 
 export const TIP_OPTIONS = [
   { label: 'Tanpa Tip', value: 0 },

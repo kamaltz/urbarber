@@ -167,6 +167,14 @@ export interface PaymentRecord {
   updatedAt: string;
   paidAt?: string;
   expiresAt?: string;
+  // Canonical pricing breakdown (backend/vercel/src/payments/pricing-calculator.ts)
+  baseAmount?: number;
+  voucherCode?: string | null;
+  voucherDiscount?: number;
+  discountedBaseAmount?: number;
+  homeServiceFee?: number;
+  applicationFee?: number;
+  tipAmount?: number;
 }
 
 export interface Review {

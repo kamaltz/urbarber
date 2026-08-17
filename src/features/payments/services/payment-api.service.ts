@@ -18,6 +18,9 @@ export interface CreateBookingPaymentPayload {
   notes?: string;
   bookingType: 'home' | 'onsite';
   tipAmount?: number;
+  voucherCode?: string;
+  /** Required whenever bookingType is 'home' -- the backend enforces this. */
+  location?: { latitude: number; longitude: number };
 }
 
 /**
@@ -30,7 +33,24 @@ export interface CreateBookingPaymentResult {
   bookingId: string;
   orderId: string;
   amount?: number;
+  baseAmount?: number;
+  voucherCode?: string | null;
+  voucherDiscount?: number;
+  discountedBaseAmount?: number;
+  homeServiceFee?: number;
+  applicationFee?: number;
+  tipAmount?: number;
+  totalAmount?: number;
   paymentUrl: string | null;
+  message?: string;
+}
+
+export interface ValidateVoucherResult {
+  valid: boolean;
+  voucherCode?: string;
+  baseAmount?: number;
+  discountAmount?: number;
+  reason?: string;
   message?: string;
 }
 
@@ -115,6 +135,14 @@ class PaymentApiService {
     return this.fetchWithAuth<CreateBookingPaymentResult>('/api/payments/create', {
       method: 'POST',
       body: JSON.stringify(payload),
+    });
+  }
+
+  /** Checkout-preview only -- the backend re-validates authoritatively again on create. */
+  async validateVoucher(code: string, serviceId: string) {
+    return this.fetchWithAuth<ValidateVoucherResult>('/api/payments/voucher/validate', {
+      method: 'POST',
+      body: JSON.stringify({ code, serviceId }),
     });
   }
 

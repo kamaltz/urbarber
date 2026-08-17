@@ -2,7 +2,7 @@ import { CustomerScreen } from '@/components/navigation/CustomerScreen';
 import { AppButton } from '@/components/ui/AppButton';
 import { AppCard } from '@/components/ui/AppCard';
 import { Loading } from '@/components/ui/Loading';
-import { HOME_SERVICE_FEE_IDR, TIP_OPTIONS } from '@/constants/payment';
+import { TIP_OPTIONS } from '@/constants/payment';
 import { routes } from '@/constants/routes';
 import { PaymentSummary } from '@/features/bookings/components/PaymentSummary';
 import { paymentRepository } from '@/features/payments/repository/payment.repository';
@@ -11,8 +11,8 @@ import { isPayButtonDisabled } from '@/features/payments/utils/pay-button-state'
 import type { PaymentRecord, PaymentStatus } from '@/types/domain';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, InteractionManager, Pressable, ScrollView, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, InteractionManager, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 
 export default function BookingInvoiceScreen() {
   const params = useLocalSearchParams<{
@@ -29,7 +29,17 @@ export default function BookingInvoiceScreen() {
     barberName?: string;
     bookingId?: string;
     bookingType?: 'home' | 'onsite';
+    latitude?: string;
+    longitude?: string;
   }>();
+
+  const customerLocation = useMemo(
+    () =>
+      params.latitude && params.longitude
+        ? { latitude: Number(params.latitude), longitude: Number(params.longitude) }
+        : undefined,
+    [params.latitude, params.longitude]
+  );
 
   // Unique requestId per booking flow session (retained on retry)
   const requestIdRef = useRef<string | null>(null);
@@ -46,10 +56,51 @@ export default function BookingInvoiceScreen() {
   const [bookingId, setBookingId] = useState<string | null>(params.bookingId || null);
   const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
   const [selectedTip, setSelectedTip] = useState<number>(0);
-  const [loading, setLoading] = useState<boolean>(!params.bookingId);
+  // Booking/payment creation is now an explicit user action (see
+  // handleInitiatePayment) instead of firing automatically on mount, so the
+  // tip/voucher selection UI below is actually visible and usable before the
+  // charge is created -- previously the mount-effect fired immediately (with
+  // tip always 0 and no voucher), and the full-screen loading state below hid
+  // that selection UI for its entire (near-instant) window.
+  const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [createdPricing, setCreatedPricing] = useState<{
+    baseAmount?: number;
+    voucherDiscount?: number;
+    homeServiceFee?: number;
+    applicationFee?: number;
+    tipAmount?: number;
+    totalAmount?: number;
+  } | null>(null);
   const [paymentRecord, setPaymentRecord] = useState<PaymentRecord | null>(null);
   const [syncing, setSyncing] = useState<boolean>(false);
+
+  const [voucherInput, setVoucherInput] = useState('');
+  const [appliedVoucher, setAppliedVoucher] = useState<{ code: string; discountAmount: number } | null>(null);
+  const [voucherLoading, setVoucherLoading] = useState(false);
+  const [voucherMessage, setVoucherMessage] = useState<{ text: string; ok: boolean } | null>(null);
+
+  const handleApplyVoucher = async () => {
+    if (!voucherInput.trim() || !params.serviceId) return;
+    setVoucherLoading(true);
+    setVoucherMessage(null);
+    const res = await paymentRepository.validateVoucher(voucherInput.trim(), params.serviceId);
+    setVoucherLoading(false);
+
+    if (res.success && res.data?.valid && res.data.voucherCode) {
+      setAppliedVoucher({ code: res.data.voucherCode, discountAmount: res.data.discountAmount || 0 });
+      setVoucherMessage({ text: 'Voucher berhasil digunakan.', ok: true });
+    } else {
+      setAppliedVoucher(null);
+      setVoucherMessage({ text: res.data?.message || res.error?.message || 'Voucher tidak valid.', ok: false });
+    }
+  };
+
+  const handleRemoveVoucher = () => {
+    setAppliedVoucher(null);
+    setVoucherInput('');
+    setVoucherMessage(null);
+  };
 
   // One-shot guard: authoritative "paid" can arrive via the Firestore subscription
   // and/or the sync-status response. Only the first signal may navigate.
@@ -103,60 +154,26 @@ export default function BookingInvoiceScreen() {
       notes: params.notes || '',
       bookingType: params.bookingType as 'home' | 'onsite',
       tipAmount: selectedTip,
+      voucherCode: appliedVoucher?.code,
+      location: customerLocation,
     });
 
     if (res.success && res.data) {
       setBookingId(res.data.bookingId);
       setPaymentUrl(res.data.paymentUrl);
+      setCreatedPricing({
+        baseAmount: res.data.baseAmount,
+        voucherDiscount: res.data.voucherDiscount,
+        homeServiceFee: res.data.homeServiceFee,
+        applicationFee: res.data.applicationFee,
+        tipAmount: res.data.tipAmount,
+        totalAmount: res.data.totalAmount,
+      });
     } else {
       setError(res.error?.message || 'Gagal menyiapkan tagihan pembayaran.');
     }
     setLoading(false);
-  }, [bookingId, paymentUrl, params, selectedTip, getRequestId]);
-
-  useEffect(() => {
-    let isMounted = true;
-    if (!params.bookingId && !bookingId && !paymentUrl) {
-      paymentRepository
-        .createBookingPayment({
-          requestId: getRequestId(),
-          barberId: params.barberId || '',
-          serviceId: params.serviceId || '',
-          date: params.date || params.selectedDate || new Date().toISOString().split('T')[0],
-          startTime: params.startTime || params.selectedTime || '10:00',
-          address: params.address || 'Alamat Pelanggan',
-          notes: params.notes || '',
-          bookingType: params.bookingType as 'home' | 'onsite',
-          tipAmount: selectedTip,
-        })
-        .then((res) => {
-          if (!isMounted) return;
-          if (res.success && res.data) {
-            setBookingId(res.data.bookingId);
-            setPaymentUrl(res.data.paymentUrl);
-          } else {
-            setError(res.error?.message || 'Gagal menyiapkan tagihan pembayaran.');
-          }
-          setLoading(false);
-        });
-    }
-    return () => {
-      isMounted = false;
-    };
-  }, [
-    params.bookingId,
-    bookingId,
-    paymentUrl,
-    params.barberId,
-    params.serviceId,
-    params.date,
-    params.startTime,
-    params.address,
-    params.notes,
-    params.bookingType,
-    selectedTip,
-    getRequestId,
-  ]);
+  }, [bookingId, paymentUrl, params, selectedTip, appliedVoucher, customerLocation, getRequestId]);
 
   // Real-time subscription to Firestore payment document
   useEffect(() => {
@@ -221,10 +238,23 @@ export default function BookingInvoiceScreen() {
     }
   };
 
-  const baseServicePrice = Number(params.servicePrice || (paymentRecord as any)?.baseAmount || paymentRecord?.grossAmount || 0);
-  const isHomeBooking = params.bookingType === 'home';
-  const computedHomeFee = isHomeBooking ? HOME_SERVICE_FEE_IDR : 0;
-  const computedTotal = paymentRecord?.grossAmount || (baseServicePrice + computedHomeFee + selectedTip);
+  // Server-authoritative breakdown once available (Firestore realtime record
+  // takes precedence, then the create-response, in that order); before the
+  // booking exists, only the service price and the voucher preview discount
+  // are actually known -- home service fee and application fee depend on
+  // admin settings the client never guesses, so they're simply not shown
+  // (not estimated) until the server returns them.
+  const baseServicePrice =
+    paymentRecord?.baseAmount ?? createdPricing?.baseAmount ?? Number(params.servicePrice || 0);
+  const voucherDiscount =
+    paymentRecord?.voucherDiscount ?? createdPricing?.voucherDiscount ?? (appliedVoucher ? appliedVoucher.discountAmount : 0);
+  const homeServiceFee = paymentRecord?.homeServiceFee ?? createdPricing?.homeServiceFee ?? 0;
+  const applicationFee = paymentRecord?.applicationFee ?? createdPricing?.applicationFee ?? 0;
+  const tipAmount = paymentRecord?.tipAmount ?? createdPricing?.tipAmount ?? selectedTip;
+  const computedTotal =
+    paymentRecord?.grossAmount ??
+    createdPricing?.totalAmount ??
+    Math.max(0, baseServicePrice - voucherDiscount + tipAmount);
   const currentStatus: PaymentStatus = paymentRecord?.status || 'initiated';
 
   const renderStatusBadge = () => {
@@ -284,7 +314,7 @@ export default function BookingInvoiceScreen() {
     }
   };
 
-  if (loading) {
+  if (loading && !bookingId) {
     return (
       <CustomerScreen title="Tagihan Pembayaran" description="Menyiapkan gerbang pembayaran Midtrans Snap...">
         <View className="py-20 items-center justify-center">
@@ -336,6 +366,48 @@ export default function BookingInvoiceScreen() {
           </AppCard>
         ) : null}
 
+        {/* Voucher (before payment is created) */}
+        {!bookingId ? (
+          <AppCard className="p-4 mb-4 border-slate-200">
+            <Text className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">
+              Kode Voucher
+            </Text>
+
+            {appliedVoucher ? (
+              <View className="flex-row items-center justify-between rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-2.5">
+                <Text className="text-sm font-bold text-emerald-800">{appliedVoucher.code}</Text>
+                <Pressable onPress={handleRemoveVoucher}>
+                  <Text className="text-xs font-semibold text-red-600">Hapus Voucher</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <View className="flex-row gap-2">
+                <TextInput
+                  value={voucherInput}
+                  onChangeText={(text) => setVoucherInput(text.toUpperCase())}
+                  placeholder="Masukkan kode voucher"
+                  autoCapitalize="characters"
+                  className="flex-1 rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-900"
+                />
+                <Pressable
+                  onPress={handleApplyVoucher}
+                  disabled={voucherLoading || !voucherInput.trim()}
+                  className={`rounded-xl px-4 py-2.5 ${voucherLoading || !voucherInput.trim() ? 'bg-slate-200' : 'bg-slate-900'}`}>
+                  <Text className={`text-xs font-bold ${voucherLoading || !voucherInput.trim() ? 'text-slate-400' : 'text-white'}`}>
+                    {voucherLoading ? '...' : 'Gunakan'}
+                  </Text>
+                </Pressable>
+              </View>
+            )}
+
+            {voucherMessage ? (
+              <Text className={`mt-2 text-xs font-medium ${voucherMessage.ok ? 'text-emerald-700' : 'text-red-600'}`}>
+                {voucherMessage.text}
+              </Text>
+            ) : null}
+          </AppCard>
+        ) : null}
+
         {/* Invoice Summary Card */}
         <AppCard className="p-5 mb-5 border-slate-200">
           <Text className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">
@@ -364,11 +436,16 @@ export default function BookingInvoiceScreen() {
             <Text className="text-xs font-medium text-slate-700 mt-0.5">{params.address || '-'}</Text>
           </View>
 
-          {/* Detailed Price Breakdown */}
+          {/* Detailed Price Breakdown -- values are the authoritative server
+              breakdown once the booking/payment exists; only the base price
+              and voucher preview discount are shown as an estimate before that. */}
           <PaymentSummary
             subtotal={baseServicePrice}
-            homeServiceFee={isHomeBooking ? 10000 : 0}
-            tipAmount={selectedTip}
+            homeServiceFee={homeServiceFee}
+            handlingFee={applicationFee}
+            discount={voucherDiscount}
+            couponCode={appliedVoucher?.code || paymentRecord?.voucherCode || undefined}
+            tipAmount={tipAmount}
             totalPrice={computedTotal}
           />
         </AppCard>
@@ -382,7 +459,14 @@ export default function BookingInvoiceScreen() {
 
         {/* Action Buttons */}
         <View className="gap-3 mb-8">
-          {currentStatus === 'paid' ? (
+          {!bookingId ? (
+            <AppButton
+              label={loading ? 'Menyiapkan Tagihan...' : 'Lanjutkan ke Pembayaran'}
+              onPress={handleInitiatePayment}
+              variant="primary"
+              disabled={loading}
+            />
+          ) : currentStatus === 'paid' ? (
             <AppButton
               label="Lihat Detail Pesanan"
               onPress={() => bookingId && goToActiveBooking(bookingId, 'button')}

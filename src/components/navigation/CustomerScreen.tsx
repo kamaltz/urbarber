@@ -9,7 +9,7 @@ type CustomerScreenProps = {
   title: string;
   description?: string;
   children?: ReactNode;
-  action?: { label: string; onPress: () => void };
+  action?: { label: string; onPress: () => void; disabled?: boolean };
   showTabs?: boolean;
   /**
    * Screens that own their own scrollable content (ScrollView/FlatList/map) must pass
@@ -31,7 +31,14 @@ export function CustomerScreen({ title, description, children, action, showTabs 
     <>
       {description ? <Text className="mb-6 text-base leading-6 text-slate-600">{description}</Text> : null}
       {children}
-      {action ? <AppButton label={action.label} onPress={action.onPress} className="mt-6 h-14 rounded-lg" /> : null}
+      {action ? (
+        <AppButton
+          label={action.label}
+          onPress={action.onPress}
+          disabled={action.disabled}
+          className="mt-6 h-14 rounded-lg"
+        />
+      ) : null}
     </>
   );
 

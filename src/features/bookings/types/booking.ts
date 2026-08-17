@@ -102,13 +102,6 @@ export interface BookingReview {
   createdAt: string;
 }
 
-export interface CouponCode {
-  code: string;
-  discount: number;
-  description?: string;
-  isValid: boolean;
-}
-
 export interface BookingFormData {
   barberId: string;
   customerId: string;
