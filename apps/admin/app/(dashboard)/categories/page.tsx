@@ -93,6 +93,7 @@ export default function CategoriesPage() {
       });
       setCategories(categories.map((c) => (c.id === catId ? updated : c)));
       resetForm();
+      setCreateModal(false);
       alert('Kategori berhasil diperbarui.');
     } catch (err) {
       alert(`Gagal update kategori: ${getErrorMessage(err)}`);

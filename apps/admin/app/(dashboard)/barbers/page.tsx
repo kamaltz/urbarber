@@ -12,7 +12,10 @@ export default function BarbersPage() {
   const [barbers, setBarbers] = useState<AdminBarberSummary[]>([]);
   const [filter, setFilter] = useState<'all' | 'active' | 'suspended' | 'approved' | 'pending' | 'rejected'>('all');
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | undefined>(undefined);
 
   // Load barbers
   useEffect(() => {
@@ -21,6 +24,8 @@ export default function BarbersPage() {
       try {
         const result = await AdminApiClient.getBarbers(filter);
         setBarbers(result.items);
+        setHasMore(result.hasMore);
+        setNextCursor(result.nextPageStartAfter);
       } catch (err) {
         setError(getErrorMessage(err, 'Gagal load barbers.'));
       } finally {
@@ -30,6 +35,21 @@ export default function BarbersPage() {
     setLoading(true);
     load();
   }, [filter, admin]);
+
+  const handleLoadMore = async () => {
+    if (!nextCursor) return;
+    setLoadingMore(true);
+    try {
+      const result = await AdminApiClient.getBarbers(filter, undefined, nextCursor);
+      setBarbers((prev) => [...prev, ...result.items]);
+      setHasMore(result.hasMore);
+      setNextCursor(result.nextPageStartAfter);
+    } catch (err) {
+      setError(getErrorMessage(err, 'Gagal load barbers.'));
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -130,6 +150,19 @@ export default function BarbersPage() {
       {!loading && barbers.length === 0 && (
         <div className="text-center py-12 text-gray-500">
           Tidak ada barber untuk filter ini.
+        </div>
+      )}
+
+      {/* Load More */}
+      {!loading && hasMore && (
+        <div className="text-center mt-6">
+          <button
+            onClick={handleLoadMore}
+            disabled={loadingMore}
+            className="px-6 py-2 bg-gray-200 text-gray-800 rounded-lg font-medium hover:bg-gray-300 disabled:opacity-50"
+          >
+            {loadingMore ? 'Memuat...' : 'Muat Lebih Banyak'}
+          </button>
         </div>
       )}
     </div>

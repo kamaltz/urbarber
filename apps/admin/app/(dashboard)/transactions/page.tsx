@@ -19,6 +19,9 @@ export default function TransactionsPage() {
   const [provider, setProvider] = useState<'all' | 'cash_on_service' | 'midtrans_sandbox'>('all');
   const [status, setStatus] = useState<string>('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | undefined>(undefined);
 
   const loadTransactions = async () => {
     setLoading(true);
@@ -33,11 +36,35 @@ export default function TransactionsPage() {
         undefined
       );
       setTransactions(result.items);
+      setHasMore(result.hasMore);
+      setNextCursor(result.nextPageStartAfter);
     } catch (err) {
       setError(getErrorMessage(err, 'Gagal load transaction list'));
       console.error('Transaction error:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleLoadMore = async () => {
+    if (!nextCursor) return;
+    setLoadingMore(true);
+    try {
+      const result = await AdminApiClient.getTransactions(
+        provider === 'all' ? undefined : provider,
+        status || undefined,
+        undefined,
+        undefined,
+        20,
+        nextCursor
+      );
+      setTransactions((prev) => [...prev, ...result.items]);
+      setHasMore(result.hasMore);
+      setNextCursor(result.nextPageStartAfter);
+    } catch (err) {
+      setError(getErrorMessage(err, 'Gagal load transaction list'));
+    } finally {
+      setLoadingMore(false);
     }
   };
 
@@ -268,6 +295,27 @@ export default function TransactionsPage() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {hasMore && (
+        <div style={{ textAlign: 'center', marginTop: '1.5rem' }}>
+          <button
+            onClick={handleLoadMore}
+            disabled={loadingMore}
+            style={{
+              padding: '0.5rem 1.5rem',
+              borderRadius: '0.375rem',
+              border: 'none',
+              cursor: loadingMore ? 'default' : 'pointer',
+              fontWeight: '600',
+              backgroundColor: '#E5E7EB',
+              color: '#1F2937',
+              opacity: loadingMore ? 0.6 : 1,
+            }}
+          >
+            {loadingMore ? 'Memuat...' : 'Muat Lebih Banyak'}
+          </button>
         </div>
       )}
     </div>

@@ -16,6 +16,9 @@ export default function UsersPage() {
   const [modal, setModal] = useState<ModalState>(null);
   const [actionReason, setActionReason] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | undefined>(undefined);
 
   const loadUsers = async (filterValue?: typeof roleFilter) => {
     try {
@@ -23,11 +26,28 @@ export default function UsersPage() {
       setError(null);
       const data = await AdminApiClient.getUsers(filterValue || roleFilter, 20);
       setUsers(data.items);
+      setHasMore(data.hasMore);
+      setNextCursor(data.nextPageStartAfter);
     } catch (err) {
       setError(getErrorMessage(err, 'Gagal memuat pengguna'));
       console.error('Load error:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleLoadMore = async () => {
+    if (!nextCursor) return;
+    setLoadingMore(true);
+    try {
+      const data = await AdminApiClient.getUsers(roleFilter, 20, nextCursor);
+      setUsers((prev) => [...prev, ...data.items]);
+      setHasMore(data.hasMore);
+      setNextCursor(data.nextPageStartAfter);
+    } catch (err) {
+      setError(getErrorMessage(err, 'Gagal memuat pengguna'));
+    } finally {
+      setLoadingMore(false);
     }
   };
 
@@ -260,6 +280,28 @@ export default function UsersPage() {
           </div>
         )}
       </div>
+
+      {hasMore && (
+        <div style={{ textAlign: 'center', marginTop: '1.5rem' }}>
+          <button
+            onClick={handleLoadMore}
+            disabled={loadingMore}
+            style={{
+              padding: '0.5rem 1.5rem',
+              borderRadius: '0.375rem',
+              border: 'none',
+              cursor: loadingMore ? 'default' : 'pointer',
+              fontWeight: '600',
+              backgroundColor: '#f3f4f6',
+              color: '#1f2937',
+              fontSize: '0.875rem',
+              opacity: loadingMore ? 0.6 : 1,
+            }}
+          >
+            {loadingMore ? 'Memuat...' : 'Muat Lebih Banyak'}
+          </button>
+        </div>
+      )}
 
       {/* Modal */}
       {modal && (

@@ -15,6 +15,9 @@ export default function BookingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'pending' | 'accepted' | 'rejected' | 'in_progress' | 'completed' | 'cancelled'>('all');
   const [paymentMethod, setPaymentMethod] = useState<'all' | 'cash_on_service' | 'midtrans_sandbox'>('all');
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | undefined>(undefined);
 
   const loadBookings = async () => {
     setLoading(true);
@@ -30,11 +33,36 @@ export default function BookingsPage() {
         undefined
       );
       setBookings(result.items);
+      setHasMore(result.hasMore);
+      setNextCursor(result.nextPageStartAfter);
     } catch (err) {
       setError(getErrorMessage(err, 'Gagal load booking list'));
       console.error('Booking error:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleLoadMore = async () => {
+    if (!nextCursor) return;
+    setLoadingMore(true);
+    try {
+      const result = await AdminApiClient.getBookings(
+        filter === 'all' ? undefined : filter,
+        undefined,
+        undefined,
+        paymentMethod === 'all' ? undefined : paymentMethod,
+        undefined,
+        20,
+        nextCursor
+      );
+      setBookings((prev) => [...prev, ...result.items]);
+      setHasMore(result.hasMore);
+      setNextCursor(result.nextPageStartAfter);
+    } catch (err) {
+      setError(getErrorMessage(err, 'Gagal load booking list'));
+    } finally {
+      setLoadingMore(false);
     }
   };
 
@@ -240,6 +268,27 @@ export default function BookingsPage() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {hasMore && (
+        <div style={{ textAlign: 'center', marginTop: '1.5rem' }}>
+          <button
+            onClick={handleLoadMore}
+            disabled={loadingMore}
+            style={{
+              padding: '0.5rem 1.5rem',
+              borderRadius: '0.375rem',
+              border: 'none',
+              cursor: loadingMore ? 'default' : 'pointer',
+              fontWeight: '600',
+              backgroundColor: '#E5E7EB',
+              color: '#1F2937',
+              opacity: loadingMore ? 0.6 : 1,
+            }}
+          >
+            {loadingMore ? 'Memuat...' : 'Muat Lebih Banyak'}
+          </button>
         </div>
       )}
     </div>

@@ -258,7 +258,7 @@ export default function BarberDetailPage() {
             <textarea
               value={suspendReason}
               onChange={(e) => setSuspendReason(e.target.value)}
-              placeholder="Masukkan alasan suspensi (opsional)..."
+              placeholder="Masukkan alasan suspensi (wajib diisi)..."
               className="w-full p-3 border rounded mb-4 h-20"
             />
             <div className="flex gap-4">
