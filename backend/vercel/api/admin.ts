@@ -15,6 +15,7 @@
  * - GET /api/admin/users
  * - GET /api/admin/users/:userId
  * - POST /api/admin/users/:userId/status
+ * - DELETE /api/admin/users/:userId
  *
  * Routes (Phase 2):
  * - GET /api/admin/barbers
@@ -58,6 +59,7 @@ import {
     reactivateBarber,
     suspendBarber,
 } from '../src/admin/barber-account-management.js';
+import { deleteUser } from '../src/admin/user-account-management.js';
 import {
     getPricingSettingsForAdmin,
     updatePricingSettingsForAdmin,
@@ -447,6 +449,49 @@ async function handleUpdateUserStatus(ctx: RouteContext): Promise<void> {
   }
 }
 
+/**
+ * DELETE /api/admin/users/:userId - Delete a user account (soft delete, force semantics).
+ * A barber-role target is delegated entirely to deleteBarber() by
+ * user-account-management.ts's deleteUser -- see its doc comment.
+ */
+async function handleDeleteUser(ctx: RouteContext): Promise<void> {
+  const { req, res } = ctx;
+  if (!handleCors(req, res, ['DELETE', 'OPTIONS'])) return;
+  const admin = await requireAdmin(req, res);
+  if (!admin) return;
+
+  const userId = req.url?.split('/users/')[1]?.split('?')[0];
+  if (!userId) {
+    res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'userId diperlukan.' } });
+    return;
+  }
+
+  try {
+    const result = await deleteUser(userId, admin.uid);
+    res.status(200).json({
+      data: {
+        success: result.success,
+        message: result.message,
+        cancelledBookingsCount: result.cancelledBookingsCount,
+        paidBookingsNeedingReviewCount: result.paidBookingsNeedingReviewCount,
+      },
+    });
+  } catch (err: any) {
+    console.error('[Admin/users/:id delete]', err.message);
+    if (err.message === 'ADMIN_CANNOT_SELF_DELETE') {
+      res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Admin tidak dapat menghapus akun sendiri.' } });
+    } else if (err.message === 'CANNOT_DELETE_ADMIN') {
+      res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Akun admin tidak dapat dihapus melalui menu ini.' } });
+    } else if (err.message === 'USER_NOT_FOUND') {
+      res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Pengguna tidak ditemukan.' } });
+    } else if (err.message?.includes('AUTH_DELETE_FAILED')) {
+      res.status(500).json({ error: { code: 'AUTH_ERROR', message: 'Gagal delete Firebase Auth account.' } });
+    } else {
+      res.status(500).json({ error: { code: 'INTERNAL_SERVER_ERROR', message: 'Gagal menghapus pengguna.' } });
+    }
+  }
+}
+
 // ============================================================================
 // Phase 2: Barber Management
 // ============================================================================
@@ -606,11 +651,16 @@ async function handleDeleteBarber(ctx: RouteContext): Promise<void> {
   }
 
   try {
+    // Force-delete: active bookings are safely cancelled as part of this call
+    // rather than blocking deletion (see deleteBarber's doc comment) -- a
+    // valid target never 409s here solely because it has active bookings.
     const result = await deleteBarber(barberId, admin.uid);
     res.status(200).json({
       data: {
         success: result.success,
         message: result.message,
+        cancelledBookingsCount: result.cancelledBookingsCount,
+        paidBookingsNeedingReviewCount: result.paidBookingsNeedingReviewCount,
       },
     });
   } catch (err: any) {
@@ -619,13 +669,6 @@ async function handleDeleteBarber(ctx: RouteContext): Promise<void> {
       res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Barber tidak ditemukan.' } });
     } else if (err.message === 'USER_NOT_BARBER') {
       res.status(403).json({ error: { code: 'FORBIDDEN', message: 'User bukan barber.' } });
-    } else if (err.message === 'BARBER_HAS_ACTIVE_BOOKINGS') {
-      res.status(409).json({
-        error: {
-          code: 'CONFLICT',
-          message: 'Barber masih memiliki booking aktif dan tidak dapat dihapus.',
-        },
-      });
     } else if (err.message?.includes('AUTH_DELETE_FAILED')) {
       res.status(500).json({ error: { code: 'AUTH_ERROR', message: 'Gagal delete Firebase Auth account.' } });
     } else {
@@ -1206,6 +1249,10 @@ function matchRoute(pathname: string, method: string): RouteHandler | null {
     // /api/admin/barbers/:barberId
     if (pathname.match(/^\/api\/admin\/barbers\/[^/]+$/) && pathname !== '/api/admin/barbers') {
       return handleDeleteBarber;
+    }
+    // /api/admin/users/:userId
+    if (pathname.match(/^\/api\/admin\/users\/[^/]+$/) && pathname !== '/api/admin/users') {
+      return handleDeleteUser;
     }
   }
 
