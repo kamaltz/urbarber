@@ -15,6 +15,7 @@ export function AdminSidebar({ admin }: { admin: AdminIdentity | null }) {
     { label: 'Booking', href: '/bookings', icon: '📅' },
     { label: 'Kategori', href: '/categories', icon: '📂' },
     { label: 'Transaksi', href: '/transactions', icon: '💰' },
+    { label: 'Voucher', href: '/vouchers', icon: '🎟️' },
     { label: 'Pengaturan', href: '/settings', icon: '⚙️' },
   ];
 

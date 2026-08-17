@@ -42,6 +42,11 @@ export interface DashboardMetrics {
   cancelledBookings: number;
   todayBookings?: number;
   currentMonthServiceValue: number;
+  // Gross Transaction Value: what customers actually paid, not "revenue".
+  grossTransactionValue: number;
+  // Platform's actual monetization metric -- use this label for "revenue", never grossTransactionValue.
+  platformApplicationFees: number;
+  activeVouchersCount: number;
   recentBarberRegistrations: AdminBarberRegistration[];
   recentBookings: (AdminBookingRecord & { customerName?: string; barberName?: string })[];
   suspendedBarbersList?: AdminSuspendedBarber[];
@@ -107,8 +112,21 @@ export interface AdminBookingRecord {
   createdAt: string;
 }
 
+// Canonical pricing breakdown, as persisted on bookings/payments by
+// backend/vercel/src/payments/pricing-calculator.ts. Optional throughout --
+// legacy records predating the pricing/voucher engine have none of these.
+export interface AdminPricingBreakdown {
+  baseAmount?: number;
+  voucherCode?: string | null;
+  voucherDiscount?: number;
+  homeServiceFee?: number;
+  applicationFee?: number;
+  tipAmount?: number;
+  grossAmount?: number;
+}
+
 // Bookings - Phase 3: Summary for admin monitoring list
-export interface AdminBookingSummary {
+export interface AdminBookingSummary extends AdminPricingBreakdown {
   bookingId: string;
   customerName: string;
   barberName: string;
@@ -140,7 +158,7 @@ export interface AdminBookingDetail extends AdminBookingSummary {
 }
 
 // Transactions - Phase 3: Payment transaction record
-export interface AdminTransaction {
+export interface AdminTransaction extends AdminPricingBreakdown {
   transactionId: string;
   bookingId?: string;
   provider: 'cash_on_service' | 'midtrans_sandbox';
@@ -193,6 +211,75 @@ export interface AdminCategory {
   order: number;
   createdAt?: string;
   updatedAt?: string;
+}
+
+// Phase 4: Pricing Settings
+export interface AdminPricingSettings {
+  applicationFee: {
+    enabled: boolean;
+    mode: 'fixed' | 'percentage';
+    fixedAmount?: number;
+    percentage?: number;
+    minimumAmount?: number;
+    maximumAmount?: number;
+  };
+  homeServiceFee: {
+    enabled: boolean;
+    mode: 'fixed' | 'distance';
+    fixedAmount?: number;
+    baseAmount?: number;
+    includedDistanceKm?: number;
+    perKmAmount?: number;
+    maxServiceDistanceKm?: number;
+  };
+}
+
+// Phase 4: Voucher Management
+export interface AdminVoucher {
+  code: string;
+  name: string;
+  description?: string;
+  discountType: 'fixed' | 'percentage';
+  discountValue: number;
+  maxDiscountAmount?: number;
+  minimumBaseAmount?: number;
+  validFrom: string;
+  validUntil: string;
+  usageLimit?: number;
+  usageCount: number;
+  perUserLimit?: number;
+  status: 'active' | 'inactive';
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+}
+
+export interface VoucherCreateInput {
+  code: string;
+  name: string;
+  description?: string;
+  discountType: 'fixed' | 'percentage';
+  discountValue: number;
+  maxDiscountAmount?: number;
+  minimumBaseAmount?: number;
+  validFrom: string;
+  validUntil: string;
+  usageLimit?: number;
+  perUserLimit?: number;
+  status?: 'active' | 'inactive';
+}
+
+export interface VoucherUpdateInput {
+  name?: string;
+  description?: string;
+  discountType?: 'fixed' | 'percentage';
+  discountValue?: number;
+  maxDiscountAmount?: number | null;
+  minimumBaseAmount?: number | null;
+  validFrom?: string;
+  validUntil?: string;
+  usageLimit?: number | null;
+  perUserLimit?: number | null;
 }
 
 export class AdminApiClient {
@@ -588,6 +675,98 @@ export class AdminApiClient {
     const response = await this.request<ApiResponse<PaginationResult<AdminTransaction>>>(
       `/api/admin/transactions?${params}`,
       { method: 'GET' }
+    );
+    return response.data!;
+  }
+
+  // ============================================================================
+  // Phase 4: Pricing Settings
+  // ============================================================================
+
+  /**
+   * GET /api/admin/pricing-settings
+   */
+  static async getPricingSettings(): Promise<AdminPricingSettings> {
+    const response = await this.request<ApiResponse<AdminPricingSettings>>(
+      `/api/admin/pricing-settings`,
+      { method: 'GET' }
+    );
+    return response.data!;
+  }
+
+  /**
+   * PUT /api/admin/pricing-settings
+   */
+  static async updatePricingSettings(
+    settings: AdminPricingSettings
+  ): Promise<{ settings: AdminPricingSettings; updatedAt: string; updatedBy: string }> {
+    const response = await this.request<ApiResponse<{ settings: AdminPricingSettings; updatedAt: string; updatedBy: string }>>(
+      `/api/admin/pricing-settings`,
+      { method: 'PUT', body: JSON.stringify(settings) }
+    );
+    return response.data!;
+  }
+
+  // ============================================================================
+  // Phase 4: Voucher Management
+  // ============================================================================
+
+  /**
+   * GET /api/admin/vouchers
+   */
+  static async getVouchers(status?: 'all' | 'active' | 'inactive', search?: string): Promise<AdminVoucher[]> {
+    const params = new URLSearchParams();
+    if (status) params.append('status', status);
+    if (search) params.append('search', search);
+
+    const response = await this.request<ApiResponse<{ items: AdminVoucher[] }>>(
+      `/api/admin/vouchers?${params}`,
+      { method: 'GET' }
+    );
+    return response.data!.items;
+  }
+
+  /**
+   * GET /api/admin/vouchers/:code
+   */
+  static async getVoucherDetail(code: string): Promise<AdminVoucher> {
+    const response = await this.request<ApiResponse<AdminVoucher>>(
+      `/api/admin/vouchers/${encodeURIComponent(code)}`,
+      { method: 'GET' }
+    );
+    return response.data!;
+  }
+
+  /**
+   * POST /api/admin/vouchers
+   */
+  static async createVoucher(input: VoucherCreateInput): Promise<AdminVoucher> {
+    const response = await this.request<ApiResponse<AdminVoucher>>(
+      `/api/admin/vouchers`,
+      { method: 'POST', body: JSON.stringify(input) }
+    );
+    return response.data!;
+  }
+
+  /**
+   * PATCH /api/admin/vouchers/:code
+   */
+  static async updateVoucher(code: string, input: VoucherUpdateInput): Promise<AdminVoucher> {
+    const response = await this.request<ApiResponse<AdminVoucher>>(
+      `/api/admin/vouchers/${encodeURIComponent(code)}`,
+      { method: 'PATCH', body: JSON.stringify(input) }
+    );
+    return response.data!;
+  }
+
+  /**
+   * POST /api/admin/vouchers/:code/activate | /deactivate
+   */
+  static async setVoucherStatus(code: string, status: 'active' | 'inactive'): Promise<AdminVoucher> {
+    const action = status === 'active' ? 'activate' : 'deactivate';
+    const response = await this.request<ApiResponse<AdminVoucher>>(
+      `/api/admin/vouchers/${encodeURIComponent(code)}/${action}`,
+      { method: 'POST' }
     );
     return response.data!;
   }

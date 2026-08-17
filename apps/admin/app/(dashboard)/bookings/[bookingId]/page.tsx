@@ -219,9 +219,6 @@ export default function BookingDetailPage() {
             <div style={{ marginBottom: '0.5rem' }}>
               <strong>Status:</strong> {booking.paymentStatus}
             </div>
-            <div style={{ marginBottom: '0.5rem' }}>
-              <strong>Total:</strong> Rp {booking.totalPrice.toLocaleString('id-ID')}
-            </div>
             {booking.paidAt && (
               <div>
                 <strong>Dibayar:</strong> {booking.paidAt}
@@ -229,6 +226,52 @@ export default function BookingDetailPage() {
             )}
           </div>
         </div>
+      </div>
+
+      {/* Pricing Breakdown */}
+      <div
+        style={{
+          backgroundColor: 'white',
+          borderRadius: '0.5rem',
+          padding: '1.5rem',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+          marginBottom: '1.5rem',
+        }}
+      >
+        <h2 style={{ fontSize: '1.125rem', fontWeight: '600', marginBottom: '1rem' }}>Rincian Pembayaran</h2>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', fontSize: '0.875rem' }}>
+          <div>
+            <div style={{ color: '#6B7280', marginBottom: '0.25rem' }}>Nilai Layanan (Base)</div>
+            <div style={{ fontWeight: '600' }}>{booking.baseAmount !== undefined ? `Rp ${booking.baseAmount.toLocaleString('id-ID')}` : '-'}</div>
+          </div>
+          <div>
+            <div style={{ color: '#6B7280', marginBottom: '0.25rem' }}>Voucher</div>
+            <div style={{ fontWeight: '600' }}>
+              {booking.voucherCode ? `${booking.voucherCode} (-Rp ${(booking.voucherDiscount || 0).toLocaleString('id-ID')})` : '-'}
+            </div>
+          </div>
+          <div>
+            <div style={{ color: '#6B7280', marginBottom: '0.25rem' }}>Biaya Layanan ke Rumah</div>
+            <div style={{ fontWeight: '600' }}>{booking.homeServiceFee !== undefined ? `Rp ${booking.homeServiceFee.toLocaleString('id-ID')}` : '-'}</div>
+          </div>
+          <div>
+            <div style={{ color: '#6B7280', marginBottom: '0.25rem' }}>Biaya Aplikasi (Platform)</div>
+            <div style={{ fontWeight: '600' }}>{booking.applicationFee !== undefined ? `Rp ${booking.applicationFee.toLocaleString('id-ID')}` : '-'}</div>
+          </div>
+          <div>
+            <div style={{ color: '#6B7280', marginBottom: '0.25rem' }}>Tip</div>
+            <div style={{ fontWeight: '600' }}>{booking.tipAmount !== undefined ? `Rp ${booking.tipAmount.toLocaleString('id-ID')}` : '-'}</div>
+          </div>
+          <div>
+            <div style={{ color: '#6B7280', marginBottom: '0.25rem' }}>Total Pembayaran (Gross)</div>
+            <div style={{ fontWeight: '700', fontSize: '1rem' }}>Rp {booking.totalPrice.toLocaleString('id-ID')}</div>
+          </div>
+        </div>
+        {booking.baseAmount === undefined && (
+          <p style={{ fontSize: '0.75rem', color: '#9CA3AF', marginTop: '0.75rem' }}>
+            Rincian tidak tersedia untuk booking lama (sebelum sistem biaya/voucher aktif).
+          </p>
+        )}
       </div>
 
       {/* Notes */}

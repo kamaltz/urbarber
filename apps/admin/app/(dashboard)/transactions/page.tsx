@@ -3,9 +3,14 @@
 import { AdminApiClient, type AdminTransaction } from '@/lib/api-client';
 import { getErrorMessage } from '@/lib/errors';
 import { shortId } from '@/lib/format';
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 
 const PROVIDER_OPTIONS = ['all', 'cash_on_service', 'midtrans_sandbox'] as const;
+
+function formatRp(amount?: number): string {
+  if (amount === undefined) return '-';
+  return `Rp ${amount.toLocaleString('id-ID')}`;
+}
 
 export default function TransactionsPage() {
   const [transactions, setTransactions] = useState<AdminTransaction[]>([]);
@@ -13,6 +18,7 @@ export default function TransactionsPage() {
   const [error, setError] = useState<string | null>(null);
   const [provider, setProvider] = useState<'all' | 'cash_on_service' | 'midtrans_sandbox'>('all');
   const [status, setStatus] = useState<string>('');
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const loadTransactions = async () => {
     setLoading(true);
@@ -154,16 +160,18 @@ export default function TransactionsPage() {
                 <th style={{ padding: '1rem', textAlign: 'left', fontWeight: '600' }}>Booking ID</th>
                 <th style={{ padding: '1rem', textAlign: 'left', fontWeight: '600' }}>Provider</th>
                 <th style={{ padding: '1rem', textAlign: 'left', fontWeight: '600' }}>Environment</th>
-                <th style={{ padding: '1rem', textAlign: 'left', fontWeight: '600' }}>Amount</th>
+                <th style={{ padding: '1rem', textAlign: 'left', fontWeight: '600' }}>Gross Amount</th>
                 <th style={{ padding: '1rem', textAlign: 'left', fontWeight: '600' }}>Status</th>
                 <th style={{ padding: '1rem', textAlign: 'left', fontWeight: '600' }}>Payment Type</th>
                 <th style={{ padding: '1rem', textAlign: 'left', fontWeight: '600' }}>Created</th>
                 <th style={{ padding: '1rem', textAlign: 'left', fontWeight: '600' }}>Paid At</th>
+                <th style={{ padding: '1rem', textAlign: 'left', fontWeight: '600' }}>Rincian</th>
               </tr>
             </thead>
             <tbody>
               {transactions.map((tx) => (
-                <tr key={tx.transactionId} style={{ borderBottom: '1px solid #E5E7EB' }}>
+                <Fragment key={tx.transactionId}>
+                <tr style={{ borderBottom: expandedId === tx.transactionId ? 'none' : '1px solid #E5E7EB' }}>
                   <td style={{ padding: '1rem', fontSize: '0.875rem', fontFamily: 'monospace' }}>
                     {shortId(tx.transactionId)}
                   </td>
@@ -229,7 +237,34 @@ export default function TransactionsPage() {
                   <td style={{ padding: '1rem', fontSize: '0.875rem' }}>
                     {tx.paidAt ? new Date(tx.paidAt).toLocaleDateString('id-ID') : '-'}
                   </td>
+                  <td style={{ padding: '1rem' }}>
+                    <button
+                      onClick={() => setExpandedId(expandedId === tx.transactionId ? null : tx.transactionId)}
+                      style={{ color: '#3B82F6', fontWeight: '600', fontSize: '0.875rem', background: 'none', border: 'none', cursor: 'pointer' }}
+                    >
+                      {expandedId === tx.transactionId ? 'Tutup' : 'Detail'}
+                    </button>
+                  </td>
                 </tr>
+                {expandedId === tx.transactionId && (
+                  <tr style={{ borderBottom: '1px solid #E5E7EB', backgroundColor: '#F9FAFB' }}>
+                    <td colSpan={9} style={{ padding: '1rem 1.5rem' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem', fontSize: '0.875rem' }}>
+                        <div><span style={{ color: '#6B7280' }}>Base Amount: </span><strong>{formatRp(tx.baseAmount)}</strong></div>
+                        <div><span style={{ color: '#6B7280' }}>Voucher: </span><strong>{tx.voucherCode ? `${tx.voucherCode} (-${formatRp(tx.voucherDiscount)})` : '-'}</strong></div>
+                        <div><span style={{ color: '#6B7280' }}>Home Service Fee: </span><strong>{formatRp(tx.homeServiceFee)}</strong></div>
+                        <div><span style={{ color: '#6B7280' }}>Application Fee (Platform): </span><strong>{formatRp(tx.applicationFee)}</strong></div>
+                        <div><span style={{ color: '#6B7280' }}>Tip: </span><strong>{formatRp(tx.tipAmount)}</strong></div>
+                        <div><span style={{ color: '#6B7280' }}>Gross Amount: </span><strong>{formatRp(tx.grossAmount)}</strong></div>
+                      </div>
+                      <p style={{ fontSize: '0.75rem', color: '#9CA3AF', marginTop: '0.75rem' }}>
+                        Gross Amount adalah total yang dibayar pelanggan, bukan pendapatan platform. Pendapatan platform hanya Application Fee.
+                        {(tx.baseAmount === undefined) ? ' Rincian tidak tersedia untuk transaksi lama (sebelum sistem biaya/voucher aktif).' : ''}
+                      </p>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ))}
             </tbody>
           </table>

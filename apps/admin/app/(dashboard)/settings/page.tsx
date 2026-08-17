@@ -3,6 +3,7 @@
 import { AdminApiClient, type AdminIdentity } from '@/lib/api-client';
 import { getErrorMessage } from '@/lib/errors';
 import { firebaseAuth } from '@/lib/firebase';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
@@ -130,6 +131,37 @@ export default function SettingsPage() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Pricing Settings Link */}
+      <div
+        style={{
+          backgroundColor: 'white',
+          borderRadius: '0.5rem',
+          padding: '1.5rem',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+          marginBottom: '1.5rem',
+        }}
+      >
+        <h2 style={{ fontSize: '1.125rem', fontWeight: '600', marginBottom: '1rem' }}>Pengaturan Biaya</h2>
+        <p style={{ fontSize: '0.875rem', color: '#6B7280', marginBottom: '1rem' }}>
+          Konfigurasi biaya aplikasi dan biaya layanan ke rumah untuk booking baru.
+        </p>
+        <Link
+          href="/settings/pricing"
+          style={{
+            display: 'inline-block',
+            padding: '0.75rem 1.5rem',
+            backgroundColor: '#2563EB',
+            color: 'white',
+            borderRadius: '0.375rem',
+            fontWeight: '600',
+            fontSize: '0.875rem',
+            textDecoration: 'none',
+          }}
+        >
+          Buka Pengaturan Biaya →
+        </Link>
       </div>
 
       {/* Actions */}

@@ -293,13 +293,34 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        {/* 5. Pendapatan Bulan Ini */}
+        {/* 5. Nilai Layanan Bulan Ini (barber's base-price share, not platform revenue) */}
         <div style={{ backgroundColor: 'white', borderRadius: '0.75rem', padding: '1.25rem', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', borderLeft: '4px solid #059669' }}>
           <p style={{ fontSize: '0.8125rem', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.375rem' }}>
-            Pendapatan Bulan Ini
+            Nilai Layanan Bulan Ini
           </p>
           <p style={{ fontSize: '1.5rem', fontWeight: '800', color: '#059669', margin: 0, lineHeight: 1.2, wordBreak: 'break-word' }}>
             {formatCurrency(metrics?.currentMonthServiceValue || 0)}
+          </p>
+        </div>
+
+        {/* 6. Nilai Transaksi Kotor -- what customers paid, explicitly NOT labeled "revenue" */}
+        <div style={{ backgroundColor: 'white', borderRadius: '0.75rem', padding: '1.25rem', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', borderLeft: '4px solid #0891b2' }}>
+          <p style={{ fontSize: '0.8125rem', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.375rem' }}>
+            Nilai Transaksi Kotor
+          </p>
+          <p style={{ fontSize: '1.5rem', fontWeight: '800', color: '#0891b2', margin: 0, lineHeight: 1.2, wordBreak: 'break-word' }}>
+            {formatCurrency(metrics?.grossTransactionValue || 0)}
+          </p>
+          <p style={{ fontSize: '0.6875rem', color: '#94a3b8', marginTop: '0.25rem' }}>Total dibayar pelanggan, bukan pendapatan platform</p>
+        </div>
+
+        {/* 7. Pendapatan Platform -- the platform's actual monetization (applicationFee only) */}
+        <div style={{ backgroundColor: 'white', borderRadius: '0.75rem', padding: '1.25rem', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', borderLeft: '4px solid #7c3aed' }}>
+          <p style={{ fontSize: '0.8125rem', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.375rem' }}>
+            Pendapatan Platform (Biaya Aplikasi)
+          </p>
+          <p style={{ fontSize: '1.5rem', fontWeight: '800', color: '#7c3aed', margin: 0, lineHeight: 1.2, wordBreak: 'break-word' }}>
+            {formatCurrency(metrics?.platformApplicationFees || 0)}
           </p>
         </div>
       </div>
@@ -317,6 +338,10 @@ export default function DashboardPage() {
         <div style={{ backgroundColor: '#f8fafc', borderRadius: '0.5rem', padding: '0.875rem 1.25rem', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span style={{ fontSize: '0.875rem', color: '#475569', fontWeight: '500' }}>Total Booking Selesai</span>
           <span style={{ fontSize: '1.25rem', fontWeight: '700', color: '#0284c7' }}>{metrics?.completedBookings || 0}</span>
+        </div>
+        <div style={{ backgroundColor: '#f8fafc', borderRadius: '0.5rem', padding: '0.875rem 1.25rem', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ fontSize: '0.875rem', color: '#475569', fontWeight: '500' }}>Voucher Aktif</span>
+          <span style={{ fontSize: '1.25rem', fontWeight: '700', color: '#7c3aed' }}>{metrics?.activeVouchersCount ?? 0}</span>
         </div>
       </div>
 
@@ -416,6 +441,52 @@ export default function DashboardPage() {
             <div>
               <div style={{ fontWeight: '600', color: '#1f2937', fontSize: '0.9375rem' }}>Monitoring Transaksi</div>
               <div style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: '0.125rem' }}>Pantau pembayaran Midtrans</div>
+            </div>
+          </Link>
+
+          <Link
+            href="/vouchers"
+            style={{
+              backgroundColor: 'white',
+              borderRadius: '0.75rem',
+              padding: '1.25rem',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+              border: '1px solid #e5e7eb',
+              textDecoration: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '1rem',
+            }}
+          >
+            <div style={{ width: '42px', height: '42px', borderRadius: '0.5rem', backgroundColor: '#f5f3ff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.25rem' }}>
+              🎟️
+            </div>
+            <div>
+              <div style={{ fontWeight: '600', color: '#1f2937', fontSize: '0.9375rem' }}>Kelola Voucher</div>
+              <div style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: '0.125rem' }}>Diskon & promo pelanggan</div>
+            </div>
+          </Link>
+
+          <Link
+            href="/settings/pricing"
+            style={{
+              backgroundColor: 'white',
+              borderRadius: '0.75rem',
+              padding: '1.25rem',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+              border: '1px solid #e5e7eb',
+              textDecoration: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '1rem',
+            }}
+          >
+            <div style={{ width: '42px', height: '42px', borderRadius: '0.5rem', backgroundColor: '#ecfeff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.25rem' }}>
+              ⚙️
+            </div>
+            <div>
+              <div style={{ fontWeight: '600', color: '#1f2937', fontSize: '0.9375rem' }}>Pengaturan Biaya</div>
+              <div style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: '0.125rem' }}>Biaya aplikasi & layanan ke rumah</div>
             </div>
           </Link>
         </div>
