@@ -1714,6 +1714,98 @@ async function runRulesTests() {
       );
     });
 
+    // 92. barberGallery: get/list are unconditionally public (no active/inactive
+    // concept, unlike barberServices) -- an unauthenticated customer can view a
+    // barber's gallery.
+    await test('92. barberGallery is publicly readable (get and list) even unauthenticated', async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('barberGallery').doc('gal_pub_1').set({
+          barberId: 'barb_gallery_owner',
+          storagePath: 'barb_gallery_owner/barber/gallery/photo1.jpg',
+          publicUrl: 'https://example.com/photo1.jpg',
+          sortOrder: 0,
+        });
+      });
+
+      const unauthDb = testEnv.unauthenticatedContext().firestore();
+      await assertSucceeds(unauthDb.collection('barberGallery').doc('gal_pub_1').get());
+      await assertSucceeds(
+        unauthDb.collection('barberGallery').where('barberId', '==', 'barb_gallery_owner').get(),
+      );
+    });
+
+    // 93. barberGallery: a barber can create entries only for themselves.
+    await test('93. Barber can create own barberGallery entries; cannot create for another barberId', async () => {
+      const ownerDb = testEnv.authenticatedContext('barb_gallery_creator', { app_role: 'barber' }).firestore();
+      await assertSucceeds(
+        ownerDb.collection('barberGallery').add({
+          barberId: 'barb_gallery_creator',
+          storagePath: 'barb_gallery_creator/barber/gallery/photo1.jpg',
+          publicUrl: 'https://example.com/photo1.jpg',
+          sortOrder: 0,
+        }),
+      );
+      await assertFails(
+        ownerDb.collection('barberGallery').add({
+          barberId: 'barb_gallery_someone_else',
+          storagePath: 'barb_gallery_someone_else/barber/gallery/photo1.jpg',
+          publicUrl: 'https://example.com/photo1.jpg',
+          sortOrder: 0,
+        }),
+      );
+
+      // A non-barber role (customer) can never create a gallery entry, even for themselves.
+      const custDb = testEnv.authenticatedContext('cust_gallery_attempt', { app_role: 'customer' }).firestore();
+      await assertFails(
+        custDb.collection('barberGallery').add({
+          barberId: 'cust_gallery_attempt',
+          storagePath: 'cust_gallery_attempt/barber/gallery/photo1.jpg',
+          publicUrl: 'https://example.com/photo1.jpg',
+          sortOrder: 0,
+        }),
+      );
+    });
+
+    // 94. barberGallery: only the owning barber (or admin) may delete an entry;
+    // another barber cannot delete someone else's gallery photo.
+    await test('94. Only the owning barber or admin can delete a barberGallery entry', async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('barberGallery').doc('gal_delete_1').set({
+          barberId: 'barb_gallery_delowner',
+          storagePath: 'barb_gallery_delowner/barber/gallery/photo1.jpg',
+          publicUrl: 'https://example.com/photo1.jpg',
+          sortOrder: 0,
+        });
+      });
+
+      const otherBarberDb = testEnv.authenticatedContext('barb_gallery_other', { app_role: 'barber' }).firestore();
+      await assertFails(otherBarberDb.collection('barberGallery').doc('gal_delete_1').delete());
+
+      const ownerDb = testEnv.authenticatedContext('barb_gallery_delowner', { app_role: 'barber' }).firestore();
+      await assertSucceeds(ownerDb.collection('barberGallery').doc('gal_delete_1').delete());
+    });
+
+    // 95. barberGallery: a barber cannot reassign an existing entry to a
+    // different barberId via update.
+    await test('95. Barber cannot reassign a barberGallery entry to a different barberId', async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('barberGallery').doc('gal_update_1').set({
+          barberId: 'barb_gallery_updowner',
+          storagePath: 'barb_gallery_updowner/barber/gallery/photo1.jpg',
+          publicUrl: 'https://example.com/photo1.jpg',
+          sortOrder: 0,
+        });
+      });
+
+      const ownerDb = testEnv.authenticatedContext('barb_gallery_updowner', { app_role: 'barber' }).firestore();
+      await assertSucceeds(
+        ownerDb.collection('barberGallery').doc('gal_update_1').update({ caption: 'Updated caption' }),
+      );
+      await assertFails(
+        ownerDb.collection('barberGallery').doc('gal_update_1').update({ barberId: 'barb_gallery_hijacker' }),
+      );
+    });
+
   } finally {
     await testEnv.cleanup();
     console.log(`\nTest Execution Complete: ${passed} Passed, ${failed} Failed.\n`);

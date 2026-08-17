@@ -5,7 +5,8 @@ import { Loading } from '@/components/ui/Loading';
 import { SymbolIcon } from '@/components/ui/SymbolIcon';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { barberRepository } from '@/features/barbers/repository/barber.repository';
-import type { BarberProfile } from '@/features/barbers/types/barber';
+import { galleryRepository } from '@/features/barbers/repository/gallery.repository';
+import { MAX_BARBER_GALLERY_IMAGES, type BarberGalleryImage, type BarberProfile } from '@/features/barbers/types/barber';
 import { uploadService } from '@/features/storage/services/upload.service';
 import { MAP_CONFIG } from '@/config/map.config';
 import { Camera, Map, Marker } from '@maplibre/maplibre-react-native';
@@ -32,6 +33,19 @@ export default function BarberProfileScreen() {
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [savingLocation, setSavingLocation] = useState<boolean>(false);
+
+  const [gallery, setGallery] = useState<BarberGalleryImage[]>([]);
+  const [galleryLoading, setGalleryLoading] = useState<boolean>(true);
+  const [galleryUploading, setGalleryUploading] = useState<boolean>(false);
+  const [deletingImageId, setDeletingImageId] = useState<string | null>(null);
+
+  const fetchGallery = useCallback(async () => {
+    if (!barberId) return;
+    setGalleryLoading(true);
+    const images = await galleryRepository.getGallery(barberId);
+    setGallery(images);
+    setGalleryLoading(false);
+  }, [barberId]);
 
   const fetchProfile = useCallback(async () => {
     if (!barberId) return;
@@ -89,12 +103,72 @@ export default function BarberProfileScreen() {
   useFocusEffect(
     useCallback(() => {
       fetchProfile();
-    }, [fetchProfile])
+      fetchGallery();
+    }, [fetchProfile, fetchGallery])
   );
 
   const handleRefresh = () => {
     setRefreshing(true);
     fetchProfile();
+    fetchGallery();
+  };
+
+  const handlePickGalleryImage = async () => {
+    if (gallery.length >= MAX_BARBER_GALLERY_IMAGES) {
+      Alert.alert('Galeri Penuh', `Maksimal ${MAX_BARBER_GALLERY_IMAGES} foto. Hapus foto lain terlebih dahulu.`);
+      return;
+    }
+
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Izin Ditolak', 'Izin galeri dibutuhkan untuk mengunggah foto.');
+        return;
+      }
+
+      const pickerResult = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 0.8,
+      });
+
+      if (pickerResult.canceled || !pickerResult.assets?.[0]?.uri) return;
+
+      setGalleryUploading(true);
+      const result = await galleryRepository.addImage(barberId, pickerResult.assets[0].uri, {
+        contentType: pickerResult.assets[0].mimeType || 'image/jpeg',
+      });
+
+      if (result.success && result.image) {
+        setGallery((prev) => [...prev, result.image!]);
+      } else {
+        Alert.alert('Gagal Upload', result.error?.message || 'Gagal mengunggah foto galeri.');
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err?.message || 'Terjadi kesalahan sistem.');
+    } finally {
+      setGalleryUploading(false);
+    }
+  };
+
+  const handleDeleteGalleryImage = (image: BarberGalleryImage) => {
+    Alert.alert('Hapus Foto', 'Hapus foto ini dari galeri Anda?', [
+      { text: 'Batal', style: 'cancel' },
+      {
+        text: 'Hapus',
+        style: 'destructive',
+        onPress: async () => {
+          setDeletingImageId(image.imageId);
+          const result = await galleryRepository.deleteImage(barberId, image.imageId);
+          if (result.success) {
+            setGallery((prev) => prev.filter((img) => img.imageId !== image.imageId));
+          } else {
+            Alert.alert('Gagal', result.error?.message || 'Gagal menghapus foto.');
+          }
+          setDeletingImageId(null);
+        },
+      },
+    ]);
   };
 
   const handlePickAvatar = async () => {
@@ -374,6 +448,53 @@ export default function BarberProfileScreen() {
             onPress={handleUpdateLocation}
             variant="secondary"
             disabled={savingLocation}
+            className="w-full"
+          />
+        </AppCard>
+
+        <AppCard className="p-4 mb-4 gap-3">
+          <View className="flex-row items-center justify-between">
+            <Text className="font-bold text-slate-900 text-sm">Galeri Foto</Text>
+            <Text className="text-xs text-slate-500">{gallery.length}/{MAX_BARBER_GALLERY_IMAGES}</Text>
+          </View>
+          <Text className="text-xs text-slate-500 -mt-2">
+            Tampilkan hasil kerja atau suasana outlet Anda kepada calon Pelanggan.
+          </Text>
+
+          {galleryLoading ? (
+            <Loading />
+          ) : gallery.length === 0 ? (
+            <View className="rounded-xl bg-slate-50 border border-slate-200 p-4 items-center">
+              <Text className="text-xs text-slate-500">Belum ada foto galeri.</Text>
+            </View>
+          ) : (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View className="flex-row gap-3">
+                {gallery.map((image) => (
+                  <View key={image.imageId} className="relative">
+                    <Image
+                      source={{ uri: image.publicUrl }}
+                      style={{ width: 96, height: 96, borderRadius: 12 }}
+                      resizeMode="cover"
+                    />
+                    <TouchableOpacity
+                      onPress={() => handleDeleteGalleryImage(image)}
+                      disabled={deletingImageId === image.imageId}
+                      className="absolute -top-2 -right-2 bg-red-600 rounded-full w-6 h-6 items-center justify-center border-2 border-white"
+                    >
+                      <SymbolIcon name="xmark" size={12} color="#ffffff" />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            </ScrollView>
+          )}
+
+          <AppButton
+            label={galleryUploading ? 'Mengunggah...' : '+ Tambah Foto'}
+            onPress={handlePickGalleryImage}
+            variant="secondary"
+            disabled={galleryUploading || gallery.length >= MAX_BARBER_GALLERY_IMAGES}
             className="w-full"
           />
         </AppCard>

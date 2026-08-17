@@ -4,7 +4,8 @@
  */
 
 import { barberRepository } from '@/features/barbers/repository/barber.repository';
-import type { BarberService } from '@/features/barbers/types/barber';
+import { galleryRepository } from '@/features/barbers/repository/gallery.repository';
+import type { BarberGalleryImage, BarberService } from '@/features/barbers/types/barber';
 import { useCallback, useEffect, useState } from 'react';
 import { useFavorites } from '../context/favorites-context';
 import { customerRepository } from '../repository/customer.repository';
@@ -14,6 +15,7 @@ export function useBarberDetail(barberId: string) {
   const favorites = useFavorites();
   const [barber, setBarber] = useState<PublicBarberSummary | null>(null);
   const [services, setServices] = useState<BarberService[]>([]);
+  const [gallery, setGallery] = useState<BarberGalleryImage[]>([]);
   const [loading, setLoading] = useState<boolean>(Boolean(barberId));
   const [error, setError] = useState<string | null>(null);
 
@@ -28,15 +30,20 @@ export function useBarberDetail(barberId: string) {
       if (!targetBarber) {
         setBarber(null);
         setServices([]);
+        setGallery([]);
         setError('Barber tidak ditemukan atau sedang tidak aktif.');
         return;
       }
 
       setBarber(targetBarber);
 
-      const rawServices = await barberRepository.getBarberServices(barberId, true);
+      const [rawServices, galleryImages] = await Promise.all([
+        barberRepository.getBarberServices(barberId, true),
+        galleryRepository.getGallery(barberId),
+      ]);
       const activeServices = (rawServices || []).filter((s) => s.isActive !== false);
       setServices(activeServices);
+      setGallery(galleryImages);
       setError(null);
     } catch (err: any) {
       setError(err?.message || 'Gagal memuat detail barber.');
@@ -73,6 +80,7 @@ export function useBarberDetail(barberId: string) {
   return {
     barber,
     services,
+    gallery,
     isFavorite: favorites.isFavorite(barberId),
     loading,
     error,

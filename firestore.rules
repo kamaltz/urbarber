@@ -345,6 +345,40 @@ service cloud.firestore {
     }
 
     // =========================================================================
+    // 4A. COLLECTION: barberGallery
+    // =========================================================================
+    match /barberGallery/{imageId} {
+      // Public gallery photos -- no active/inactive concept like
+      // barberServices, so get/list are both unconditionally public.
+      allow get: if true;
+      allow list: if true;
+
+      // Barber can only create gallery entries for themselves. Max-image-count
+      // enforcement lives in gallery.repository.ts (client-side check before
+      // upload) rather than here -- Firestore rules cannot cheaply count
+      // existing docs for a given barberId without a separate counter
+      // document, and this is a thesis/demo-scoped soft limit, not a
+      // security boundary.
+      allow create: if (
+        isBarber()
+        && request.resource.data.barberId == uid()
+      );
+
+      // Barber may update only their own entries (e.g. caption/sortOrder),
+      // and can never reassign an entry to a different barberId.
+      allow update: if (
+        isBarber()
+        && resource.data.barberId == uid()
+        && request.resource.data.barberId == resource.data.barberId
+      ) || isAdmin();
+
+      // Unlike barberServices (admin-only delete, since bookings may
+      // historically reference a service), gallery photos have no such
+      // reference -- the owning barber may delete their own directly.
+      allow delete: if (isBarber() && resource.data.barberId == uid()) || isAdmin();
+    }
+
+    // =========================================================================
     // 5. COLLECTION: categories
     // =========================================================================
     match /categories/{categoryId} {

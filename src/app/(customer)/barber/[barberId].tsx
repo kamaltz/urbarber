@@ -7,7 +7,7 @@ import { Rating } from '@/components/ui/Rating';
 import { routes } from '@/constants/routes';
 import { useBarberDetail } from '@/features/customer/hooks/use-barber-detail';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Image, Pressable, ScrollView, Text, View } from 'react-native';
 
 export function formatIDR(amount: number): string {
   if (typeof amount !== 'number' || isNaN(amount)) return 'Rp 0';
@@ -27,7 +27,7 @@ export default function BarberDetailScreen() {
   const params = useLocalSearchParams<{ barberId: string }>();
   const barberId = params.barberId ? String(params.barberId).trim() : '';
 
-  const { barber, services, isFavorite, loading, error, toggleFavorite, refresh } =
+  const { barber, services, gallery, isFavorite, loading, error, toggleFavorite, refresh } =
     useBarberDetail(barberId);
 
   if (!barberId) {
@@ -144,6 +144,31 @@ export default function BarberDetailScreen() {
               </Text>
             </View>
           ) : null}
+        </View>
+
+        {/* Gallery */}
+        <View className="mb-6">
+          <Text className="text-base font-bold text-[#363062] mb-3">Galeri</Text>
+          {gallery.length > 0 ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View className="flex-row gap-3">
+                {gallery.map((image) => (
+                  <Image
+                    key={image.imageId}
+                    source={{ uri: image.publicUrl }}
+                    style={{ width: 120, height: 120, borderRadius: 16 }}
+                    resizeMode="cover"
+                  />
+                ))}
+              </View>
+            </ScrollView>
+          ) : (
+            <View className="rounded-2xl bg-white p-5 items-center border border-slate-200/80 shadow-xs">
+              <Text className="text-xs text-slate-500 text-center">
+                Barber ini belum menambahkan foto galeri.
+              </Text>
+            </View>
+          )}
         </View>
 
         {/* Offered Services List Catalog */}

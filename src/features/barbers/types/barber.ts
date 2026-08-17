@@ -41,6 +41,19 @@ export interface BarberProfile {
   updatedAt: string;
 }
 
+export const MAX_BARBER_GALLERY_IMAGES = 8;
+
+export interface BarberGalleryImage {
+  imageId: string;
+  barberId: string;
+  storagePath: string;
+  publicUrl: string;
+  caption?: string;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface BarberService {
   serviceId: string;
   name: string;
