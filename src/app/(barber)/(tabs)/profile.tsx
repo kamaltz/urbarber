@@ -340,7 +340,7 @@ export default function BarberProfileScreen() {
                   />
                   <Marker
                     id="barber-shop-marker"
-                    coordinates={[profile.location.longitude, profile.location.latitude]}>
+                    lngLat={[profile.location.longitude, profile.location.latitude]}>
                     <View className="bg-slate-900 px-2.5 py-1.5 rounded-full border-2 border-white shadow-md flex-row items-center gap-1">
                       <Text className="text-xs">💈</Text>
                       <Text className="text-white text-[11px] font-bold">
