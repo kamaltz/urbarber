@@ -1,10 +1,14 @@
-import type { ESLint } from 'eslint';
+const { FlatCompat } = require('@eslint/eslintrc');
 
-const config: ESLint.ConfigData = {
-  extends: ['next'],
-  rules: {
-    '@next/next/no-html-link-for-pages': 'off',
+const compat = new FlatCompat({
+  baseDirectory: __dirname,
+});
+
+module.exports = [
+  ...compat.extends('next/core-web-vitals', 'next/typescript'),
+  {
+    rules: {
+      '@next/next/no-html-link-for-pages': 'off',
+    },
   },
-};
-
-export default config;
+];
