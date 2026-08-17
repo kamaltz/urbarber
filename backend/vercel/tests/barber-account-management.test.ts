@@ -32,7 +32,32 @@ vi.mock('../src/lib/firebase-admin', () => ({
   },
 }));
 
+/**
+ * The functions under test build Firestore refs via db.collection(...).doc(...)
+ * (the standard Admin SDK pattern -- transactions read/write using refs, they
+ * don't expose their own .collection()), then pass those refs into
+ * tx.get/tx.update. A bare `collection: vi.fn()` with no default implementation
+ * returns undefined, so `.doc(...)` on it throws before tx.get is ever reached.
+ * This default gives every test a chainable collection mock supporting both
+ * .doc() (for building tx refs) and .where()/.get() (for deleteBarber's
+ * active-bookings query) -- individual tests only need to override the
+ * resolved value of .get() where they care about the active-bookings result.
+ */
+function createChainableCollectionMock(getResult: any = { size: 0, docs: [] }) {
+  const mock: any = {};
+  mock.doc = vi.fn(() => ({}));
+  mock.where = vi.fn(() => mock);
+  mock.orderBy = vi.fn(() => mock);
+  mock.limit = vi.fn(() => mock);
+  mock.get = vi.fn().mockResolvedValue(getResult);
+  mock.add = vi.fn().mockResolvedValue({ id: 'mock-audit-log-id' });
+  return mock;
+}
+
 describe('Barber Account Management', () => {
+  beforeEach(() => {
+    (db.collection as any).mockImplementation(() => createChainableCollectionMock());
+  });
 
   // ============================================================================
   // SUSPEND BARBER TESTS
@@ -298,18 +323,21 @@ describe('Barber Account Management', () => {
         return callback(mockTx);
       });
 
-      // Mock: barber has active bookings
+      // Mock: barber has active bookings. db.collection('users')/('barbers') still
+      // need .doc() to build the transaction refs above -- only the 'bookings'
+      // collection's query should resolve to an active-bookings result.
+      // deleteBarber filters activeBookingsSnap.docs via docSnap.data(), so each
+      // mock doc needs a real .data() method, not a plain object.
       const mockBookingsSnap = {
         size: 2,
-        docs: [{}, {}],
+        docs: [
+          { data: () => ({ status: 'pending' }) },
+          { data: () => ({ status: 'accepted' }) },
+        ],
       };
-      (db.collection as any).mockReturnValue({
-        where: vi.fn().mockReturnValue({
-          where: vi.fn().mockReturnValue({
-            get: vi.fn().mockResolvedValue(mockBookingsSnap),
-          }),
-        }),
-      });
+      (db.collection as any).mockImplementation((name: string) =>
+        createChainableCollectionMock(name === 'bookings' ? mockBookingsSnap : undefined)
+      );
 
       await expect(deleteBarber('barber-uid', 'admin-uid'))
         .rejects
@@ -335,15 +363,8 @@ describe('Barber Account Management', () => {
         return callback(mockTx);
       });
 
-      // Mock: no active bookings
-      const mockBookingsSnap = { size: 0, docs: [] };
-      (db.collection as any).mockReturnValue({
-        where: vi.fn().mockReturnValue({
-          where: vi.fn().mockReturnValue({
-            get: vi.fn().mockResolvedValue(mockBookingsSnap),
-          }),
-        }),
-      });
+      // Mock: no active bookings (the beforeEach default already resolves
+      // { size: 0, docs: [] } for any collection, including 'bookings').
 
       (adminAuth.deleteUser as any).mockResolvedValueOnce({});
 
