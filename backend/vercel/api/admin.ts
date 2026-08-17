@@ -896,6 +896,7 @@ const exactRoutes: Record<string, Record<string, RouteHandler>> = {
   'GET': {
     '/api/admin/me': handleGetAdminMe,
     '/api/admin/dashboard': handleGetDashboard,
+    '/api/admin/metrics': handleGetDashboard,
     '/api/admin/barber-registrations': handleGetBarberRegistrations,
     '/api/admin/users': handleGetUsers,
     '/api/admin/barbers': handleGetBarbers,

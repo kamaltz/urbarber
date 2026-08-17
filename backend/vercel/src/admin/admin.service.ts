@@ -23,6 +23,7 @@ import type {
     AdminBarberSummary,
     AdminBookingRecord,
     AdminCategory,
+    AdminSuspendedBarber,
     AdminTransaction,
     AdminUserRecord,
     ApproveBarberResult,
@@ -64,6 +65,7 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
     const users = allUsersSnap.docs.map(d => d.data());
     const totalActiveCustomers = users.filter(u => u.role === 'customer' && u.status === 'active').length;
     const totalApprovedBarbers = users.filter(u => u.role === 'barber' && u.status === 'active').length;
+    const suspendedBarbers = users.filter(u => u.role === 'barber' && u.status === 'suspended').length;
     const suspendedAccounts = users.filter(u => u.status === 'suspended').length;
 
     // Pending barber registrations
@@ -80,22 +82,30 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
     const completedBookings = bookings.filter(b => b.status === 'completed').length;
     const cancelledBookings = bookings.filter(b => b.status === 'cancelled').length;
 
-    // Current month transaction value
+    // Bookings today
     const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const todayBookings = bookings.filter(b => {
+      const bDate = b.createdAt?.toDate?.() || new Date(b.createdAt);
+      return b.date === todayStr || bDate >= startOfToday;
+    }).length;
+
+    // Current month transaction value
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const completedThisMonth = bookings.filter(b => {
+    const monthBookings = bookings.filter(b => {
       const bookingDate = b.createdAt?.toDate?.() || new Date(b.createdAt);
-      return b.status === 'completed' && bookingDate >= monthStart;
+      return bookingDate >= monthStart;
     });
 
     // Sum transaction value: only paid/cash-eligible bookings
-    const currentMonthServiceValue = completedThisMonth.reduce((sum, booking) => {
-      const amount = booking.totalPrice || booking.grossAmount || booking.price || 0;
-      // Cash on service: no payment check needed
-      if (booking.paymentMethod === 'cash_on_service') {
+    const currentMonthServiceValue = monthBookings.reduce((sum, booking) => {
+      const amount = resolveBookingAmount(booking);
+      // Cash on service: only completed bookings count as actual revenue
+      if (booking.paymentMethod === 'cash_on_service' && booking.status === 'completed') {
         return sum + amount;
       }
-      // Midtrans: only if paid
+      // Midtrans sandbox / payment-first: only if paymentStatus is paid
       if (booking.paymentStatus === 'paid') {
         return sum + amount;
       }
@@ -108,15 +118,13 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
       .orderBy('submittedAt', 'desc')
       .limit(5)
       .get();
-    // Batch 09F-3: strip raw documentPaths -- the dashboard UI only reads
-    // businessName/ownerName/verificationStatus/submittedAt (see apps/admin's
-    // recentBarberRegistrations table), never document info, so it is simply
-    // omitted rather than replaced with a documentsAvailable map it doesn't use.
+
     const recentBarberRegistrations = recentRegSnap.docs.map(d => {
       const { documentPaths, ...safeData } = d.data();
       return {
         barberId: d.id,
         ...safeData,
+        submittedAt: toIsoStringSafe(safeData.submittedAt) || safeData.submittedAt,
       } as AdminBarberRegistration;
     });
 
@@ -126,39 +134,74 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
       .orderBy('createdAt', 'desc')
       .limit(5)
       .get();
-    // Explicit safe DTO -- raw Firestore booking docs have no `bookingId` field
-    // (the doc ID is authoritative), so a blind spread here would silently omit
-    // fields the Admin UI depends on. resolveBookingAmount tolerates the
-    // historical price/totalAmount/totalPrice field variants (see
-    // admin-booking-dto.ts) -- the current payment-first creator stores `price`.
-    const recentBookings: AdminBookingRecord[] = recentBookingSnap.docs.map(d => {
-      const data = d.data();
+
+    const rawRecentBookings: (Record<string, any> & { __bookingId: string })[] = recentBookingSnap.docs.map(d => ({
+      ...d.data(),
+      __bookingId: d.id,
+    }));
+
+    const identities = await resolveBookingIdentities(rawRecentBookings);
+
+    const recentBookings = rawRecentBookings.map(data => {
+      const identity = identities.get(data.__bookingId);
       return {
-        bookingId: d.id,
+        bookingId: data.__bookingId,
         customerId: data.customerId,
         barberId: data.barberId,
         serviceId: data.serviceId,
+        customerName: identity?.customerName || 'Pelanggan',
+        barberName: identity?.barberName || 'Barber',
         status: data.status,
         paymentMethod: data.paymentMethod,
         paymentStatus: data.paymentStatus,
         price: resolveBookingAmount(data),
         date: resolveBookingDate(data),
         startTime: resolveBookingStartTime(data),
-        createdAt: data.createdAt,
+        createdAt: toIsoStringSafe(data.createdAt) || data.createdAt,
       };
     });
+
+    // Suspended barbers list (last 5)
+    const suspendedUserDocs = allUsersSnap.docs
+      .filter(d => d.data().role === 'barber' && d.data().status === 'suspended')
+      .slice(0, 5);
+
+    const suspendedBarbersList: AdminSuspendedBarber[] = await Promise.all(
+      suspendedUserDocs.map(async d => {
+        const uData = d.data();
+        const bSnap = await db.collection('barbers').doc(d.id).get();
+        const bData = bSnap.exists ? bSnap.data() : {};
+        return {
+          uid: d.id,
+          displayName: uData.displayName || bData?.displayName || 'N/A',
+          businessName: bData?.businessName || uData.businessName || '-',
+          email: uData.email || '',
+          status: uData.status,
+          statusReason: uData.statusReason || '',
+          statusChangedAt: toIsoStringSafe(uData.statusChangedAt),
+        };
+      })
+    );
+
+    // Recent transactions list (last 5)
+    const transactionsResult = await getTransactionsList({}, { pageSize: 5 });
+    const recentTransactions = transactionsResult.items;
 
     return {
       totalActiveCustomers,
       totalApprovedBarbers,
       pendingBarberRegistrations,
       suspendedAccounts,
+      suspendedBarbers,
       activeBookings,
       completedBookings,
       cancelledBookings,
+      todayBookings,
       currentMonthServiceValue,
       recentBarberRegistrations,
       recentBookings,
+      suspendedBarbersList,
+      recentTransactions,
     };
   } catch (err: any) {
     throw new Error(`Failed to get dashboard metrics: ${err.message}`);

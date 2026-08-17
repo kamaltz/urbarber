@@ -20,17 +20,31 @@ export interface AdminIdentity {
 }
 
 // Dashboard
+export interface AdminSuspendedBarber {
+  uid: string;
+  displayName: string;
+  businessName?: string;
+  email?: string;
+  status: string;
+  statusReason?: string;
+  statusChangedAt?: string;
+}
+
 export interface DashboardMetrics {
   totalActiveCustomers: number;
   totalApprovedBarbers: number;
   pendingBarberRegistrations: number;
   suspendedAccounts: number;
+  suspendedBarbers: number;
   activeBookings: number;
   completedBookings: number;
   cancelledBookings: number;
+  todayBookings?: number;
   currentMonthServiceValue: number;
   recentBarberRegistrations: AdminBarberRegistration[];
-  recentBookings: AdminBookingRecord[];
+  recentBookings: (AdminBookingRecord & { customerName?: string; barberName?: string })[];
+  suspendedBarbersList?: AdminSuspendedBarber[];
+  recentTransactions?: AdminTransaction[];
 }
 
 // Barber Registration
