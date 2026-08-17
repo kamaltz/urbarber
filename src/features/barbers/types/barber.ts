@@ -61,7 +61,14 @@ export interface BarberBooking {
   bookingTime: string;
   status: BookingStatus;
   services: BarberService[];
+  /** Net service value (base price only) -- what dashboard/analysis already sum as "Nilai Layanan". Never applicationFee. */
   totalAmount: number;
+  /** Home-service fee, when applicable -- part of the barber's operational value, distinct from the platform's applicationFee. */
+  homeServiceFee?: number;
+  /** Optional customer tip -- the barber's to keep. */
+  tipAmount?: number;
+  /** What the customer actually paid (base - voucher + homeFee + appFee + tip) -- never shown as the barber's own value. */
+  grossAmount?: number;
   paymentStatus: PaymentStatus;
   notes?: string;
   createdAt: string;
@@ -141,6 +148,7 @@ export interface UpdateBarberProfileRequest {
   shopDescription?: string;
   shopAddress?: string;
   phone?: string;
+  profileImageUrl?: string;
   shopImageUrl?: string;
 }
 

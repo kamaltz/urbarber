@@ -89,6 +89,12 @@ class BarberRegistrationService {
         { merge: true }
       );
 
+      // Field names here must match the canonical BarberProfile shape
+      // (src/features/barbers/types/barber.ts) that the barber's own Profile
+      // tab and Customer Barber Detail both read -- this previously wrote
+      // address/description/phoneNumber, which nothing else in the app reads
+      // from barbers/{uid}, so everything entered during onboarding silently
+      // never appeared on the barber's own Profile tab until manually re-saved.
       await setDoc(
         barberDocRef,
         {
@@ -99,9 +105,9 @@ class BarberRegistrationService {
           displayName: data.ownerName.trim(),
           ownerName: data.ownerName.trim(),
           shopName: data.shopName ? data.shopName.trim() : data.ownerName.trim(),
-          phoneNumber: data.phoneNumber.trim(),
-          address: data.shopAddress ? data.shopAddress.trim() : '',
-          description: data.shopDescription ? data.shopDescription.trim() : '',
+          phone: data.phoneNumber.trim(),
+          shopAddress: data.shopAddress ? data.shopAddress.trim() : '',
+          shopDescription: data.shopDescription ? data.shopDescription.trim() : '',
           onboardingStatus: profileCompleted ? 'documents_incomplete' : 'profile_incomplete',
           updatedAt: now,
         },

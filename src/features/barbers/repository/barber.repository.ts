@@ -358,10 +358,20 @@ export const barberRepository = {
         return null;
       }
 
+      // Mapped explicitly rather than raw-spread: the booking doc has no
+      // `totalAmount` field, so a raw spread left it undefined and this
+      // screen fell back to `totalPrice` (the customer's gross payment,
+      // including applicationFee/tip) -- inconsistent with getBarberBookings
+      // above and dashboard/analysis, which correctly sum only `price`
+      // (net service value) as the barber's "Nilai Layanan".
       return {
         ...data,
         bookingId: snapshot.id,
         status: mapLegacyBookingStatus(data.status),
+        totalAmount: data.price || 0,
+        homeServiceFee: data.homeServiceFee,
+        tipAmount: data.tipAmount,
+        grossAmount: data.grossAmount ?? data.totalPrice,
       } as BarberBooking;
     } catch (error: any) {
       if (__DEV__) {

@@ -278,9 +278,16 @@ export default function BarberBookingDetailScreen() {
                   </Text>
                 </View>
               </View>
-              <Text className="text-white font-extrabold text-xl mt-2">
-                {formatCurrency(booking.totalAmount || (booking as any).totalPrice || 0)}
+              <Text className="text-slate-400 text-[11px] mt-2">Nilai Layanan</Text>
+              <Text className="text-white font-extrabold text-xl">
+                {formatCurrency(booking.totalAmount || 0)}
               </Text>
+              {(booking.homeServiceFee || booking.tipAmount) ? (
+                <Text className="text-slate-400 text-[11px] mt-1">
+                  {booking.homeServiceFee ? `+ Biaya ke Rumah ${formatCurrency(booking.homeServiceFee)}  ` : ''}
+                  {booking.tipAmount ? `+ Tip ${formatCurrency(booking.tipAmount)}` : ''}
+                </Text>
+              ) : null}
               <Text className="text-slate-400 text-xs mt-1">
                 Status Pembayaran:{' '}
                 <Text className={isPaid ? 'text-emerald-400 font-bold' : 'text-amber-400 font-bold'}>

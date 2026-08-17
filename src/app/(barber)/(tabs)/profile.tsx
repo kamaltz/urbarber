@@ -127,8 +127,13 @@ export default function BarberProfileScreen() {
       if (uploadRes.success && uploadRes.url) {
         setProfileImage(uploadRes.url);
 
+        // profileImageUrl is the canonical field this screen (and every other
+        // reader, e.g. customer.repository.ts/discovery.service.ts) actually
+        // reads -- writing shopImageUrl here meant the barber's own profile
+        // screen lost the photo on next load, even though customers could
+        // still see it via customer.repository.ts's defensive `|| shopImageUrl` fallback.
         await barberRepository.updateBarberProfile(barberId, {
-          shopImageUrl: uploadRes.url,
+          profileImageUrl: uploadRes.url,
         });
 
         Alert.alert('Sukses', 'Foto profil berhasil diperbarui.');
