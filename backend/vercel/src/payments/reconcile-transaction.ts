@@ -26,9 +26,10 @@
  * observed in a partially-updated state, and two concurrent callers (webhook + sync)
  * for the same order converge to one consistent result instead of racing.
  */
-import type { Transaction } from 'firebase-admin/firestore';
+import { FieldValue, type Transaction } from 'firebase-admin/firestore';
 import { getSlotLockId } from '../bookings/slot-lock.js';
 import { db } from '../lib/firebase-admin.js';
+import { voucherUserRedemptionDocId } from './voucher-service.js';
 import { decideReconciliation, type ReconciliationDecision } from './reconciliation-decision.js';
 import type { CanonicalPaymentStatus } from './status-mapper.js';
 
@@ -90,6 +91,39 @@ export async function reconcilePaymentTransaction(
     const decision = decideReconciliation(bookingData, paymentData, midtransStatus);
     const { mappedStatus } = decision;
 
+    // Voucher redemption finalizes exactly once, on the payment's first paid
+    // transition (the same !paymentData.paidAt guard that protects paidAt
+    // itself from double-stamping below) -- this is the spec's required
+    // "payment paid transition is the authoritative redemption point". All
+    // reads must happen before any write in this transaction, so resolve them
+    // here even though they're only used further down.
+    const voucherCode: string | undefined = paymentData.voucherCode;
+    const shouldFinalizeVoucher = decision.finalizeSlot && !paymentData.paidAt && !!voucherCode;
+
+    const voucherRef = shouldFinalizeVoucher ? db.collection('vouchers').doc(voucherCode!) : null;
+    const voucherUserRedemptionRef = shouldFinalizeVoucher
+      ? db.collection('voucherUserRedemptions').doc(voucherUserRedemptionDocId(voucherCode!, bookingData.customerId))
+      : null;
+    const voucherRedemptionRef = shouldFinalizeVoucher ? db.collection('voucherRedemptions').doc(bookingId) : null;
+
+    let voucherData: FirebaseFirestore.DocumentData | undefined;
+    let voucherUserRedemptionCount = 0;
+    let voucherAlreadyRedeemed = false;
+
+    if (shouldFinalizeVoucher) {
+      const [voucherSnap, voucherUserRedemptionSnap, voucherRedemptionSnap] = await Promise.all([
+        t.get(voucherRef!),
+        t.get(voucherUserRedemptionRef!),
+        t.get(voucherRedemptionRef!),
+      ]);
+      voucherData = voucherSnap.exists ? voucherSnap.data() : undefined;
+      voucherUserRedemptionCount = voucherUserRedemptionSnap.exists ? (voucherUserRedemptionSnap.data()?.count ?? 0) : 0;
+      // Defense-in-depth only: unreachable in practice since the !paymentData.paidAt
+      // guard already prevents this transaction from running a second time for the
+      // same payment, but a free extra read inside a transaction that's already here.
+      voucherAlreadyRedeemed = voucherRedemptionSnap.exists;
+    }
+
     const timestamp = new Date().toISOString();
 
     const updatePayment: Record<string, any> = {
@@ -118,6 +152,29 @@ export async function reconcilePaymentTransaction(
       if (!paymentData.paidAt) {
         updatePayment.paidAt = timestamp;
         updateBooking.paidAt = timestamp;
+
+        if (shouldFinalizeVoucher && !voucherAlreadyRedeemed && voucherData) {
+          const usageLimit: number | undefined = voucherData.usageLimit;
+          const perUserLimit: number | undefined = voucherData.perUserLimit;
+          const currentUsageCount: number = voucherData.usageCount ?? 0;
+          const countedTowardLimit =
+            (usageLimit === undefined || currentUsageCount < usageLimit) &&
+            (perUserLimit === undefined || voucherUserRedemptionCount < perUserLimit);
+
+          t.set(voucherRedemptionRef!, {
+            bookingId,
+            voucherCode,
+            customerId: bookingData.customerId,
+            discountAmount: paymentData.voucherDiscount ?? 0,
+            countedTowardLimit,
+            redeemedAt: timestamp,
+          });
+
+          if (countedTowardLimit) {
+            t.update(voucherRef!, { usageCount: FieldValue.increment(1) });
+            t.set(voucherUserRedemptionRef!, { count: FieldValue.increment(1) }, { merge: true });
+          }
+        }
       }
 
       // A finalized lock already owned by a DIFFERENT bookingId means another

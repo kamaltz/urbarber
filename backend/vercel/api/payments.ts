@@ -10,6 +10,7 @@
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { z } from 'zod';
+import { calculateDistanceKm } from '../src/bookings/geo-utils.js';
 import { isBarberAcceptingBookings, isServiceActive, resolveServiceLocationType } from '../src/bookings/service-booking-guard.js';
 import { acquireSlotLock, getSlotLockId, SlotNotAvailableError } from '../src/bookings/slot-lock.js';
 import { evaluateSlotEligibility } from '../src/bookings/slot-datetime.js';
@@ -17,7 +18,16 @@ import { config } from '../src/config/index.js';
 import { authenticateRequest } from '../src/lib/auth-middleware.js';
 import { handleCors } from '../src/lib/cors.js';
 import { db } from '../src/lib/firebase-admin.js';
+import {
+  buildMidtransItemDetails,
+  calculatePricing,
+  HomeServiceLocationRequiredError,
+  HomeServiceOutOfRangeError,
+  type ResolvedVoucherForPricing,
+} from '../src/payments/pricing-calculator.js';
+import { getBookingPricingSettings } from '../src/payments/pricing-settings.js';
 import { SyncInvalidStateError, syncPaymentStatusService } from '../src/payments/sync-payment-service.js';
+import { resolveVoucherForBooking, voucherInvalidMessage } from '../src/payments/voucher-service.js';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const midtransClient = require('midtrans-client');
@@ -81,6 +91,24 @@ async function handleCreatePayment(ctx: RouteContext): Promise<void> {
       invalid_type_error: 'bookingType harus home atau onsite.',
     }),
     tipAmount: z.number().min(0, 'Tip tidak boleh negatif.').optional().default(0),
+    voucherCode: z.string().trim().min(1).optional(),
+    // Required whenever bookingType is 'home' (checked below via superRefine) --
+    // the home-service distance radius cap applies to every home booking
+    // regardless of fee mode, so the customer's coordinates are always needed.
+    location: z
+      .object({
+        latitude: z.number(),
+        longitude: z.number(),
+      })
+      .optional(),
+  }).superRefine((data, ctx) => {
+    if (data.bookingType === 'home' && !data.location) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Lokasi pelanggan wajib diisi untuk booking layanan ke rumah.',
+        path: ['location'],
+      });
+    }
   });
 
   const parseResult = createPaymentSchema.safeParse(req.body);
@@ -94,7 +122,7 @@ async function handleCreatePayment(ctx: RouteContext): Promise<void> {
     return;
   }
 
-  const { requestId, barberId, serviceId, date, startTime, address, notes, bookingType, tipAmount: rawTip } = parseResult.data;
+  const { requestId, barberId, serviceId, date, startTime, address, notes, bookingType, tipAmount: rawTip, voucherCode: rawVoucherCode, location } = parseResult.data;
   const customerId = authUser.uid;
   const serviceLocationType = resolveServiceLocationType(bookingType);
 
@@ -183,11 +211,100 @@ async function handleCreatePayment(ctx: RouteContext): Promise<void> {
       return;
     }
 
-    const HOME_SERVICE_FEE_IDR = 10000;
-    const baseAmount = Math.round(serviceData.price || 0);
-    const homeServiceFee = bookingType === 'home' ? HOME_SERVICE_FEE_IDR : 0;
-    const tipAmount = Math.max(0, Math.floor(rawTip || 0));
-    const totalAmount = baseAmount + homeServiceFee + tipAmount;
+    const barberData = barberSnap.exists ? barberSnap.data() || {} : {};
+
+    // The home-service distance radius cap applies to every home booking
+    // regardless of fee mode (not just when Home Service Fee is set to
+    // distance mode) -- so the customer's location is always resolved here.
+    let distanceKm: number | null = null;
+    if (bookingType === 'home') {
+      if (!location) {
+        res.status(400).json({
+          error: { code: 'LOCATION_REQUIRED', message: 'Lokasi pelanggan wajib diisi untuk booking layanan ke rumah.' },
+        });
+        return;
+      }
+
+      const barberLat = barberData.location?.latitude;
+      const barberLng = barberData.location?.longitude;
+      if (typeof barberLat !== 'number' || typeof barberLng !== 'number') {
+        res.status(400).json({
+          error: { code: 'BARBER_LOCATION_UNAVAILABLE', message: 'Lokasi barber belum tersedia untuk booking layanan ke rumah.' },
+        });
+        return;
+      }
+
+      distanceKm = calculateDistanceKm(barberLat, barberLng, location.latitude, location.longitude);
+      if (distanceKm === null) {
+        res.status(400).json({
+          error: { code: 'INVALID_LOCATION', message: 'Lokasi pelanggan tidak valid.' },
+        });
+        return;
+      }
+    }
+
+    const roundedServicePrice = Math.max(0, Math.round(serviceData.price || 0));
+
+    // Voucher is re-validated authoritatively here even if the client already
+    // called /voucher/validate for a checkout preview -- that endpoint is
+    // preview-only and never trusted for the actual charge.
+    let resolvedVoucher: ResolvedVoucherForPricing | null = null;
+    if (rawVoucherCode) {
+      const voucherResult = await resolveVoucherForBooking(rawVoucherCode, customerId, roundedServicePrice);
+      if (!voucherResult.valid) {
+        res.status(400).json({
+          error: {
+            code: 'VOUCHER_INVALID',
+            message: voucherInvalidMessage(voucherResult.reason),
+            reason: voucherResult.reason,
+          },
+        });
+        return;
+      }
+      resolvedVoucher = voucherResult.voucher;
+    }
+
+    const pricingSnapshot = await getBookingPricingSettings();
+
+    let pricing;
+    try {
+      pricing = calculatePricing({
+        serviceBasePrice: roundedServicePrice,
+        bookingType,
+        tipAmountInput: rawTip,
+        voucher: resolvedVoucher,
+        distanceKm,
+        barberMaxDistanceKm: typeof barberData.serviceRadiusKm === 'number' ? barberData.serviceRadiusKm : null,
+        settings: pricingSnapshot.settings,
+      });
+    } catch (pricingErr) {
+      if (pricingErr instanceof HomeServiceOutOfRangeError) {
+        res.status(400).json({ error: { code: 'DISTANCE_OUT_OF_RANGE', message: pricingErr.message } });
+        return;
+      }
+      if (pricingErr instanceof HomeServiceLocationRequiredError) {
+        res.status(400).json({ error: { code: 'LOCATION_REQUIRED', message: pricingErr.message } });
+        return;
+      }
+      throw pricingErr;
+    }
+
+    const {
+      baseAmount,
+      voucherDiscount,
+      discountedBaseAmount,
+      homeServiceFee,
+      applicationFee,
+      tipAmount,
+      grossAmount,
+      voucherCode: appliedVoucherCode,
+      applicationFeeMode,
+      applicationFeeRate,
+      applicationFeeFixedAmount,
+      homeServiceFeeMode,
+      homeServiceFeeDistanceKm,
+    } = pricing;
+    const totalAmount = grossAmount;
 
     // Lock the slot and create the booking atomically. Acquisition (read the
     // existing lock, validate it, claim it for this booking) and the booking
@@ -220,12 +337,25 @@ async function handleCreatePayment(ctx: RouteContext): Promise<void> {
       bookingType,
       serviceLocationType,
       notes,
+      // price/totalPrice preserved for legacy readers; the fee breakdown below
+      // is the canonical record. price mirrors the pre-voucher base service
+      // amount (barber's operational value is never affected by a voucher).
       price: baseAmount,
       baseAmount,
+      voucherCode: appliedVoucherCode,
+      voucherDiscount,
+      discountedBaseAmount,
       homeServiceFee,
+      homeServiceFeeMode,
+      homeServiceFeeDistanceKm,
+      applicationFee,
+      applicationFeeMode,
+      applicationFeeRate,
+      applicationFeeFixedAmount,
       tipAmount,
       totalPrice: totalAmount,
       grossAmount: totalAmount,
+      pricingSettingsVersion: pricingSnapshot.version,
       status: 'pending',
       createdAt: timestamp,
       updatedAt: timestamp,
@@ -260,6 +390,21 @@ async function handleCreatePayment(ctx: RouteContext): Promise<void> {
 
     // Midtrans Snap createTransaction requires transaction_details/customer_details
     // as nested objects -- they must not be spread at the top level.
+    const itemDetails = buildMidtransItemDetails(pricing, serviceId, String(serviceData.name || 'Layanan Barber'));
+
+    const itemDetailsSum = itemDetails.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    if (itemDetailsSum !== totalAmount) {
+      // Must never happen given the formula above -- if it does, refuse to send
+      // a mismatched payload to Midtrans rather than risk under/over-charging.
+      await slotLockRef.delete();
+      await bookingRef.delete();
+      console.error('[Create Payment] item_details/gross_amount mismatch', { itemDetailsSum, totalAmount, bookingId });
+      res.status(500).json({
+        error: { code: 'INTERNAL_SERVER_ERROR', message: 'Terjadi kesalahan internal saat menghitung total pembayaran.' },
+      });
+      return;
+    }
+
     const transactionData = {
       transaction_details: {
         order_id: orderId,
@@ -269,34 +414,7 @@ async function handleCreatePayment(ctx: RouteContext): Promise<void> {
         email: authUser.email || customerId,
         customer_id: customerId,
       },
-      item_details: [
-        {
-          id: serviceId,
-          price: baseAmount,
-          quantity: 1,
-          name: String(serviceData.name || 'Layanan Barber').substring(0, 50),
-        },
-        ...(homeServiceFee > 0
-          ? [
-              {
-                id: 'HOME_FEE',
-                price: homeServiceFee,
-                quantity: 1,
-                name: 'Biaya Layanan ke Rumah',
-              },
-            ]
-          : []),
-        ...(tipAmount > 0
-          ? [
-              {
-                id: 'TIP_BARBER',
-                price: tipAmount,
-                quantity: 1,
-                name: 'Tip Barber',
-              },
-            ]
-          : []),
-      ],
+      item_details: itemDetails,
     };
 
     try {
@@ -312,8 +430,18 @@ async function handleCreatePayment(ctx: RouteContext): Promise<void> {
         amount: totalAmount,
         grossAmount: totalAmount,
         baseAmount,
+        voucherCode: appliedVoucherCode,
+        voucherDiscount,
+        discountedBaseAmount,
         homeServiceFee,
+        homeServiceFeeMode,
+        homeServiceFeeDistanceKm,
+        applicationFee,
+        applicationFeeMode,
+        applicationFeeRate,
+        applicationFeeFixedAmount,
         tipAmount,
+        pricingSettingsVersion: pricingSnapshot.version,
         currency: 'IDR',
         method: 'midtrans_sandbox',
         // Admin's transaction list (admin.service.ts getTransactionsList) filters
@@ -339,9 +467,14 @@ async function handleCreatePayment(ctx: RouteContext): Promise<void> {
         orderId,
         amount: totalAmount,
         baseAmount,
+        voucherCode: appliedVoucherCode,
+        voucherDiscount,
+        discountedBaseAmount,
         homeServiceFee,
+        applicationFee,
         tipAmount,
         totalAmount,
+        grossAmount: totalAmount,
         paymentUrl,
         message: 'Transaksi pembayaran berhasil dibuat',
       });
@@ -360,6 +493,86 @@ async function handleCreatePayment(ctx: RouteContext): Promise<void> {
     }
   } catch (err: any) {
     console.error('[Payments/create] Error:', err.message);
+    res.status(500).json({
+      error: { code: 'INTERNAL_SERVER_ERROR', message: 'Terjadi kesalahan internal.' },
+    });
+  }
+}
+
+/**
+ * POST /api/payments/voucher/validate
+ * Checkout-preview only -- re-validated authoritatively again inside
+ * POST /api/payments/create, never trusted from this call alone.
+ */
+async function handleValidateVoucher(ctx: RouteContext): Promise<void> {
+  const { req, res } = ctx;
+
+  if (!handleCors(req, res, ['POST', 'OPTIONS'])) return;
+
+  const authUser = await authenticateRequest(req, res);
+  if (!authUser) return;
+
+  if (authUser.appRole !== 'customer' && authUser.appRole !== 'admin') {
+    res.status(403).json({
+      error: { code: 'FORBIDDEN', message: 'Hanya akun pelanggan yang dapat menggunakan voucher.' },
+    });
+    return;
+  }
+
+  const validateVoucherSchema = z.object({
+    code: z.string({ required_error: 'code wajib diisi.' }).min(1),
+    serviceId: z.string({ required_error: 'serviceId wajib diisi.' }).min(1),
+  });
+
+  const parseResult = validateVoucherSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    res.status(400).json({
+      error: { code: 'INVALID_ARGUMENT', message: parseResult.error.issues.map((i) => i.message).join(', ') },
+    });
+    return;
+  }
+
+  const { code, serviceId } = parseResult.data;
+
+  try {
+    const serviceSnap = await db.collection('barberServices').doc(serviceId).get();
+    if (!serviceSnap.exists) {
+      res.status(404).json({ error: { code: 'SERVICE_NOT_FOUND', message: 'Layanan tidak ditemukan.' } });
+      return;
+    }
+
+    const baseAmount = Math.max(0, Math.round(serviceSnap.data()?.price || 0));
+    const result = await resolveVoucherForBooking(code, authUser.uid, baseAmount);
+
+    if (!result.valid) {
+      res.status(200).json({
+        valid: false,
+        reason: result.reason,
+        message: voucherInvalidMessage(result.reason),
+      });
+      return;
+    }
+
+    const discount =
+      result.voucher.discountType === 'fixed'
+        ? Math.max(0, Math.min(result.voucher.discountValue, baseAmount))
+        : Math.max(
+            0,
+            Math.min(
+              Math.round((baseAmount * result.voucher.discountValue) / 100),
+              result.voucher.maxDiscountAmount ?? Infinity,
+              baseAmount
+            )
+          );
+
+    res.status(200).json({
+      valid: true,
+      voucherCode: result.voucher.code,
+      baseAmount,
+      discountAmount: discount,
+    });
+  } catch (err: any) {
+    console.error('[Payments/voucher/validate] Error:', err.message);
     res.status(500).json({
       error: { code: 'INTERNAL_SERVER_ERROR', message: 'Terjadi kesalahan internal.' },
     });
@@ -525,6 +738,7 @@ async function handlePaymentReturn(ctx: RouteContext): Promise<void> {
 const routes: Record<string, Record<string, RouteHandler>> = {
   'POST': {
     '/api/payments/create': handleCreatePayment,
+    '/api/payments/voucher/validate': handleValidateVoucher,
     '/api/payments/sync': handleSyncPayment,
   },
   'GET': {
