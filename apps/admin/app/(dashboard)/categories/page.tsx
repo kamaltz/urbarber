@@ -2,6 +2,7 @@
 
 import { useAdminAuth } from '@/features/auth/AdminAuthProvider';
 import { AdminApiClient, type AdminCategory } from '@/lib/api-client';
+import { getErrorMessage } from '@/lib/errors';
 import { useEffect, useState } from 'react';
 
 export default function CategoriesPage() {
@@ -27,8 +28,8 @@ export default function CategoriesPage() {
       try {
         const data = await AdminApiClient.getCategories();
         setCategories(data);
-      } catch (err: any) {
-        setError(err.message || 'Gagal load kategori.');
+      } catch (err) {
+        setError(getErrorMessage(err, 'Gagal load kategori.'));
       } finally {
         setLoading(false);
       }
@@ -67,11 +68,11 @@ export default function CategoriesPage() {
       resetForm();
       setCreateModal(false);
       alert('Kategori berhasil dibuat.');
-    } catch (err: any) {
-      if (err.message.includes('CATEGORY_ALREADY_EXISTS')) {
+    } catch (err) {
+      if (getErrorMessage(err).includes('CATEGORY_ALREADY_EXISTS')) {
         alert('Kategori dengan nama ini sudah ada.');
       } else {
-        alert(`Gagal buat kategori: ${err.message}`);
+        alert(`Gagal buat kategori: ${getErrorMessage(err)}`);
       }
     }
   };
@@ -93,8 +94,8 @@ export default function CategoriesPage() {
       setCategories(categories.map((c) => (c.id === catId ? updated : c)));
       resetForm();
       alert('Kategori berhasil diperbarui.');
-    } catch (err: any) {
-      alert(`Gagal update kategori: ${err.message}`);
+    } catch (err) {
+      alert(`Gagal update kategori: ${getErrorMessage(err)}`);
     }
   };
 
@@ -105,8 +106,8 @@ export default function CategoriesPage() {
       await AdminApiClient.deactivateCategory(catId);
       setCategories(categories.filter((c) => c.id !== catId));
       alert('Kategori berhasil dideactivate.');
-    } catch (err: any) {
-      alert(`Gagal deactivate kategori: ${err.message}`);
+    } catch (err) {
+      alert(`Gagal deactivate kategori: ${getErrorMessage(err)}`);
     }
   };
 

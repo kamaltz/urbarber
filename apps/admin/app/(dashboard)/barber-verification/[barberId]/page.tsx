@@ -8,6 +8,7 @@ import {
   type AdminBarberRegistration,
   type AllowedDocType,
 } from '@/lib/api-client';
+import { ApiError, getErrorMessage } from '@/lib/errors';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
@@ -78,8 +79,8 @@ export default function BarberVerificationDetailPage() {
           available: !!data.documentsAvailable?.[type],
         }));
         setDocuments(docTypes);
-      } catch (err: any) {
-        setError(err.message || 'Gagal load detail.');
+      } catch (err) {
+        setError(getErrorMessage(err, 'Gagal load detail.'));
       } finally {
         setLoading(false);
       }
@@ -95,8 +96,8 @@ export default function BarberVerificationDetailPage() {
       await AdminApiClient.approveBarber(barberId);
       alert('Barber berhasil disetujui.');
       router.push('/barber-verification');
-    } catch (err: any) {
-      alert(`Gagal approve: ${err.message}`);
+    } catch (err) {
+      alert(`Gagal approve: ${getErrorMessage(err)}`);
     } finally {
       setApproving(false);
     }
@@ -113,8 +114,8 @@ export default function BarberVerificationDetailPage() {
       await AdminApiClient.rejectBarber(barberId, rejectReason);
       alert('Barber berhasil ditolak.');
       router.push('/barber-verification');
-    } catch (err: any) {
-      alert(`Gagal reject: ${err.message}`);
+    } catch (err) {
+      alert(`Gagal reject: ${getErrorMessage(err)}`);
     } finally {
       setApproving(false);
       setRejectModal(false);
@@ -138,8 +139,8 @@ export default function BarberVerificationDetailPage() {
           d.type === docType ? { ...d, url, expiresAt, loading: false, error: undefined } : d
         )
       );
-    } catch (err: any) {
-      const message = documentErrorMessage(err.code);
+    } catch (err) {
+      const message = documentErrorMessage(err instanceof ApiError ? err.code : undefined);
       alert(message);
       setDocuments((prev) =>
         prev.map((d) => (d.type === docType ? { ...d, error: message, loading: false } : d))

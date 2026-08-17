@@ -1,6 +1,7 @@
 'use client';
 
 import { AdminApiClient, type AdminIdentity } from '@/lib/api-client';
+import { getErrorMessage } from '@/lib/errors';
 import { firebaseAuth } from '@/lib/firebase';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -18,8 +19,8 @@ export default function SettingsPage() {
       try {
         const identity = await AdminApiClient.getAdminIdentity();
         setAdmin(identity);
-      } catch (err: any) {
-        setError(err.message || 'Gagal load admin identity');
+      } catch (err) {
+        setError(getErrorMessage(err, 'Gagal load admin identity'));
         console.error('Settings error:', err);
       } finally {
         setLoading(false);

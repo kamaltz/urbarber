@@ -2,6 +2,7 @@
 
 import { useAdminAuth } from '@/features/auth/AdminAuthProvider';
 import { AdminApiClient, type AdminUserRecord } from '@/lib/api-client';
+import { getErrorMessage } from '@/lib/errors';
 import { useEffect, useState } from 'react';
 
 type ModalState = null | { type: 'suspend'; userId: string; displayName: string };
@@ -22,8 +23,8 @@ export default function UsersPage() {
       setError(null);
       const data = await AdminApiClient.getUsers(filterValue || roleFilter, 20);
       setUsers(data.items);
-    } catch (err: any) {
-      setError(err.message || 'Gagal memuat pengguna');
+    } catch (err) {
+      setError(getErrorMessage(err, 'Gagal memuat pengguna'));
       console.error('Load error:', err);
     } finally {
       setLoading(false);
@@ -39,8 +40,8 @@ export default function UsersPage() {
       setActionLoading(true);
       await AdminApiClient.updateUserStatus(userId, 'active', 'Reaktivasi');
       loadUsers();
-    } catch (err: any) {
-      alert(err.message || 'Gagal mengaktifkan pengguna');
+    } catch (err) {
+      alert(getErrorMessage(err, 'Gagal mengaktifkan pengguna'));
     } finally {
       setActionLoading(false);
     }
@@ -63,8 +64,8 @@ export default function UsersPage() {
       setModal(null);
       setActionReason('');
       loadUsers();
-    } catch (err: any) {
-      alert(err.message || 'Gagal menangguhkan pengguna');
+    } catch (err) {
+      alert(getErrorMessage(err, 'Gagal menangguhkan pengguna'));
     } finally {
       setActionLoading(false);
     }

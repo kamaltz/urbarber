@@ -2,6 +2,7 @@
 
 import { useAdminAuth } from '@/features/auth/AdminAuthProvider';
 import { AdminApiClient, type DashboardMetrics } from '@/lib/api-client';
+import { getErrorMessage } from '@/lib/errors';
 import { shortId } from '@/lib/format';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
@@ -23,8 +24,8 @@ export default function DashboardPage() {
       setError(null);
       const data = await AdminApiClient.getDashboardMetrics();
       setMetrics(data);
-    } catch (err: any) {
-      setError(err.message || 'Gagal memuat data dashboard. Silakan coba lagi.');
+    } catch (err) {
+      setError(getErrorMessage(err, 'Gagal memuat data dashboard. Silakan coba lagi.'));
       console.error('Dashboard error:', err);
     } finally {
       setLoading(false);

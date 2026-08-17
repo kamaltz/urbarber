@@ -1,4 +1,5 @@
 import { firebaseAuth } from './firebase';
+import { ApiError } from './errors';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000';
 
@@ -223,10 +224,7 @@ export class AdminApiClient {
     // Handle error responses
     if (!response.ok) {
       const error = data?.error || { code: 'UNKNOWN_ERROR', message: 'Request failed' };
-      const err = new Error(error.message);
-      (err as any).code = error.code;
-      (err as any).status = response.status;
-      throw err;
+      throw new ApiError(error.message, error.code, response.status);
     }
 
     return data;

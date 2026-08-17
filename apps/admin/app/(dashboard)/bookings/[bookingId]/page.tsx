@@ -1,6 +1,7 @@
 'use client';
 
 import { AdminApiClient, type AdminBookingDetail } from '@/lib/api-client';
+import { getErrorMessage } from '@/lib/errors';
 import { shortId } from '@/lib/format';
 import { useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -18,8 +19,8 @@ export default function BookingDetailPage() {
       try {
         const detail = await AdminApiClient.getBookingDetail(bookingId);
         setBooking(detail);
-      } catch (err: any) {
-        setError(err.message || 'Gagal load booking detail');
+      } catch (err) {
+        setError(getErrorMessage(err, 'Gagal load booking detail'));
         console.error('Booking detail error:', err);
       } finally {
         setLoading(false);

@@ -1,6 +1,7 @@
 'use client';
 
 import { AdminApiClient, type AdminIdentity } from '@/lib/api-client';
+import { ApiError, getErrorMessage } from '@/lib/errors';
 import { firebaseAuth } from '@/lib/firebase';
 import {
     onAuthStateChanged,
@@ -60,22 +61,22 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
           setAdmin(identity);
           setUnauthorized(false);
           setBackendUnavailable(false);
-        } catch (err: any) {
-          const status = err.status;
+        } catch (err) {
+          const status = err instanceof ApiError ? err.status : undefined;
           if (status === 401 || status === 403) {
             setUnauthorized(true);
             setAdmin(null);
-            setError(err.message || 'Access denied. Admin privileges required.');
-          } else if (status >= 500 || status === 0) {
+            setError(getErrorMessage(err, 'Access denied. Admin privileges required.'));
+          } else if (status !== undefined && (status >= 500 || status === 0)) {
             setBackendUnavailable(true);
             setAdmin(null);
             setError('Backend service unavailable. Please try again later.');
           } else {
-            setError(err.message || 'Authentication failed.');
+            setError(getErrorMessage(err, 'Authentication failed.'));
           }
         }
-      } catch (err: any) {
-        setError(err.message || 'An error occurred during authentication.');
+      } catch (err) {
+        setError(getErrorMessage(err, 'An error occurred during authentication.'));
       } finally {
         setLoading(false);
       }
@@ -89,8 +90,8 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
       await signOut(firebaseAuth);
       setAdmin(null);
       setFirebaseUser(null);
-    } catch (err: any) {
-      setError(err.message || 'Failed to logout.');
+    } catch (err) {
+      setError(getErrorMessage(err, 'Failed to logout.'));
       throw err;
     }
   };

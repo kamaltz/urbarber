@@ -1,9 +1,13 @@
 'use client';
 
 import { AdminApiClient, type AdminBookingSummary } from '@/lib/api-client';
+import { getErrorMessage } from '@/lib/errors';
 import { shortId } from '@/lib/format';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+
+const STATUS_OPTIONS = ['all', 'pending', 'accepted', 'rejected', 'in_progress', 'completed', 'cancelled'] as const;
+const PAYMENT_METHOD_OPTIONS = ['all', 'cash_on_service', 'midtrans_sandbox'] as const;
 
 export default function BookingsPage() {
   const [bookings, setBookings] = useState<AdminBookingSummary[]>([]);
@@ -26,8 +30,8 @@ export default function BookingsPage() {
         undefined
       );
       setBookings(result.items);
-    } catch (err: any) {
-      setError(err.message || 'Gagal load booking list');
+    } catch (err) {
+      setError(getErrorMessage(err, 'Gagal load booking list'));
       console.error('Booking error:', err);
     } finally {
       setLoading(false);
@@ -99,10 +103,10 @@ export default function BookingsPage() {
             Status
           </label>
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-            {['all', 'pending', 'accepted', 'rejected', 'in_progress', 'completed', 'cancelled'].map((s) => (
+            {STATUS_OPTIONS.map((s) => (
               <button
                 key={s}
-                onClick={() => setFilter(s as any)}
+                onClick={() => setFilter(s)}
                 style={{
                   padding: '0.5rem 1rem',
                   borderRadius: '0.375rem',
@@ -124,10 +128,10 @@ export default function BookingsPage() {
             Metode Pembayaran
           </label>
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-            {['all', 'cash_on_service', 'midtrans_sandbox'].map((m) => (
+            {PAYMENT_METHOD_OPTIONS.map((m) => (
               <button
                 key={m}
-                onClick={() => setPaymentMethod(m as any)}
+                onClick={() => setPaymentMethod(m)}
                 style={{
                   padding: '0.5rem 1rem',
                   borderRadius: '0.375rem',

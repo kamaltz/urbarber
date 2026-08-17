@@ -2,6 +2,7 @@
 
 import { useAdminAuth } from '@/features/auth/AdminAuthProvider';
 import { AdminApiClient, type AdminBarberRegistration } from '@/lib/api-client';
+import { getErrorMessage } from '@/lib/errors';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
@@ -18,8 +19,8 @@ export default function BarberVerificationPage() {
       setError(null);
       const data = await AdminApiClient.getBarberRegistrations(filterValue || filter, 20);
       setRegistrations(data.items);
-    } catch (err: any) {
-      setError(err.message || 'Gagal memuat registrasi');
+    } catch (err) {
+      setError(getErrorMessage(err, 'Gagal memuat registrasi'));
       console.error('Load error:', err);
     } finally {
       setLoading(false);

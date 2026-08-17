@@ -2,6 +2,7 @@
 
 import { useAdminAuth } from '@/features/auth/AdminAuthProvider';
 import { AdminApiClient, type AdminBarberDetail } from '@/lib/api-client';
+import { ApiError, getErrorMessage } from '@/lib/errors';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
@@ -28,8 +29,8 @@ export default function BarberDetailPage() {
       try {
         const data = await AdminApiClient.getBarberDetail(barberId);
         setBarber(data);
-      } catch (err: any) {
-        setError(err.message || 'Gagal load detail.');
+      } catch (err) {
+        setError(getErrorMessage(err, 'Gagal load detail.'));
       } finally {
         setLoading(false);
       }
@@ -48,8 +49,8 @@ export default function BarberDetailPage() {
       await AdminApiClient.suspendBarber(barberId, suspendReason);
       alert('Barber berhasil disuspensus.');
       router.push('/barbers');
-    } catch (err: any) {
-      alert(`Gagal suspend: ${err.message}`);
+    } catch (err) {
+      alert(`Gagal suspend: ${getErrorMessage(err)}`);
     } finally {
       setSuspending(false);
       setSuspendModal(false);
@@ -66,8 +67,8 @@ export default function BarberDetailPage() {
       const data = await AdminApiClient.getBarberDetail(barberId);
       setBarber(data);
       setLoading(false);
-    } catch (err: any) {
-      alert(`Gagal reactivate: ${err.message}`);
+    } catch (err) {
+      alert(`Gagal reactivate: ${getErrorMessage(err)}`);
     }
   };
 
@@ -82,12 +83,12 @@ export default function BarberDetailPage() {
       await AdminApiClient.deleteBarber(barberId);
       alert('Barber berhasil dihapus.');
       router.push('/barbers');
-    } catch (err: any) {
+    } catch (err) {
       // Check if error is about active bookings
-      if (err.code === 'CONFLICT') {
+      if (err instanceof ApiError && err.code === 'CONFLICT') {
         alert(`Gagal delete: Barber masih memiliki booking aktif. Pastikan semua booking selesai atau dibatalkan terlebih dahulu.`);
       } else {
-        alert(`Gagal delete: ${err.message}`);
+        alert(`Gagal delete: ${getErrorMessage(err)}`);
       }
     } finally {
       setDeleting(false);
@@ -291,7 +292,7 @@ export default function BarberDetailPage() {
               Riwayat booking dan transaksi akan tetap disimpan untuk keperluan audit.
             </p>
             <p className="text-gray-700 font-semibold mb-4">
-              Ketik "HAPUS" untuk mengkonfirmasi:
+              Ketik &quot;HAPUS&quot; untuk mengkonfirmasi:
             </p>
             <input
               type="text"

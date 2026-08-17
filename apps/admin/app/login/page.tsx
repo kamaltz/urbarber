@@ -1,7 +1,9 @@
 'use client';
 
 import { useAdminAuth } from '@/features/auth/AdminAuthProvider';
+import { getErrorMessage } from '@/lib/errors';
 import { firebaseAuth } from '@/lib/firebase';
+import { FirebaseError } from 'firebase/app';
 import {
     AuthErrorCodes,
     signInWithEmailAndPassword,
@@ -30,15 +32,15 @@ export default function LoginPage() {
     try {
       await signInWithEmailAndPassword(firebaseAuth, email, password);
       // Auth state change will handle redirect via useEffect in layout
-    } catch (err: any) {
-      if (err.code === AuthErrorCodes.USER_DELETED) {
+    } catch (err) {
+      if (err instanceof FirebaseError && err.code === AuthErrorCodes.USER_DELETED) {
         setError('Akun tidak ditemukan.');
-      } else if (err.code === AuthErrorCodes.INVALID_PASSWORD) {
+      } else if (err instanceof FirebaseError && err.code === AuthErrorCodes.INVALID_PASSWORD) {
         setError('Email atau password salah.');
-      } else if (err.code === AuthErrorCodes.USER_DISABLED) {
+      } else if (err instanceof FirebaseError && err.code === AuthErrorCodes.USER_DISABLED) {
         setError('Akun telah dinonaktifkan.');
       } else {
-        setError(err.message || 'Login gagal. Coba lagi.');
+        setError(getErrorMessage(err, 'Login gagal. Coba lagi.'));
       }
     } finally {
       setLoading(false);

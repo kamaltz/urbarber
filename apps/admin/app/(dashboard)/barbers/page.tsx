@@ -2,6 +2,7 @@
 
 import { useAdminAuth } from '@/features/auth/AdminAuthProvider';
 import { AdminApiClient, type AdminBarberSummary } from '@/lib/api-client';
+import { getErrorMessage } from '@/lib/errors';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
@@ -20,8 +21,8 @@ export default function BarbersPage() {
       try {
         const result = await AdminApiClient.getBarbers(filter);
         setBarbers(result.items);
-      } catch (err: any) {
-        setError(err.message || 'Gagal load barbers.');
+      } catch (err) {
+        setError(getErrorMessage(err, 'Gagal load barbers.'));
       } finally {
         setLoading(false);
       }

@@ -1,8 +1,11 @@
 'use client';
 
 import { AdminApiClient, type AdminTransaction } from '@/lib/api-client';
+import { getErrorMessage } from '@/lib/errors';
 import { shortId } from '@/lib/format';
 import { useEffect, useState } from 'react';
+
+const PROVIDER_OPTIONS = ['all', 'cash_on_service', 'midtrans_sandbox'] as const;
 
 export default function TransactionsPage() {
   const [transactions, setTransactions] = useState<AdminTransaction[]>([]);
@@ -24,8 +27,8 @@ export default function TransactionsPage() {
         undefined
       );
       setTransactions(result.items);
-    } catch (err: any) {
-      setError(err.message || 'Gagal load transaction list');
+    } catch (err) {
+      setError(getErrorMessage(err, 'Gagal load transaction list'));
       console.error('Transaction error:', err);
     } finally {
       setLoading(false);
@@ -85,10 +88,10 @@ export default function TransactionsPage() {
             Provider
           </label>
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-            {['all', 'cash_on_service', 'midtrans_sandbox'].map((p) => (
+            {PROVIDER_OPTIONS.map((p) => (
               <button
                 key={p}
-                onClick={() => setProvider(p as any)}
+                onClick={() => setProvider(p)}
                 style={{
                   padding: '0.5rem 1rem',
                   borderRadius: '0.375rem',
