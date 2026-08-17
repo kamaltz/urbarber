@@ -1,28 +1,29 @@
 /**
- * Unit Tests for BookingRepository.submitReview (Batch 10B-5H-C)
+ * Unit Tests for BookingRepository.submitReview
  *
- * Regression guard: booking/rating/[bookingId].tsx previously submitted every
- * review with a hardcoded MOCK_CUSTOMER_ID = 'CUST001' and no barberId at
- * all. firestore.rules' reviews `allow create` requires
- * request.resource.data.customerId == uid() -- so every real customer's
- * review was permission-denied -- and getBarberReviews queries
- * where('barberId','==',barberId), so even a rule change alone would never
- * have made a review appear in the Barber Reviews screen. These tests lock
- * in that the real customerId/barberId reach the write, and that the
- * deterministic reviews/{bookingId} doc id is used (one review per booking).
+ * Regression guard: submitReview previously wrote reviews/{bookingId} directly
+ * to Firestore via setDoc. That path could never update
+ * barbers/{barberId}.ratingAverage/reviewCount -- firestore.rules denies a
+ * barber's own self-update of those two fields, and a customer has no write
+ * access to another user's barbers/{barberId} doc at all -- so the aggregate
+ * shown throughout the customer app (search cards, barber detail) was
+ * permanently stale at whatever value existed when the barber doc was created.
+ * submitReview now delegates to POST /api/bookings/:bookingId/review, which
+ * updates both the review doc and the aggregate atomically via the trusted
+ * backend (Admin SDK bypasses rules). firestore.rules' `reviews` collection
+ * now denies direct client creates outright (`allow create: if false`), so
+ * this backend call is the only way a review can be submitted.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { setDocMock, docMock } = vi.hoisted(() => ({
-  setDocMock: vi.fn(),
-  docMock: vi.fn((_db: unknown, coll: string, id: string) => ({ __coll: coll, __id: id })),
+const { submitBookingReviewMock } = vi.hoisted(() => ({
+  submitBookingReviewMock: vi.fn(),
 }));
 
 vi.mock('firebase/firestore', () => ({
-  doc: (...args: unknown[]) => docMock(...(args as [unknown, string, string])),
+  doc: vi.fn(),
   getDoc: vi.fn(),
   getDocs: vi.fn(),
-  setDoc: (...args: unknown[]) => setDocMock(...args),
   updateDoc: vi.fn(),
   runTransaction: vi.fn(),
   query: vi.fn(),
@@ -33,16 +34,19 @@ vi.mock('firebase/firestore', () => ({
 
 vi.mock('@/lib/firebase', () => ({ firestore: {} }));
 
+vi.mock('@/features/payments/services/payment-api.service', () => ({
+  paymentApiService: { submitBookingReview: (...args: unknown[]) => submitBookingReviewMock(...args) },
+}));
+
 import { bookingRepository } from '../booking.repository';
 
 describe('bookingRepository.submitReview', () => {
   beforeEach(() => {
-    setDocMock.mockReset();
-    docMock.mockClear();
-    setDocMock.mockResolvedValue(undefined);
+    submitBookingReviewMock.mockReset();
+    submitBookingReviewMock.mockResolvedValue({ success: true, data: { success: true, bookingId: 'booking-1', message: 'ok' } });
   });
 
-  it('1. writes the real authenticated customerId and the booking barberId, not a mock/missing identity', async () => {
+  it('1. delegates to the backend with the bookingId and rating/reviewText/tags', async () => {
     await bookingRepository.submitReview('booking-1', {
       rating: 5,
       reviewText: 'Mantap',
@@ -51,51 +55,47 @@ describe('bookingRepository.submitReview', () => {
       barberId: 'barber-1',
     });
 
-    expect(setDocMock).toHaveBeenCalledTimes(1);
-    const [, review] = setDocMock.mock.calls[0];
-    expect(review.customerId).toBe('real-firebase-uid-123');
-    expect(review.barberId).toBe('barber-1');
-    expect(review.bookingId).toBe('booking-1');
+    expect(submitBookingReviewMock).toHaveBeenCalledTimes(1);
+    expect(submitBookingReviewMock).toHaveBeenCalledWith('booking-1', {
+      rating: 5,
+      reviewText: 'Mantap',
+      tags: ['rapi'],
+    });
   });
 
-  it('2. writes to a deterministic reviews/{bookingId} document id, not a random one', async () => {
-    await bookingRepository.submitReview('booking-1', {
+  it('2. defaults reviewText/tags when omitted', async () => {
+    await bookingRepository.submitReview('booking-1', { rating: 4 });
+
+    expect(submitBookingReviewMock).toHaveBeenCalledWith('booking-1', {
       rating: 4,
-      customerId: 'cust-1',
-      barberId: 'barber-1',
+      reviewText: '',
+      tags: [],
     });
-
-    expect(docMock).toHaveBeenCalledWith(expect.anything(), 'reviews', 'booking-1');
   });
 
-  it('3. rejects a missing customerId before writing (never falls back to a mock identity)', async () => {
-    const result = await bookingRepository.submitReview('booking-1', {
-      rating: 5,
-      barberId: 'barber-1',
+  it('3. surfaces a backend error (e.g. ALREADY_REVIEWED) as a failed result', async () => {
+    submitBookingReviewMock.mockResolvedValue({
+      success: false,
+      error: { code: 'ALREADY_REVIEWED', message: 'Booking ini sudah diberi ulasan.' },
     });
 
+    const result = await bookingRepository.submitReview('booking-1', { rating: 5 });
+
     expect(result.success).toBe(false);
-    expect(setDocMock).not.toHaveBeenCalled();
+    expect(result.error?.code).toBe('ALREADY_REVIEWED');
   });
 
-  it('4. rejects a missing barberId before writing', async () => {
-    const result = await bookingRepository.submitReview('booking-1', {
-      rating: 5,
-      customerId: 'cust-1',
-    });
+  it('4. rejects an out-of-range rating before calling the backend', async () => {
+    const result = await bookingRepository.submitReview('booking-1', { rating: 6 });
 
     expect(result.success).toBe(false);
-    expect(setDocMock).not.toHaveBeenCalled();
+    expect(submitBookingReviewMock).not.toHaveBeenCalled();
   });
 
-  it('5. rejects an out-of-range rating before writing', async () => {
-    const result = await bookingRepository.submitReview('booking-1', {
-      rating: 6,
-      customerId: 'cust-1',
-      barberId: 'barber-1',
-    });
+  it('5. rejects a missing rating before calling the backend', async () => {
+    const result = await bookingRepository.submitReview('booking-1', {});
 
     expect(result.success).toBe(false);
-    expect(setDocMock).not.toHaveBeenCalled();
+    expect(submitBookingReviewMock).not.toHaveBeenCalled();
   });
 });

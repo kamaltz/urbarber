@@ -323,8 +323,12 @@ async function runRulesTests() {
     // above has fully settled before these assertions run.
     await testEnv.clearFirestore();
 
-    // 14. Customer can review their own completed booking
-    await test('14. Customer can review their own completed booking', async () => {
+    // 14. Review creation is backend-only: even a customer reviewing their own
+    // completed booking cannot write reviews/{id} directly. The backend (Admin
+    // SDK, bypasses these rules) is the only path, because it atomically updates
+    // barbers/{barberId}.ratingAverage/reviewCount in the same transaction --
+    // fields a direct client write could never touch (self-update denied above).
+    await test('14. Customer cannot create a review directly, even for their own completed booking', async () => {
       await testEnv.withSecurityRulesDisabled(async (context) => {
         await context.firestore().collection('bookings').doc('book_completed').set({
           customerId: 'cust1',
@@ -334,7 +338,7 @@ async function runRulesTests() {
       });
 
       const custDb = testEnv.authenticatedContext('cust1', { app_role: 'customer' }).firestore();
-      await assertSucceeds(
+      await assertFails(
         custDb.collection('reviews').doc('rev1').set({
           bookingId: 'book_completed',
           customerId: 'cust1',
@@ -344,7 +348,7 @@ async function runRulesTests() {
       );
     });
 
-    // 15. Customer cannot review an incomplete booking
+    // 15. Same deny-by-default applies regardless of booking status.
     await test('15. Customer cannot review an incomplete booking', async () => {
       await testEnv.withSecurityRulesDisabled(async (context) => {
         await context.firestore().collection('bookings').doc('book_pending').set({
@@ -365,8 +369,7 @@ async function runRulesTests() {
       );
     });
 
-    // 16. Customer cannot review another customer's booking (self-contained fixture,
-    // independent of test 14's book_completed, so this test is order-independent)
+    // 16. ...and regardless of whose booking it is.
     await test("16. Customer cannot review another customer's booking", async () => {
       await testEnv.withSecurityRulesDisabled(async (context) => {
         await context.firestore().collection('bookings').doc('book_completed_foreign').set({
@@ -632,6 +635,12 @@ async function runRulesTests() {
       );
       await assertFails(
         barb4Db.collection('barbers').doc('barb4').update({ ratingAverage: 5 })
+      );
+      // reviewCount is the real field name written by the review-aggregate backend
+      // path (see api/app.ts handleSubmitReview) -- this denylist previously guarded
+      // a `ratingCount` field that nothing ever wrote, leaving reviewCount unprotected.
+      await assertFails(
+        barb4Db.collection('barbers').doc('barb4').update({ reviewCount: 999 })
       );
       await assertFails(
         barb4Db.collection('barbers').doc('barb4').update({ verificationStatus: 'approved' })

@@ -257,7 +257,10 @@ service cloud.firestore {
         // which is intentionally NOT in this denylist.
         && request.resource.data.get('listingStatus', null) == resource.data.get('listingStatus', null)
         && request.resource.data.get('ratingAverage', null) == resource.data.get('ratingAverage', null)
-        && request.resource.data.get('ratingCount', null) == resource.data.get('ratingCount', null)
+        // Field is `reviewCount` everywhere in app code (BarberProfile, customer.repository.ts,
+        // admin.service.ts) -- this denylist previously guarded a `ratingCount` field that is
+        // never written anywhere, leaving the real aggregate field unprotected from barber self-write.
+        && request.resource.data.get('reviewCount', null) == resource.data.get('reviewCount', null)
         && request.resource.data.get('createdAt', null) == resource.data.get('createdAt', null)
         && request.resource.data.get('userId', null) == resource.data.get('userId', null)
         // location and geohash must be created/changed together, never independently -- a
@@ -525,17 +528,12 @@ service cloud.firestore {
     match /reviews/{reviewId} {
       allow read: if true;
 
-      // Customer can create review only for their own completed booking with rating 1-5
-      // Verified directly against the referenced booking document (not backend-trusted-only,
-      // since this is a direct client write)
-      allow create: if isSignedIn()
-        && request.resource.data.customerId == uid()
-        && request.resource.data.rating >= 1
-        && request.resource.data.rating <= 5
-        && request.resource.data.bookingId is string
-        && get(/databases/$(database)/documents/bookings/$(request.resource.data.bookingId)).data.customerId == uid()
-        && get(/databases/$(database)/documents/bookings/$(request.resource.data.bookingId)).data.barberId == request.resource.data.barberId
-        && get(/databases/$(database)/documents/bookings/$(request.resource.data.bookingId)).data.status == 'completed';
+      // Review creation is backend-only (POST /api/bookings/:bookingId/review, Admin SDK,
+      // which bypasses these rules entirely). A direct client write would create the review
+      // doc but could never touch barbers/{barberId}.ratingAverage/reviewCount -- self-update
+      // of those fields is denied above -- leaving the aggregate permanently stale. Routing
+      // creation through the backend lets it update both atomically in one transaction.
+      allow create: if false;
 
       // Customer cannot modify their review after creation; barber can only add/update reply
       allow update: if (

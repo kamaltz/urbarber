@@ -159,6 +159,22 @@ class PaymentApiService {
       body: JSON.stringify({ bookingId, reason }),
     });
   }
+
+  /**
+   * Backend-only: also atomically updates barbers/{barberId}.ratingAverage/reviewCount
+   * in the same transaction (see backend/vercel/api/app.ts handleSubmitReview). A direct
+   * client write to reviews/{bookingId} cannot update those aggregate fields -- self-update
+   * is denied by firestore.rules -- so this must go through the backend, not Firestore directly.
+   */
+  async submitBookingReview(bookingId: string, payload: { rating: number; reviewText?: string; tags?: string[] }) {
+    return this.fetchWithAuth<{ success: boolean; bookingId: string; message: string }>(
+      `/api/bookings/${bookingId}/review`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }
+    );
+  }
 }
 
 export const paymentApiService = new PaymentApiService();

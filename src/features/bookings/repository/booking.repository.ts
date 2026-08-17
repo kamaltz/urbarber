@@ -10,13 +10,13 @@ import {
   getDocs,
   query,
   runTransaction,
-  setDoc,
   Timestamp,
   updateDoc,
   where,
 } from 'firebase/firestore';
 import { firestore } from '@/lib/firebase';
 import { BookingStatus } from '@/types/domain';
+import { paymentApiService } from '@/features/payments/services/payment-api.service';
 import { availabilityApiService } from '../api/availability-api.service';
 import { mapRawBookingToDomain } from '../utils/map-booking';
 import { Booking, BookingReview, TimeSlotAvailability } from '../types/booking';
@@ -328,52 +328,34 @@ class BookingRepository {
   }
 
   /**
-   * Submit booking review. Uses a deterministic reviews/{bookingId} document
-   * id (rather than addDoc's random id) so a booking can only ever have one
-   * review doc: a second submission targets the same doc id, which
-   * firestore.rules' `allow update` only grants to the assigned barber (for
-   * replies) -- a customer's second attempt is denied, not silently
-   * overwritten.
+   * Submit booking review via the backend (POST /api/bookings/:bookingId/review),
+   * not a direct Firestore write. The backend atomically creates the review doc
+   * AND updates barbers/{barberId}.ratingAverage/reviewCount in one transaction --
+   * a direct client write could only ever do the former, since self-update of
+   * those aggregate fields is denied by firestore.rules (see the barbers `allow
+   * update` denylist), which is exactly what left the aggregate permanently
+   * stale before this fix. firestore.rules now denies direct client creates on
+   * `reviews` outright, so this backend call is the only way to submit a review.
    */
   async submitReview(bookingId: string, reviewData: any): Promise<{ success: boolean; error?: any }> {
-    try {
-      if (!reviewData.rating || reviewData.rating < 1 || reviewData.rating > 5) {
-        return {
-          success: false,
-          error: { code: 'INVALID_RATING', message: 'Rating harus antara 1-5' },
-        };
-      }
-
-      if (!reviewData.customerId || !reviewData.barberId) {
-        return {
-          success: false,
-          error: { code: 'INVALID_ARGUMENT', message: 'Data customer atau barber tidak lengkap' },
-        };
-      }
-
-      const review = {
-        bookingId,
-        customerId: reviewData.customerId,
-        barberId: reviewData.barberId,
-        rating: reviewData.rating,
-        reviewText: reviewData.reviewText || '',
-        tags: reviewData.tags || [],
-        createdAt: Timestamp.now(),
-        updatedAt: Timestamp.now(),
-      };
-
-      await setDoc(doc(firestore, 'reviews', bookingId), review);
-
-      return { success: true };
-    } catch (error: any) {
-      if (__DEV__) {
-        console.warn('[BookingRepository submitReview Error]', error?.code, error?.message || error);
-      }
+    if (!reviewData.rating || reviewData.rating < 1 || reviewData.rating > 5) {
       return {
         success: false,
-        error: { code: 'REVIEW_FAILED', message: error?.message || 'Gagal mengirim review' },
+        error: { code: 'INVALID_RATING', message: 'Rating harus antara 1-5' },
       };
     }
+
+    const result = await paymentApiService.submitBookingReview(bookingId, {
+      rating: reviewData.rating,
+      reviewText: reviewData.reviewText || '',
+      tags: reviewData.tags || [],
+    });
+
+    if (!result.success) {
+      return { success: false, error: result.error };
+    }
+
+    return { success: true };
   }
 
   /**

@@ -14,11 +14,13 @@
  *   current mobile tracking uses participant-scoped Firestore realtime access.
  * - POST /api/bookings/cancel
  * - POST /api/bookings/:bookingId/chat
+ * - POST /api/bookings/:bookingId/review
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { z } from 'zod';
 import { computeAvailability } from '../src/bookings/availability.js';
+import { applyReviewToAggregate } from '../src/bookings/rating-aggregate.js';
 import { isBarberAcceptingBookings } from '../src/bookings/service-booking-guard.js';
 import { getSlotLockId } from '../src/bookings/slot-lock.js';
 import { authenticateRequest } from '../src/lib/auth-middleware.js';
@@ -1045,6 +1047,139 @@ async function handleInitializeChat(ctx: RouteContext, bookingId: string): Promi
 }
 
 // ============================================================================
+// Route Handlers: Reviews
+// ============================================================================
+
+/**
+ * POST /api/bookings/:bookingId/review
+ *
+ * Creates the review doc AND atomically updates barbers/{barberId}.ratingAverage
+ * /reviewCount in one transaction. Review creation is backend-only (see
+ * firestore.rules `reviews` allow create: if false) because a direct client
+ * write can never touch the barber's aggregate fields -- self-update of
+ * ratingAverage/reviewCount is denied by the barbers update rule -- so a
+ * client-only path would leave the aggregate permanently stale.
+ */
+async function handleSubmitReview(ctx: RouteContext, bookingId: string): Promise<void> {
+  const { req, res } = ctx;
+
+  if (!handleCors(req, res, ['POST', 'OPTIONS'])) return;
+
+  const authUser = await authenticateRequest(req, res);
+  if (!authUser) return;
+
+  if (authUser.appRole !== 'customer' && authUser.appRole !== 'admin') {
+    res.status(403).json({
+      error: { code: 'FORBIDDEN', message: 'Hanya pelanggan yang dapat memberi ulasan.' },
+    });
+    return;
+  }
+
+  const reviewSchema = z.object({
+    rating: z.number({ required_error: 'rating wajib diisi.' }).int().min(1).max(5),
+    reviewText: z.string().max(1000).optional().default(''),
+    tags: z.array(z.string()).optional().default([]),
+  });
+
+  const parseResult = reviewSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    res.status(400).json({
+      error: { code: 'INVALID_ARGUMENT', message: parseResult.error.issues.map((i) => i.message).join(', ') },
+    });
+    return;
+  }
+
+  const { rating, reviewText, tags } = parseResult.data;
+
+  try {
+    const bookingRef = db.collection('bookings').doc(bookingId);
+    const reviewRef = db.collection('reviews').doc(bookingId);
+
+    type ReviewResult =
+      | { error: { status: number; code: string; message: string } }
+      | { success: true };
+
+    const result = await db.runTransaction<ReviewResult>(async (tx) => {
+      const [bookingSnap, reviewSnap] = await Promise.all([tx.get(bookingRef), tx.get(reviewRef)]);
+
+      if (!bookingSnap.exists) {
+        return { error: { status: 404, code: 'NOT_FOUND', message: 'Pemesanan tidak ditemukan.' } };
+      }
+
+      const bookingData = bookingSnap.data() || {};
+
+      if (bookingData.customerId !== authUser.uid && authUser.appRole !== 'admin') {
+        return { error: { status: 403, code: 'FORBIDDEN', message: 'Booking ini bukan milik Anda.' } };
+      }
+
+      if (bookingData.status !== 'completed') {
+        return {
+          error: {
+            status: 400,
+            code: 'BOOKING_NOT_COMPLETED',
+            message: 'Hanya booking yang sudah selesai yang dapat diberi ulasan.',
+          },
+        };
+      }
+
+      if (reviewSnap.exists) {
+        return { error: { status: 409, code: 'ALREADY_REVIEWED', message: 'Booking ini sudah diberi ulasan.' } };
+      }
+
+      const barberId = bookingData.barberId;
+      const barberRef = db.collection('barbers').doc(barberId);
+      const barberSnap = await tx.get(barberRef);
+      const barberData = barberSnap.exists ? barberSnap.data() || {} : {};
+
+      const previousCount = typeof barberData.reviewCount === 'number' ? barberData.reviewCount : 0;
+      const previousAverage = typeof barberData.ratingAverage === 'number' ? barberData.ratingAverage : 0;
+      const { ratingAverage: newAverage, reviewCount: newCount } = applyReviewToAggregate(
+        { ratingAverage: previousAverage, reviewCount: previousCount },
+        rating
+      );
+
+      const timestamp = new Date().toISOString();
+
+      tx.set(reviewRef, {
+        bookingId,
+        customerId: bookingData.customerId,
+        barberId,
+        rating,
+        reviewText,
+        tags,
+        status: 'published',
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      });
+
+      tx.set(
+        barberRef,
+        {
+          ratingAverage: newAverage,
+          reviewCount: newCount,
+          updatedAt: timestamp,
+        },
+        { merge: true }
+      );
+
+      return { success: true as const };
+    });
+
+    if ('error' in result) {
+      res.status(result.error.status).json({ error: { code: result.error.code, message: result.error.message } });
+      return;
+    }
+
+    res.status(201).json({ success: true, bookingId, message: 'Ulasan berhasil dikirim' });
+  } catch (err: any) {
+    console.error('[Bookings/review] Error:', err.message);
+    res.status(500).json({
+      error: { code: 'INTERNAL_SERVER_ERROR', message: 'Terjadi kesalahan internal.' },
+    });
+  }
+}
+
+// ============================================================================
 // Route Handlers: Availability (Batch 09D-S P0)
 // ============================================================================
 
@@ -1137,6 +1272,14 @@ async function router(ctx: RouteContext): Promise<void> {
   if (chatMatch && method === 'POST') {
     const bookingId = chatMatch[1];
     await handleInitializeChat(ctx, bookingId);
+    return;
+  }
+
+  // /api/bookings/:bookingId/review
+  const reviewMatch = pathname.match(/^\/api\/bookings\/([^\/]+)\/review$/);
+  if (reviewMatch && method === 'POST') {
+    const bookingId = reviewMatch[1];
+    await handleSubmitReview(ctx, bookingId);
     return;
   }
 
