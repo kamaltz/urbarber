@@ -198,7 +198,11 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
         return {
           uid: d.id,
           displayName: uData.displayName || bData?.displayName || 'N/A',
-          businessName: bData?.businessName || uData.businessName || '-',
+          // shopName is the field the barber's own Profile tab actually
+          // writes (profile.tsx handleSaveProfile) -- businessName/
+          // businessAddress are never written anywhere in this codebase and
+          // were always undefined here; kept as a defensive fallback only.
+          businessName: bData?.shopName || bData?.businessName || uData.businessName || '-',
           email: uData.email || '',
           status: uData.status,
           statusReason: uData.statusReason || '',
@@ -361,9 +365,13 @@ export async function approveBarber(barberId: string, adminUid: string): Promise
     const regData = regSnap.data()!;
     if (regData.verificationStatus !== 'pending') throw new Error('REGISTRATION_NOT_PENDING');
 
-    // Validate required fields
+    // Validate required fields. barberRegistrations docs are written with
+    // `shopName` (barber-registration.service.ts saveProfileDraft), never
+    // `businessName` -- that field is never written anywhere in this
+    // codebase, so this check unconditionally threw for every real
+    // registration, making barber approval completely non-functional.
     if (!regData.ownerName?.trim()) throw new Error('REGISTRATION_MISSING_OWNER_NAME');
-    if (!regData.businessName?.trim()) throw new Error('REGISTRATION_MISSING_BUSINESS_NAME');
+    if (!regData.shopName?.trim() && !regData.businessName?.trim()) throw new Error('REGISTRATION_MISSING_BUSINESS_NAME');
 
     const now = FieldValue.serverTimestamp();
 
@@ -699,7 +707,7 @@ export async function getBarberList(
       items.push({
         uid: doc.id,
         displayName: barberData.displayName || userData?.displayName || 'N/A',
-        businessName: barberData.businessName,
+        businessName: barberData.shopName || barberData.businessName,
         verificationStatus: barberData.verificationStatus || 'pending',
         listingStatus: barberData.listingStatus,
         accountStatus: userData?.status || 'active',
@@ -739,8 +747,8 @@ export async function getBarberDetail(barberId: string): Promise<AdminBarberDeta
       uid: barberId,
       displayName: barberData.displayName || userData.displayName || 'N/A',
       email: userData.email,
-      businessName: barberData.businessName,
-      businessAddress: barberData.businessAddress,
+      businessName: barberData.shopName || barberData.businessName,
+      businessAddress: barberData.shopAddress || barberData.businessAddress,
       serviceArea: barberData.serviceArea,
       phoneNumber: userData.phoneNumber,
       verificationStatus: barberData.verificationStatus || 'pending',

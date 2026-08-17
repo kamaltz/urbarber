@@ -268,8 +268,15 @@ export default function BarberProfileScreen() {
 
     setSaving(true);
     try {
+      // displayName is set once at onboarding (to the owner's personal name)
+      // and every customer-facing reader (customer.repository.ts,
+      // discovery.service.ts) prioritizes it over shopName/name -- without
+      // updating it here, a barber renaming their shop would never see that
+      // change reflected on the customer search card or Barber Detail
+      // screen, since the stale displayName always won the `||` fallback.
       const res = await barberRepository.updateBarberProfile(barberId, {
         name: trimmedShopName,
+        displayName: trimmedShopName,
         shopName: trimmedShopName,
         shopDescription: shopDescription.trim(),
         shopAddress: shopAddress.trim(),

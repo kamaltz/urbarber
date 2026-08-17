@@ -157,6 +157,7 @@ export interface UpdateBarberScheduleRequest {
 
 export interface UpdateBarberProfileRequest {
   name?: string;
+  displayName?: string;
   shopName?: string;
   shopDescription?: string;
   shopAddress?: string;
