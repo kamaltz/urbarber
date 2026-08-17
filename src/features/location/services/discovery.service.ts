@@ -117,37 +117,51 @@ export const discoveryService = {
       }
     }
 
-    // 2. Fallback: drop the geohash range so legacy docs without geohash are still
-    // reachable, and so a missing composite index doesn't hide every barber.
+    // 2. Supplement: ALWAYS also fetch eligibility-only matches (no geohash bound),
+    // not just when the primary query came back empty. A mixed dataset -- some
+    // barbers with a geohash, some legacy docs without one (see
+    // scripts/migrations/backfill-barber-geohash.mjs) -- previously meant a legacy
+    // barber sitting right next to an in-bounds, geohash-having barber was silently
+    // dropped: the old fallback only ran when docsMap.size === 0, so as soon as ANY
+    // geohash-bounded result existed, legacy docs never got a chance to surface.
+    // docsMap is keyed by doc id, so merging in an already-present doc is a no-op.
+    let supplementFailed = false;
+    try {
+      const supplementQuery = query(
+        barbersRef,
+        where('verificationStatus', '==', 'approved'),
+        where('listingStatus', '==', 'active')
+      );
+      const supplementSnap = await getDocs(supplementQuery);
+      for (const docSnap of supplementSnap.docs) {
+        docsMap.set(docSnap.id, { id: docSnap.id, ...docSnap.data() });
+      }
+    } catch (err: any) {
+      supplementFailed = true;
+      if (__DEV__) {
+        console.warn('[DiscoveryService] SUPPLEMENT_QUERY_FAILED', err?.code, err?.message || err);
+      }
+    }
+
+    // 3. Last-resort generic scan, filtered client-side, only when we still have
+    // nothing and at least one indexed query path actually failed (as opposed to
+    // both queries succeeding and legitimately finding zero eligible barbers) --
+    // in case status field naming/casing varies on legacy docs.
     let fallbackFailed = false;
-    if (docsMap.size === 0) {
+    if (docsMap.size === 0 && (primaryQueryFailed || supplementFailed)) {
       try {
-        const fallbackQuery = query(
-          barbersRef,
-          where('verificationStatus', '==', 'approved'),
-          where('listingStatus', '==', 'active')
-        );
-        const fallbackSnap = await getDocs(fallbackQuery);
-        for (const docSnap of fallbackSnap.docs) {
-          docsMap.set(docSnap.id, { id: docSnap.id, ...docSnap.data() });
+        const genericQuery = query(barbersRef);
+        const genericSnap = await getDocs(genericQuery);
+        for (const docSnap of genericSnap.docs) {
+          const d = docSnap.data();
+          if (d.verificationStatus === 'approved' && isEligibleListing(d) && isEligibleVerification(d)) {
+            docsMap.set(docSnap.id, { id: docSnap.id, ...d });
+          }
         }
-      } catch (err: any) {
-        try {
-          // 3. Last-resort generic scan, filtered client-side, in case status field
-          // naming/casing varies on legacy docs.
-          const genericQuery = query(barbersRef);
-          const genericSnap = await getDocs(genericQuery);
-          for (const docSnap of genericSnap.docs) {
-            const d = docSnap.data();
-            if (d.verificationStatus === 'approved' && isEligibleListing(d) && isEligibleVerification(d)) {
-              docsMap.set(docSnap.id, { id: docSnap.id, ...d });
-            }
-          }
-        } catch (genericErr: any) {
-          fallbackFailed = true;
-          if (__DEV__) {
-            console.warn('[DiscoveryService] All discovery query paths failed', genericErr?.code, genericErr?.message || genericErr);
-          }
+      } catch (genericErr: any) {
+        fallbackFailed = true;
+        if (__DEV__) {
+          console.warn('[DiscoveryService] All discovery query paths failed', genericErr?.code, genericErr?.message || genericErr);
         }
       }
     }
@@ -216,6 +230,8 @@ export const discoveryService = {
         acceptsHomeService: data.acceptsHomeService ?? true,
         homeServiceTravelBufferMinutes: data.homeServiceTravelBufferMinutes || 15,
         acceptingNewBookings: data.acceptingNewBookings ?? true,
+        ratingAverage: typeof data.ratingAverage === 'number' ? data.ratingAverage : 0,
+        reviewCount: typeof data.reviewCount === 'number' ? data.reviewCount : 0,
         isVerified: data.verified ?? true,
         verificationStatus: data.verificationStatus || 'approved',
         createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
@@ -234,7 +250,7 @@ export const discoveryService = {
 
     return {
       results,
-      queryStatus: primaryQueryFailed ? 'primary_query_failed' : 'ok',
+      queryStatus: primaryQueryFailed || supplementFailed ? 'primary_query_failed' : 'ok',
     };
   },
 };

@@ -242,8 +242,8 @@ export const customerRepository = {
         serviceType: r.barber.shopDescription || 'Grooming',
         location: r.barber.shopAddress || 'Garut',
         distance: r.formattedDistance,
-        rating: 4.8,
-        reviewCount: 12,
+        rating: r.barber.ratingAverage ?? 0,
+        reviewCount: r.barber.reviewCount ?? 0,
         latitude: r.barber.location?.latitude,
         longitude: r.barber.location?.longitude,
       }));
@@ -256,10 +256,10 @@ export const customerRepository = {
             imageUrl: first.profileImageUrl,
             location: first.shopAddress || 'Garut',
             distance: nearbyResults[0].formattedDistance,
-            rating: 4.8,
+            rating: first.ratingAverage ?? 0,
             isFavorite: false,
             serviceTags: ['Grooming'],
-            reviewCount: 12,
+            reviewCount: first.reviewCount ?? 0,
           }
         : {
             barberId: '',

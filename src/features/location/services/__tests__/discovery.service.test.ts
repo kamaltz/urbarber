@@ -375,6 +375,37 @@ describe('discoveryService.searchNearbyBarbers', () => {
     expect(results).toEqual([]);
   });
 
+  it('J. mixed dataset: a legacy barber without a geohash still surfaces even when the geohash-bounded query already found a different, modern barber (regression guard -- the supplement query previously only ran when the primary query returned zero results, so any in-bounds geohash hit masked every legacy barber)', async () => {
+    getDocsMock.mockImplementation((q: QueryDescriptor) => {
+      if (hasClause(q, 'geohash')) {
+        // Only the modern barber has a geohash, so only it can ever appear in a
+        // geohash-bounded Firestore result.
+        return Promise.resolve(snapshotOf([{ id: 'modern-barber', data: approvedActiveBarber() }]));
+      }
+      // Supplement query (verificationStatus + listingStatus, no geohash bound) --
+      // this is where the legacy, geohash-less barber is actually reachable.
+      const legacyData = approvedActiveBarber();
+      delete (legacyData as Record<string, unknown>).geohash;
+      return Promise.resolve(
+        snapshotOf([
+          { id: 'modern-barber', data: approvedActiveBarber() },
+          { id: 'legacy-barber', data: legacyData },
+        ])
+      );
+    });
+
+    const { results, queryStatus } = await discoveryService.searchNearbyBarbers({
+      latitude: CENTER.latitude,
+      longitude: CENTER.longitude,
+      radiusKm: 25,
+    });
+
+    expect(queryStatus).toBe('ok');
+    const ids = results.map((r) => r.barber.barberId);
+    expect(ids).toContain('modern-barber');
+    expect(ids).toContain('legacy-barber');
+  });
+
   it('rejects invalid coordinates without issuing any Firestore query', async () => {
     const { results, queryStatus } = await discoveryService.searchNearbyBarbers({
       latitude: 999,

@@ -65,4 +65,28 @@ describe('customerRepository.searchBarbers location handling', () => {
     const zero = await customerRepository.searchBarbers('cust-1', '', { latitude: -6.9, longitude: 107.6 });
     expect(zero?.queryOutcome).toBe('zero_results');
   });
+
+  it("regression: nearbyBarbers/featured surface each barber's real ratingAverage/reviewCount, not a hardcoded 4.8/12 shown for every barber regardless of actual reviews", async () => {
+    searchNearbyBarbersMock.mockResolvedValueOnce({
+      results: [
+        {
+          barber: { barberId: 'barber-1', name: 'Barber One', ratingAverage: 3.2, reviewCount: 7 },
+          distanceKm: 1,
+          formattedDistance: '~1 km',
+        },
+        {
+          barber: { barberId: 'barber-2', name: 'Barber Two', ratingAverage: 0, reviewCount: 0 },
+          distanceKm: 2,
+          formattedDistance: '~2 km',
+        },
+      ],
+      queryStatus: 'ok',
+    });
+
+    const data = await customerRepository.searchBarbers('cust-1', '', { latitude: -6.9, longitude: 107.6 });
+
+    expect(data?.nearbyBarbers[0]).toMatchObject({ rating: 3.2, reviewCount: 7 });
+    expect(data?.nearbyBarbers[1]).toMatchObject({ rating: 0, reviewCount: 0 });
+    expect(data?.featuredBarber).toMatchObject({ rating: 3.2, reviewCount: 7 });
+  });
 });

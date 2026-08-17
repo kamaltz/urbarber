@@ -32,6 +32,8 @@ export interface BarberProfile {
   acceptsHomeService?: boolean;
   homeServiceTravelBufferMinutes?: number;
   acceptingNewBookings?: boolean;
+  ratingAverage?: number;
+  reviewCount?: number;
   isVerified: boolean;
   verificationStatus: BarberVerificationStatus;
   listingStatus?: BarberListingStatus;
