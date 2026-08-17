@@ -59,11 +59,27 @@ import {
     suspendBarber,
 } from '../src/admin/barber-account-management.js';
 import {
+    getPricingSettingsForAdmin,
+    updatePricingSettingsForAdmin,
+} from '../src/admin/pricing-settings-management.js';
+import {
+    createVoucherForAdmin,
+    getVoucherDetail,
+    getVouchersList,
+    setVoucherStatusForAdmin,
+    updateVoucherForAdmin,
+    VoucherAlreadyExistsError,
+    VoucherNotFoundError,
+} from '../src/admin/voucher-management.js';
+import {
     validateCategoryName,
     validateDocumentType,
     validatePageSize,
+    validatePricingSettings,
     validateRejectionReason,
     validateTargetStatus,
+    validateVoucherCreate,
+    validateVoucherUpdate,
 } from '../src/admin/admin.validation.js';
 import { handleCors } from '../src/lib/cors.js';
 import { db } from '../src/lib/firebase-admin.js';
@@ -889,6 +905,196 @@ async function handleGetTransactions(ctx: RouteContext): Promise<void> {
 }
 
 // ============================================================================
+// Phase 4: Pricing Settings Management
+// ============================================================================
+
+/**
+ * GET /api/admin/pricing-settings - Current application/home-service fee configuration
+ */
+async function handleGetPricingSettings(ctx: RouteContext): Promise<void> {
+  const { req, res } = ctx;
+  if (!handleCors(req, res, ['GET', 'OPTIONS'])) return;
+  const admin = await requireAdmin(req, res);
+  if (!admin) return;
+
+  try {
+    const settings = await getPricingSettingsForAdmin();
+    res.status(200).json({ data: settings });
+  } catch (err: any) {
+    console.error('[Admin/pricing-settings GET]', err.message);
+    res.status(500).json({ error: { code: 'INTERNAL_SERVER_ERROR', message: 'Gagal load pengaturan biaya.' } });
+  }
+}
+
+/**
+ * PUT /api/admin/pricing-settings - Update application/home-service fee configuration
+ */
+async function handleUpdatePricingSettings(ctx: RouteContext): Promise<void> {
+  const { req, res } = ctx;
+  if (!handleCors(req, res, ['PUT', 'OPTIONS'])) return;
+  const admin = await requireAdmin(req, res);
+  if (!admin) return;
+
+  const validation = validatePricingSettings(req.body);
+  if (!validation.valid) {
+    res.status(400).json({ error: { code: 'INVALID_PRICING_SETTINGS', message: validation.message } });
+    return;
+  }
+
+  try {
+    const result = await updatePricingSettingsForAdmin(req.body, admin.uid);
+    res.status(200).json({ data: result });
+  } catch (err: any) {
+    console.error('[Admin/pricing-settings PUT]', err.message);
+    res.status(500).json({ error: { code: 'INTERNAL_SERVER_ERROR', message: 'Gagal menyimpan pengaturan biaya.' } });
+  }
+}
+
+// ============================================================================
+// Phase 4: Voucher Management
+// ============================================================================
+
+/**
+ * GET /api/admin/vouchers - List vouchers with status filter and search
+ */
+async function handleGetVouchers(ctx: RouteContext): Promise<void> {
+  const { req, res } = ctx;
+  if (!handleCors(req, res, ['GET', 'OPTIONS'])) return;
+  const admin = await requireAdmin(req, res);
+  if (!admin) return;
+
+  try {
+    const status = (req.query.status as string) || 'all';
+    const search = (req.query.search as string) || undefined;
+    const validStatus = ['all', 'active', 'inactive'].includes(status) ? (status as any) : 'all';
+
+    const vouchers = await getVouchersList({ status: validStatus, search });
+    res.status(200).json({ data: { items: vouchers } });
+  } catch (err: any) {
+    console.error('[Admin/vouchers GET]', err.message);
+    res.status(500).json({ error: { code: 'INTERNAL_SERVER_ERROR', message: 'Gagal load daftar voucher.' } });
+  }
+}
+
+/**
+ * GET /api/admin/vouchers/:code - Voucher detail
+ */
+async function handleGetVoucherDetailRoute(ctx: RouteContext): Promise<void> {
+  const { req, res } = ctx;
+  if (!handleCors(req, res, ['GET', 'OPTIONS'])) return;
+  const admin = await requireAdmin(req, res);
+  if (!admin) return;
+
+  const code = req.url?.split('/vouchers/')[1]?.split('?')[0];
+  if (!code) {
+    res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'Kode voucher diperlukan.' } });
+    return;
+  }
+
+  try {
+    const voucher = await getVoucherDetail(code);
+    if (!voucher) {
+      res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Voucher tidak ditemukan.' } });
+      return;
+    }
+    res.status(200).json({ data: voucher });
+  } catch (err: any) {
+    console.error('[Admin/vouchers/:code GET]', err.message);
+    res.status(500).json({ error: { code: 'INTERNAL_SERVER_ERROR', message: 'Gagal load detail voucher.' } });
+  }
+}
+
+/**
+ * POST /api/admin/vouchers - Create new voucher
+ */
+async function handleCreateVoucher(ctx: RouteContext): Promise<void> {
+  const { req, res } = ctx;
+  if (!handleCors(req, res, ['POST', 'OPTIONS'])) return;
+  const admin = await requireAdmin(req, res);
+  if (!admin) return;
+
+  const validation = validateVoucherCreate(req.body);
+  if (!validation.valid) {
+    res.status(400).json({ error: { code: 'INVALID_VOUCHER', message: validation.message } });
+    return;
+  }
+
+  try {
+    const voucher = await createVoucherForAdmin(req.body, admin.uid);
+    res.status(201).json({ data: voucher });
+  } catch (err: any) {
+    console.error('[Admin/vouchers POST]', err.message);
+    if (err instanceof VoucherAlreadyExistsError) {
+      res.status(409).json({ error: { code: 'VOUCHER_ALREADY_EXISTS', message: 'Kode voucher sudah digunakan.' } });
+    } else {
+      res.status(500).json({ error: { code: 'INTERNAL_SERVER_ERROR', message: 'Gagal membuat voucher.' } });
+    }
+  }
+}
+
+/**
+ * PATCH /api/admin/vouchers/:code - Update voucher
+ */
+async function handleUpdateVoucherRoute(ctx: RouteContext): Promise<void> {
+  const { req, res } = ctx;
+  if (!handleCors(req, res, ['PATCH', 'OPTIONS'])) return;
+  const admin = await requireAdmin(req, res);
+  if (!admin) return;
+
+  const code = req.url?.split('/vouchers/')[1]?.split('?')[0];
+  if (!code) {
+    res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'Kode voucher diperlukan.' } });
+    return;
+  }
+
+  const validation = validateVoucherUpdate(req.body);
+  if (!validation.valid) {
+    res.status(400).json({ error: { code: 'INVALID_VOUCHER', message: validation.message } });
+    return;
+  }
+
+  try {
+    const voucher = await updateVoucherForAdmin(code, req.body, admin.uid);
+    res.status(200).json({ data: voucher });
+  } catch (err: any) {
+    console.error('[Admin/vouchers/:code PATCH]', err.message);
+    if (err instanceof VoucherNotFoundError) {
+      res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Voucher tidak ditemukan.' } });
+    } else {
+      res.status(500).json({ error: { code: 'INTERNAL_SERVER_ERROR', message: 'Gagal update voucher.' } });
+    }
+  }
+}
+
+/**
+ * POST /api/admin/vouchers/:code/activate|deactivate - Toggle voucher status
+ */
+async function handleSetVoucherStatus(ctx: RouteContext, status: 'active' | 'inactive'): Promise<void> {
+  const { req, res } = ctx;
+  if (!handleCors(req, res, ['POST', 'OPTIONS'])) return;
+  const admin = await requireAdmin(req, res);
+  if (!admin) return;
+
+  const code = req.url?.split('/vouchers/')[1]?.split('/')[0];
+  if (!code) {
+    res.status(400).json({ error: { code: 'INVALID_REQUEST', message: 'Kode voucher diperlukan.' } });
+    return;
+  }
+
+  try {
+    const voucher = await setVoucherStatusForAdmin(code, status, admin.uid);
+    res.status(200).json({ data: voucher });
+  } catch (err: any) {
+    console.error('[Admin/vouchers/:code status]', err.message);
+    if (err instanceof VoucherNotFoundError) {
+      res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Voucher tidak ditemukan.' } });
+    } else {
+      res.status(500).json({ error: { code: 'INTERNAL_SERVER_ERROR', message: 'Gagal update status voucher.' } });
+    }
+  }
+}
+
+// ============================================================================
 // Router & Pattern Matching
 // ============================================================================
 
@@ -903,10 +1109,16 @@ const exactRoutes: Record<string, Record<string, RouteHandler>> = {
     '/api/admin/categories': handleGetCategories,
     '/api/admin/bookings': handleGetBookings,
     '/api/admin/transactions': handleGetTransactions,
+    '/api/admin/pricing-settings': handleGetPricingSettings,
+    '/api/admin/vouchers': handleGetVouchers,
   },
   'POST': {
     '/api/admin/barber-registrations/document-url': handleGetDocumentUrl,
     '/api/admin/categories': handleCreateCategory,
+    '/api/admin/vouchers': handleCreateVoucher,
+  },
+  'PUT': {
+    '/api/admin/pricing-settings': handleUpdatePricingSettings,
   },
   'PATCH': {
   },
@@ -938,6 +1150,10 @@ function matchRoute(pathname: string, method: string): RouteHandler | null {
     if (pathname.match(/^\/api\/admin\/bookings\/[^/]+$/) && pathname !== '/api/admin/bookings') {
       return handleGetBookingDetail;
     }
+    // /api/admin/vouchers/:code (Phase 4)
+    if (pathname.match(/^\/api\/admin\/vouchers\/[^/]+$/) && pathname !== '/api/admin/vouchers') {
+      return handleGetVoucherDetailRoute;
+    }
   }
 
   if (method === 'POST') {
@@ -961,12 +1177,24 @@ function matchRoute(pathname: string, method: string): RouteHandler | null {
     if (pathname.match(/^\/api\/admin\/barbers\/[^/]+\/reactivate$/)) {
       return handleReactivateBarber;
     }
+    // /api/admin/vouchers/:code/activate (Phase 4)
+    if (pathname.match(/^\/api\/admin\/vouchers\/[^/]+\/activate$/)) {
+      return (routeCtx) => handleSetVoucherStatus(routeCtx, 'active');
+    }
+    // /api/admin/vouchers/:code/deactivate (Phase 4)
+    if (pathname.match(/^\/api\/admin\/vouchers\/[^/]+\/deactivate$/)) {
+      return (routeCtx) => handleSetVoucherStatus(routeCtx, 'inactive');
+    }
   }
 
   if (method === 'PATCH') {
     // /api/admin/categories/:categoryId (Phase 2)
     if (pathname.match(/^\/api\/admin\/categories\/[^/]+$/)) {
       return handleUpdateCategory;
+    }
+    // /api/admin/vouchers/:code (Phase 4)
+    if (pathname.match(/^\/api\/admin\/vouchers\/[^/]+$/)) {
+      return handleUpdateVoucherRoute;
     }
   }
 

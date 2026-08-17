@@ -34,6 +34,32 @@ export function resolveBookingAmount(data: Record<string, any>): number {
   return 0;
 }
 
+/**
+ * Gross amount the customer actually paid (base - voucher + homeFee + appFee + tip),
+ * distinct from resolveBookingAmount() above which prefers `price` -- the barber's
+ * base-service-only operational value. Never used interchangeably: this is what
+ * "Gross Transaction Value" metrics must sum, not resolveBookingAmount().
+ */
+export function resolveBookingGrossAmount(data: Record<string, any>): number {
+  if (typeof data.grossAmount === 'number') return data.grossAmount;
+  if (typeof data.totalPrice === 'number') return data.totalPrice;
+  if (typeof data.totalAmount === 'number') return data.totalAmount;
+  return resolveBookingAmount(data);
+}
+
+/** Canonical pricing breakdown, present on bookings created since Batch 10D; absent on legacy records. */
+export function resolveBookingPricingBreakdown(data: Record<string, any>) {
+  return {
+    baseAmount: typeof data.baseAmount === 'number' ? data.baseAmount : undefined,
+    voucherCode: data.voucherCode ?? undefined,
+    voucherDiscount: typeof data.voucherDiscount === 'number' ? data.voucherDiscount : undefined,
+    homeServiceFee: typeof data.homeServiceFee === 'number' ? data.homeServiceFee : undefined,
+    applicationFee: typeof data.applicationFee === 'number' ? data.applicationFee : undefined,
+    tipAmount: typeof data.tipAmount === 'number' ? data.tipAmount : undefined,
+    grossAmount: resolveBookingGrossAmount(data),
+  };
+}
+
 export function resolveBookingDate(data: Record<string, any>): string {
   return data.date || data.bookingDate || '';
 }
@@ -73,6 +99,7 @@ export function mapAdminBookingSummary(
     paymentStatus: data.paymentStatus,
     totalPrice: resolveBookingAmount(data),
     createdAt: data.createdAt,
+    ...resolveBookingPricingBreakdown(data),
   };
 }
 
@@ -111,5 +138,6 @@ export function mapAdminBookingDetail(
     createdAt: data.createdAt,
     updatedAt: data.updatedAt,
     paidAt: data.paidAt,
+    ...resolveBookingPricingBreakdown(data),
   };
 }

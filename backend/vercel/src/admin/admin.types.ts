@@ -3,6 +3,9 @@
  * Types for admin-only backend operations.
  */
 
+import type { BookingPricingSettings } from '../payments/pricing-calculator.js';
+import type { VoucherRecord } from '../payments/voucher-service.js';
+
 export type VerificationStatus = 'draft' | 'pending' | 'approved' | 'rejected';
 export type ListingStatus = 'active' | 'inactive' | 'suspended';
 export type UserStatus = 'active' | 'pending_verification' | 'suspended';
@@ -103,6 +106,22 @@ export interface AdminBookingRecord {
   createdAt?: any;
 }
 
+/**
+ * Canonical pricing breakdown fields, as persisted on bookings/{id} and
+ * payments/{id} by the calculator (backend/vercel/src/payments/pricing-calculator.ts).
+ * Optional throughout -- legacy records predating Batch 10D pricing/voucher
+ * work have none of these fields.
+ */
+export interface AdminPricingBreakdown {
+  baseAmount?: number;
+  voucherCode?: string | null;
+  voucherDiscount?: number;
+  homeServiceFee?: number;
+  applicationFee?: number;
+  tipAmount?: number;
+  grossAmount?: number;
+}
+
 // ============================================================================
 // Categories
 // ============================================================================
@@ -143,6 +162,14 @@ export interface DashboardMetrics {
   cancelledBookings: number;
   todayBookings: number;
   currentMonthServiceValue: number; // IDR, real transaction value only
+  // Gross Transaction Value: sum of what customers actually paid (grossAmount)
+  // for bookings paid this month -- distinct from currentMonthServiceValue
+  // (the barber's operational base-price share). Never labeled "revenue".
+  grossTransactionValue: number;
+  // Platform's actual monetization: sum of applicationFee from paid bookings
+  // this month. This -- not grossTransactionValue -- is the platform revenue metric.
+  platformApplicationFees: number;
+  activeVouchersCount: number;
   recentBarberRegistrations: AdminBarberRegistration[];
   recentBookings: (AdminBookingRecord & { customerName?: string; barberName?: string })[];
   suspendedBarbersList: AdminSuspendedBarber[];
@@ -153,7 +180,7 @@ export interface DashboardMetrics {
 // Transactions
 // ============================================================================
 
-export interface AdminTransaction {
+export interface AdminTransaction extends AdminPricingBreakdown {
   transactionId: string;
   bookingId?: string;
   provider: 'cash_on_service' | 'midtrans_sandbox';
@@ -240,4 +267,55 @@ export interface CategoryUpdateRequest {
   icon?: string;
   active?: boolean;
   order?: number;
+}
+
+// ============================================================================
+// Pricing Settings Management
+// ============================================================================
+
+export type AdminPricingSettings = BookingPricingSettings;
+
+export interface PricingSettingsUpdateResult {
+  settings: AdminPricingSettings;
+  updatedAt: string;
+  updatedBy: string;
+}
+
+// ============================================================================
+// Voucher Management
+// ============================================================================
+
+export type AdminVoucher = VoucherRecord;
+
+export interface VoucherListFilters {
+  status?: 'all' | 'active' | 'inactive';
+  search?: string; // matches code or name, case-insensitive prefix
+}
+
+export interface VoucherCreateRequest {
+  code: string;
+  name: string;
+  description?: string;
+  discountType: 'fixed' | 'percentage';
+  discountValue: number;
+  maxDiscountAmount?: number;
+  minimumBaseAmount?: number;
+  validFrom: string; // ISO string
+  validUntil: string; // ISO string
+  usageLimit?: number;
+  perUserLimit?: number;
+  status?: 'active' | 'inactive';
+}
+
+export interface VoucherUpdateRequest {
+  name?: string;
+  description?: string;
+  discountType?: 'fixed' | 'percentage';
+  discountValue?: number;
+  maxDiscountAmount?: number | null;
+  minimumBaseAmount?: number | null;
+  validFrom?: string;
+  validUntil?: string;
+  usageLimit?: number | null;
+  perUserLimit?: number | null;
 }

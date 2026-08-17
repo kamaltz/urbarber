@@ -14,6 +14,8 @@ import {
   mapAdminBookingSummary,
   resolveBookingAmount,
   resolveBookingDate,
+  resolveBookingGrossAmount,
+  resolveBookingPricingBreakdown,
   resolveBookingStartTime,
 } from './admin-booking-dto.js';
 import { ALLOWED_DOC_TYPES, assertPathFromFirestore, validateStoragePathNamespace } from './admin.validation.js';
@@ -112,6 +114,28 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
       return sum;
     }, 0);
 
+    // Gross Transaction Value: what customers actually paid (base - voucher +
+    // homeFee + appFee + tip), for the same paid/cash-eligible bookings above.
+    // Deliberately NOT called "revenue" -- see platformApplicationFees below
+    // for the platform's actual monetization metric.
+    const grossTransactionValue = monthBookings.reduce((sum, booking) => {
+      const isPaidEligible =
+        (booking.paymentMethod === 'cash_on_service' && booking.status === 'completed') ||
+        booking.paymentStatus === 'paid';
+      return isPaidEligible ? sum + resolveBookingGrossAmount(booking) : sum;
+    }, 0);
+
+    // Platform Application Fees: the platform's only current monetization
+    // mechanism. Summed only from bookings that actually reached paymentStatus
+    // === 'paid' -- applicationFee on a pending/failed booking was never collected.
+    const platformApplicationFees = monthBookings.reduce((sum, booking) => {
+      if (booking.paymentStatus !== 'paid') return sum;
+      return sum + (typeof booking.applicationFee === 'number' ? booking.applicationFee : 0);
+    }, 0);
+
+    const activeVouchersSnap = await db.collection('vouchers').where('status', '==', 'active').get();
+    const activeVouchersCount = activeVouchersSnap.size;
+
     // Recent barber registrations (last 5)
     const recentRegSnap = await db
       .collection('barberRegistrations')
@@ -198,6 +222,9 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
       cancelledBookings,
       todayBookings,
       currentMonthServiceValue,
+      grossTransactionValue,
+      platformApplicationFees,
+      activeVouchersCount,
       recentBarberRegistrations,
       recentBookings,
       suspendedBarbersList,
@@ -1102,10 +1129,11 @@ export async function getTransactionsList(
             bookingId: doc.id,
             provider: 'cash_on_service' as const,
             environment: 'cash' as const,
-            grossAmount: data ? resolveBookingAmount(data) : 0,
             status: 'not_required',
             createdAt: data?.createdAt,
             paidAt: undefined,
+            grossAmount: data ? resolveBookingGrossAmount(data) : 0,
+            ...(data ? resolveBookingPricingBreakdown(data) : {}),
           };
         })
       );
@@ -1134,6 +1162,7 @@ export async function getTransactionsList(
             paymentType: data?.paymentType,
             createdAt: data?.createdAt,
             paidAt: data?.paidAt,
+            ...(data ? resolveBookingPricingBreakdown(data) : {}),
             // SECURITY: Do NOT expose:
             // - snapToken
             // - server key
