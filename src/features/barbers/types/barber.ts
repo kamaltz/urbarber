@@ -14,6 +14,10 @@ import type {
 export interface BarberProfile {
   barberId: string;
   name: string;
+  /** Canonical customer-facing name once set (see UpdateBarberProfileRequest) --
+   * customer surfaces read `displayName || name`. Legacy documents predating
+   * this field simply omit it. */
+  displayName?: string;
   email: string;
   phone: string;
   profileImageUrl?: string;

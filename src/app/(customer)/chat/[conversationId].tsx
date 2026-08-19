@@ -1,7 +1,10 @@
 import { Avatar } from '@/components/ui/Avatar';
+import { SymbolIcon } from '@/components/ui/SymbolIcon';
+import { barberRepository } from '@/features/barbers/repository/barber.repository';
 import { useChatBootstrap } from '@/features/chat/hooks/use-chat-bootstrap';
 import { useChatMessages } from '@/features/chat/hooks/use-chat-messages';
 import { chatRepository } from '@/features/chat/repository/chat.repository';
+import { getOwnChatState } from '@/features/chat/utils/participant-state';
 import { firebaseAuth } from '@/lib/firebase';
 import { backOrReplace } from '@/lib/navigation';
 import { useLocalSearchParams } from 'expo-router';
@@ -29,21 +32,67 @@ export default function ChatRoomScreen() {
   const [sending, setSending] = useState(false);
   const [barberName, setBarberName] = useState('Barber');
   const [barberImage, setBarberImage] = useState<string | undefined>();
+  const [archived, setArchived] = useState(false);
 
-  // Load barber info
+  // Resolve the counterpart barber's live name/photo: subscribe to the
+  // conversation to learn barberId, then subscribe to that barber's profile,
+  // so an in-progress rename/photo change is reflected without a remount.
   useEffect(() => {
-    const loadBarber = async () => {
-      try {
-        if (!bookingId) return;
-        // In a full implementation, we'd fetch the booking to get barberId
-        // For now, we'll show a placeholder
-        // This will be enhanced when we integrate with booking data
-      } catch (err) {
-        console.error('Error loading barber:', err);
+    if (!bookingId || !chatReady) return;
+    let unsubscribeBarber: (() => void) | null = null;
+
+    const unsubscribeConversation = chatRepository.subscribeToConversation(bookingId, (conversation) => {
+      const uid = firebaseAuth.currentUser?.uid;
+      if (uid && conversation) {
+        setArchived(getOwnChatState(conversation, uid).archived);
       }
+      if (!conversation?.barberId) return;
+      if (unsubscribeBarber) return; // already subscribed to this booking's barber
+      unsubscribeBarber = barberRepository.subscribeToBarberProfile(conversation.barberId, (profile) => {
+        setBarberName(profile?.displayName || profile?.name || profile?.shopName || 'Barber');
+        setBarberImage(profile?.profileImageUrl || profile?.shopImageUrl);
+      });
+    });
+
+    return () => {
+      unsubscribeConversation();
+      if (unsubscribeBarber) unsubscribeBarber();
     };
-    loadBarber();
-  }, [bookingId]);
+  }, [bookingId, chatReady]);
+
+  const handleOpenMenu = () => {
+    Alert.alert(barberName, undefined, [
+      {
+        text: archived ? 'Keluarkan dari Arsip' : 'Arsipkan',
+        onPress: () => {
+          const action = archived
+            ? chatRepository.unarchiveConversation(bookingId)
+            : chatRepository.archiveConversation(bookingId);
+          action.catch(() => Alert.alert('Gagal', 'Tidak dapat memperbarui obrolan.'));
+        },
+      },
+      {
+        text: 'Hapus',
+        style: 'destructive',
+        onPress: () => {
+          Alert.alert('Hapus Obrolan', `Hapus obrolan dengan ${barberName}?`, [
+            { text: 'Batal', style: 'cancel' },
+            {
+              text: 'Hapus',
+              style: 'destructive',
+              onPress: () => {
+                chatRepository
+                  .deleteConversation(bookingId)
+                  .then(() => backOrReplace('/(customer)/chat'))
+                  .catch(() => Alert.alert('Gagal', 'Tidak dapat menghapus obrolan.'));
+              },
+            },
+          ]);
+        },
+      },
+      { text: 'Batal', style: 'cancel' },
+    ]);
+  };
 
   // Reset unread once the conversation is confirmed to exist -- resetting
   // against a conversation that was never created is the same permission
@@ -102,11 +151,14 @@ export default function ChatRoomScreen() {
           <Pressable onPress={() => backOrReplace('/(customer)/chat')} hitSlop={10}>
             <Text className="text-3xl text-slate-900">‹</Text>
           </Pressable>
-          <Avatar name={barberName} size="sm" status="online" />
-          <View>
+          <Avatar source={barberImage ? { uri: barberImage } : undefined} name={barberName} size="sm" status="online" />
+          <View className="flex-1">
             <Text className="font-bold text-slate-900">{barberName}</Text>
             <Text className="text-xs text-emerald-600">Online</Text>
           </View>
+          <Pressable onPress={handleOpenMenu} hitSlop={10} className="p-2">
+            <SymbolIcon name="ellipsis" size={20} color="#64748B" />
+          </Pressable>
         </View>
 
         {(bootstrapError || error) && (

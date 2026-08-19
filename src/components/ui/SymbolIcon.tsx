@@ -33,6 +33,7 @@ const ANDROID_SYMBOL_MAP: Record<string, AndroidSymbol> = {
   'xmark.circle.fill': 'highlight_off',
   xmark: 'close',
   pencil: 'edit',
+  ellipsis: 'more_vert',
 };
 
 const FALLBACK_ANDROID_SYMBOL: AndroidSymbol = 'help';

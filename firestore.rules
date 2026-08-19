@@ -601,6 +601,15 @@ service cloud.firestore {
       // participant's counter may only ever move up (a legitimate incoming-message
       // increment), never down -- a participant resetting/deflating the other
       // side's unread badge is denied, while sendMessage's increment still works.
+      // Per-participant archive/delete state (participantState.<uid>.{archived,
+      // deleted,updatedAt}) shares this same update path with message-send
+      // metadata. A participant may only ever write their OWN key inside
+      // participantState -- archiving/deleting hides the conversation for them
+      // only; the other participant's copy is untouched. Since there are
+      // exactly two participants, this is expressed directly as "the OTHER
+      // participant's entry must stay byte-equal", rather than a generic map
+      // diff. .get(key, default) tolerates conversations created before this
+      // field existed (participantState absent entirely).
       allow update: if (
         (isOwner(resource.data.customerId) || isOwner(resource.data.barberId))
         && request.resource.data.customerId == resource.data.customerId
@@ -616,6 +625,16 @@ service cloud.firestore {
         && (
           !isOwner(resource.data.barberId)
           || request.resource.data.customerUnreadCount >= resource.data.customerUnreadCount
+        )
+        && (
+          !isOwner(resource.data.customerId)
+          || request.resource.data.get('participantState', {}).get(resource.data.barberId, {})
+             == resource.data.get('participantState', {}).get(resource.data.barberId, {})
+        )
+        && (
+          !isOwner(resource.data.barberId)
+          || request.resource.data.get('participantState', {}).get(resource.data.customerId, {})
+             == resource.data.get('participantState', {}).get(resource.data.customerId, {})
         )
       ) || isAdmin();
     }

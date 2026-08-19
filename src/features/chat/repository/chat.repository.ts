@@ -99,6 +99,29 @@ export const chatRepository = {
   },
 
   /**
+   * Subscribe to a single conversation doc (e.g. to resolve the counterpart's
+   * barberId/customerId for a chat room header). Returns unsubscribe function.
+   */
+  subscribeToConversation(
+    bookingId: string,
+    callback: (conversation: Conversation | null) => void,
+    onError?: (error: Error) => void
+  ): () => void {
+    if (!bookingId) {
+      callback(null);
+      return () => {};
+    }
+    return onSnapshot(
+      doc(db, 'conversations', bookingId),
+      (snapshot) => callback(snapshot.exists() ? ({ ...(snapshot.data() as any), id: snapshot.id } as Conversation) : null),
+      (error) => {
+        console.error('[chatRepository] subscribeToConversation error:', error);
+        onError?.(error as Error);
+      }
+    );
+  },
+
+  /**
    * Subscribe to messages for a conversation.
    * Initial load: latest 30 messages.
    * Returns unsubscribe function.
@@ -236,6 +259,53 @@ export const chatRepository = {
       console.error('[chatRepository] resetUnreadCount error:', err);
       throw err;
     }
+  },
+
+  /**
+   * Archive/unarchive or delete a conversation for the CURRENT user only.
+   * Writes exclusively to participantState.<own uid> -- firestore.rules denies
+   * any attempt to touch the other participant's entry (see "Per-participant
+   * archive/delete state" comment on the conversations update rule). Messages
+   * and every structural field are untouched; the other participant is
+   * unaffected and unaware.
+   */
+  async setParticipantChatState(
+    bookingId: string,
+    updates: Partial<{ archived: boolean; deleted: boolean }>
+  ): Promise<void> {
+    const userId = firebaseAuth.currentUser?.uid;
+    if (!userId) throw new Error('Not authenticated');
+
+    const fieldUpdates: Record<string, any> = {
+      [`participantState.${userId}.updatedAt`]: serverTimestamp(),
+    };
+    if (updates.archived !== undefined) {
+      fieldUpdates[`participantState.${userId}.archived`] = updates.archived;
+    }
+    if (updates.deleted !== undefined) {
+      fieldUpdates[`participantState.${userId}.deleted`] = updates.deleted;
+    }
+
+    try {
+      await updateDoc(doc(db, 'conversations', bookingId), fieldUpdates);
+    } catch (err: any) {
+      console.error('[chatRepository] setParticipantChatState error:', err);
+      throw err;
+    }
+  },
+
+  archiveConversation(bookingId: string): Promise<void> {
+    return this.setParticipantChatState(bookingId, { archived: true });
+  },
+
+  unarchiveConversation(bookingId: string): Promise<void> {
+    return this.setParticipantChatState(bookingId, { archived: false });
+  },
+
+  /** Hides the conversation for the current user only -- the other
+   * participant's view, and the shared message history, are unaffected. */
+  deleteConversation(bookingId: string): Promise<void> {
+    return this.setParticipantChatState(bookingId, { deleted: true });
   },
 
   /**

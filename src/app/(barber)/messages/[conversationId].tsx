@@ -1,7 +1,10 @@
 import { Avatar } from '@/components/ui/Avatar';
+import { SymbolIcon } from '@/components/ui/SymbolIcon';
 import { useChatBootstrap } from '@/features/chat/hooks/use-chat-bootstrap';
 import { useChatMessages } from '@/features/chat/hooks/use-chat-messages';
 import { chatRepository } from '@/features/chat/repository/chat.repository';
+import { getOwnChatState } from '@/features/chat/utils/participant-state';
+import { customerRepository } from '@/features/customer/repository/customer.repository';
 import { firebaseAuth } from '@/lib/firebase';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
@@ -28,20 +31,69 @@ export default function BarberChatRoomScreen() {
   const [sending, setSending] = useState(false);
   const [customerName, setCustomerName] = useState('Customer');
   const [customerImage, setCustomerImage] = useState<string | undefined>();
+  const [archived, setArchived] = useState(false);
 
-  // Load customer info
+  // Resolve the counterpart customer's live name/photo: subscribe to the
+  // conversation to learn customerId, then subscribe to that customer's
+  // canonical name/photo, so it stays current without a remount.
   useEffect(() => {
-    const loadCustomer = async () => {
-      try {
-        if (!bookingId) return;
-        // In a full implementation, we'd fetch the booking to get customerId
-        // For now, we'll show a placeholder
-      } catch (err) {
-        console.error('Error loading customer:', err);
+    if (!bookingId || !chatReady) return;
+    let unsubscribeCustomer: (() => void) | null = null;
+
+    const unsubscribeConversation = chatRepository.subscribeToConversation(bookingId, (conversation) => {
+      const uid = firebaseAuth.currentUser?.uid;
+      if (uid && conversation) {
+        setArchived(getOwnChatState(conversation, uid).archived);
       }
+      if (!conversation?.customerId) return;
+      if (unsubscribeCustomer) return;
+      unsubscribeCustomer = customerRepository.subscribeToCustomerNameAndPhoto(conversation.customerId, (info) => {
+        if (info) {
+          setCustomerName(info.name);
+          setCustomerImage(info.profileImageUrl);
+        }
+      });
+    });
+
+    return () => {
+      unsubscribeConversation();
+      if (unsubscribeCustomer) unsubscribeCustomer();
     };
-    loadCustomer();
-  }, [bookingId]);
+  }, [bookingId, chatReady]);
+
+  const handleOpenMenu = () => {
+    Alert.alert(customerName, undefined, [
+      {
+        text: archived ? 'Keluarkan dari Arsip' : 'Arsipkan',
+        onPress: () => {
+          const action = archived
+            ? chatRepository.unarchiveConversation(bookingId)
+            : chatRepository.archiveConversation(bookingId);
+          action.catch(() => Alert.alert('Gagal', 'Tidak dapat memperbarui obrolan.'));
+        },
+      },
+      {
+        text: 'Hapus',
+        style: 'destructive',
+        onPress: () => {
+          Alert.alert('Hapus Obrolan', `Hapus obrolan dengan ${customerName}?`, [
+            { text: 'Batal', style: 'cancel' },
+            {
+              text: 'Hapus',
+              style: 'destructive',
+              onPress: () => {
+                chatRepository
+                  .deleteConversation(bookingId)
+                  .then(() => router.back())
+                  .catch(() => Alert.alert('Gagal', 'Tidak dapat menghapus obrolan.'));
+              },
+            },
+          ]);
+        },
+      },
+      { text: 'Batal', style: 'cancel' },
+    ]);
+  };
 
   // Reset unread once the conversation is confirmed to exist -- resetting
   // against a conversation that was never created is the same permission
@@ -100,11 +152,14 @@ export default function BarberChatRoomScreen() {
           <Pressable onPress={() => router.back()} hitSlop={10}>
             <Text className="text-3xl text-slate-900">‹</Text>
           </Pressable>
-          <Avatar name={customerName} size="sm" status="online" />
-          <View>
+          <Avatar source={customerImage ? { uri: customerImage } : undefined} name={customerName} size="sm" status="online" />
+          <View className="flex-1">
             <Text className="font-bold text-slate-900">{customerName}</Text>
             <Text className="text-xs text-emerald-600">Online</Text>
           </View>
+          <Pressable onPress={handleOpenMenu} hitSlop={10} className="p-2">
+            <SymbolIcon name="ellipsis" size={20} color="#64748B" />
+          </Pressable>
         </View>
 
         {(bootstrapError || error) && (

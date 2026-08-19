@@ -14,6 +14,7 @@ import {
     doc,
     getDoc,
     getDocs,
+    onSnapshot,
     query,
     setDoc,
     Timestamp,
@@ -61,6 +62,33 @@ export const barberRepository = {
       }
       return null;
     }
+  },
+
+  /**
+   * Realtime subscription to a barber's canonical profile doc (barbers/{barberId}).
+   * Callers that keep a screen open across a profile edit (dashboard header,
+   * chat header/list) should prefer this over a one-shot getBarberProfile so
+   * name/photo update live instead of requiring a remount/refetch.
+   */
+  subscribeToBarberProfile(
+    barberId: string,
+    onNext: (profile: BarberProfile | null) => void,
+    onError?: (error: unknown) => void
+  ): () => void {
+    if (!barberId) {
+      onNext(null);
+      return () => {};
+    }
+    return onSnapshot(
+      doc(firestore, 'barbers', barberId),
+      (snapshot) => onNext(snapshot.exists() ? (snapshot.data() as BarberProfile) : null),
+      (error) => {
+        if (__DEV__) {
+          console.warn('[BarberRepository subscribeToBarberProfile Error]', error?.code, error?.message);
+        }
+        onError?.(error);
+      }
+    );
   },
 
   /**

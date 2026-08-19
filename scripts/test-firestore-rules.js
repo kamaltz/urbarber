@@ -1815,6 +1815,128 @@ async function runRulesTests() {
       );
     });
 
+    // 96-100. Chat archive/delete: participantState.<uid>.{archived,deleted,updatedAt}
+    // shares the conversations update path with message-send metadata. A
+    // participant may write ONLY their own key; the other participant's copy,
+    // and every structural field, must stay untouched. See firestore.rules
+    // "Per-participant archive/delete state" comment on the conversations
+    // update rule.
+    await test('96. Customer can archive/delete their OWN participantState entry', async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('conversations').doc('conv-pstate-1').set({
+          bookingId: 'conv-pstate-1',
+          customerId: 'cust-pstate',
+          barberId: 'barb-pstate',
+          participants: ['cust-pstate', 'barb-pstate'],
+          status: 'active',
+          createdAt: '2026-01-01',
+          customerUnreadCount: 0,
+          barberUnreadCount: 0,
+        });
+      });
+
+      const custDb = testEnv.authenticatedContext('cust-pstate', { app_role: 'customer' }).firestore();
+      await assertSucceeds(
+        custDb.collection('conversations').doc('conv-pstate-1').update({
+          'participantState.cust-pstate.archived': true,
+          'participantState.cust-pstate.deleted': false,
+          'participantState.cust-pstate.updatedAt': '2026-01-05',
+        })
+      );
+      await assertSucceeds(
+        custDb.collection('conversations').doc('conv-pstate-1').update({
+          'participantState.cust-pstate.archived': false,
+          'participantState.cust-pstate.deleted': true,
+          'participantState.cust-pstate.updatedAt': '2026-01-06',
+        })
+      );
+    });
+
+    await test('97. Barber can archive/delete their OWN participantState entry, even when participantState never previously existed on the doc', async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('conversations').doc('conv-pstate-2').set({
+          bookingId: 'conv-pstate-2',
+          customerId: 'cust-pstate-2',
+          barberId: 'barb-pstate-2',
+          participants: ['cust-pstate-2', 'barb-pstate-2'],
+          status: 'active',
+          createdAt: '2026-01-01',
+          customerUnreadCount: 0,
+          barberUnreadCount: 0,
+          // No participantState field at all -- pre-migration document shape.
+        });
+      });
+
+      const barbDb = testEnv.authenticatedContext('barb-pstate-2', { app_role: 'barber' }).firestore();
+      await assertSucceeds(
+        barbDb.collection('conversations').doc('conv-pstate-2').update({
+          'participantState.barb-pstate-2.archived': true,
+          'participantState.barb-pstate-2.deleted': false,
+          'participantState.barb-pstate-2.updatedAt': '2026-01-05',
+        })
+      );
+    });
+
+    await test("98. A participant cannot forge/alter the OTHER participant's participantState entry", async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('conversations').doc('conv-pstate-3').set({
+          bookingId: 'conv-pstate-3',
+          customerId: 'cust-pstate-3',
+          barberId: 'barb-pstate-3',
+          participants: ['cust-pstate-3', 'barb-pstate-3'],
+          status: 'active',
+          createdAt: '2026-01-01',
+          customerUnreadCount: 0,
+          barberUnreadCount: 0,
+          participantState: {
+            'cust-pstate-3': { archived: false, deleted: false, updatedAt: '2026-01-01' },
+            'barb-pstate-3': { archived: false, deleted: false, updatedAt: '2026-01-01' },
+          },
+        });
+      });
+
+      const custDb = testEnv.authenticatedContext('cust-pstate-3', { app_role: 'customer' }).firestore();
+      await assertFails(
+        custDb.collection('conversations').doc('conv-pstate-3').update({
+          'participantState.barb-pstate-3.archived': true,
+        })
+      );
+      await assertFails(
+        custDb.collection('conversations').doc('conv-pstate-3').update({
+          'participantState.barb-pstate-3.deleted': true,
+        })
+      );
+
+      const barbDb = testEnv.authenticatedContext('barb-pstate-3', { app_role: 'barber' }).firestore();
+      await assertFails(
+        barbDb.collection('conversations').doc('conv-pstate-3').update({
+          'participantState.cust-pstate-3.deleted': true,
+        })
+      );
+    });
+
+    await test('99. A non-participant cannot write to participantState at all', async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('conversations').doc('conv-pstate-4').set({
+          bookingId: 'conv-pstate-4',
+          customerId: 'cust-pstate-4',
+          barberId: 'barb-pstate-4',
+          participants: ['cust-pstate-4', 'barb-pstate-4'],
+          status: 'active',
+          createdAt: '2026-01-01',
+          customerUnreadCount: 0,
+          barberUnreadCount: 0,
+        });
+      });
+
+      const outsiderDb = testEnv.authenticatedContext('rando-pstate', { app_role: 'customer' }).firestore();
+      await assertFails(
+        outsiderDb.collection('conversations').doc('conv-pstate-4').update({
+          'participantState.rando-pstate.archived': true,
+        })
+      );
+    });
+
   } finally {
     await testEnv.cleanup();
     console.log(`\nTest Execution Complete: ${passed} Passed, ${failed} Failed.\n`);

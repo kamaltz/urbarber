@@ -13,6 +13,7 @@ import {
   query as firestoreQuery,
   getDoc,
   getDocs,
+  onSnapshot,
   orderBy,
   setDoc,
   Timestamp,
@@ -490,6 +491,60 @@ export const customerRepository = {
         updatedAt: new Date().toISOString(),
       };
     }
+  },
+
+  /**
+   * Realtime subscription to a customer's canonical name/photo (customers/{uid},
+   * falling back to users/{uid} when the former doesn't exist -- same source
+   * precedence as getCustomerProfile). For callers that keep a screen open
+   * across a profile edit (e.g. a chat header) so it updates live.
+   */
+  subscribeToCustomerNameAndPhoto(
+    customerId: string,
+    onNext: (info: { name: string; profileImageUrl?: string } | null) => void
+  ): () => void {
+    if (!customerId) {
+      onNext(null);
+      return () => {};
+    }
+
+    const extract = (data: Record<string, any> | undefined) => {
+      if (!data) return null;
+      const name = data.name || data.fullName;
+      const profileImageUrl = data.profileImageUrl || data.profileImage || data.avatarUrl;
+      if (!name && !profileImageUrl) return null;
+      return { name: name || 'Customer', profileImageUrl };
+    };
+
+    let unsubscribeUsersFallback: (() => void) | null = null;
+
+    const unsubscribeCustomers = onSnapshot(
+      doc(firestore, 'customers', customerId),
+      (snapshot) => {
+        const extracted = snapshot.exists() ? extract(snapshot.data()) : null;
+        if (extracted) {
+          onNext(extracted);
+          if (unsubscribeUsersFallback) {
+            unsubscribeUsersFallback();
+            unsubscribeUsersFallback = null;
+          }
+          return;
+        }
+        if (!unsubscribeUsersFallback) {
+          unsubscribeUsersFallback = onSnapshot(
+            doc(firestore, 'users', customerId),
+            (userSnapshot) => onNext(userSnapshot.exists() ? extract(userSnapshot.data()) : null),
+            () => onNext(null)
+          );
+        }
+      },
+      () => onNext(null)
+    );
+
+    return () => {
+      unsubscribeCustomers();
+      if (unsubscribeUsersFallback) unsubscribeUsersFallback();
+    };
   },
 
   /**
