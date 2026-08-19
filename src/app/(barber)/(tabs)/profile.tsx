@@ -14,7 +14,18 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Image, RefreshControl, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Image, Linking, RefreshControl, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+
+function showGalleryPermissionDeniedAlert() {
+  Alert.alert(
+    'Izin Diperlukan',
+    'Izin galeri diperlukan untuk memilih foto.',
+    [
+      { text: 'Batal', style: 'cancel' },
+      { text: 'Buka Pengaturan', onPress: () => Linking.openSettings() },
+    ]
+  );
+}
 
 export default function BarberProfileScreen() {
   const { user, logout } = useAuth();
@@ -122,7 +133,7 @@ export default function BarberProfileScreen() {
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
-        Alert.alert('Izin Ditolak', 'Izin galeri dibutuhkan untuk mengunggah foto.');
+        showGalleryPermissionDeniedAlert();
         return;
       }
 
@@ -175,7 +186,7 @@ export default function BarberProfileScreen() {
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
-        Alert.alert('Izin Ditolak', 'Izin galeri dibutuhkan untuk mengunggah foto profil.');
+        showGalleryPermissionDeniedAlert();
         return;
       }
 

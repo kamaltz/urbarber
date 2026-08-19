@@ -113,12 +113,25 @@ export const galleryRepository = {
         updatedAt: now,
       };
 
-      const docRef = await addDoc(collection(firestore, COLLECTION_NAME), docData);
-
-      return {
-        success: true,
-        image: mapGalleryDoc(docRef.id, docData),
-      };
+      try {
+        const docRef = await addDoc(collection(firestore, COLLECTION_NAME), docData);
+        return {
+          success: true,
+          image: mapGalleryDoc(docRef.id, docData),
+        };
+      } catch (firestoreError: any) {
+        // The object already exists in Supabase but has no Firestore record --
+        // clean it up rather than leaving an orphaned, unmanageable file the
+        // barber can never see or delete through the app.
+        try {
+          await storageService.deleteFile(PUBLIC_MEDIA_BUCKET, uploadRes.path);
+        } catch (cleanupError: any) {
+          if (__DEV__) {
+            console.warn('[GalleryRepository addImage] orphaned storage cleanup failed', cleanupError?.message);
+          }
+        }
+        throw firestoreError;
+      }
     } catch (error: any) {
       if (__DEV__) {
         console.warn('[GalleryRepository addImage Error]', error?.code, error?.message || error);

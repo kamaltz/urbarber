@@ -45,6 +45,14 @@
           "locationForegroundPermission": "Aplikasi URBarber memerlukan akses lokasi untuk menemukan Barber terdekat dan melacak layanan cukur di rumah."
         }
       ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Aplikasi URBarber memerlukan akses galeri untuk memilih foto profil dan galeri Barber.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
+      ],
       "@react-native-google-signin/google-signin"
     ],
     "experiments": {

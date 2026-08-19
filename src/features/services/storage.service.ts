@@ -29,7 +29,7 @@ export async function pickImage(): Promise<
     await ImagePicker.requestMediaLibraryPermissionsAsync();
 
   if (!permission.granted) {
-    throw new Error("Izin galeri diperlukan untuk memilih gambar.");
+    throw new Error("Izin galeri diperlukan untuk memilih foto.");
   }
 
   const result = await ImagePicker.launchImageLibraryAsync({
