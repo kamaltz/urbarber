@@ -4,7 +4,13 @@
  * bookingType -> serviceLocationType derivation (Phase 4).
  */
 import { describe, expect, it } from 'vitest';
-import { isBarberAcceptingBookings, isServiceActive, resolveServiceLocationType } from '../src/bookings/service-booking-guard.js';
+import {
+  canTransitionToInProgress,
+  isBarberAcceptingBookings,
+  isHomeServiceBooking,
+  isServiceActive,
+  resolveServiceLocationType,
+} from '../src/bookings/service-booking-guard.js';
 
 describe('isServiceActive', () => {
   it('allows a service with active: true', () => {
@@ -62,5 +68,56 @@ describe('isBarberAcceptingBookings (P0-3)', () => {
   it('fails closed when the barber document does not exist', () => {
     expect(isBarberAcceptingBookings(null)).toBe(false);
     expect(isBarberAcceptingBookings(undefined)).toBe(false);
+  });
+});
+
+describe('isHomeServiceBooking', () => {
+  it('true when serviceLocationType is customer_home', () => {
+    expect(isHomeServiceBooking({ serviceLocationType: 'customer_home' })).toBe(true);
+  });
+
+  it('true when bookingType is home (legacy record predating serviceLocationType)', () => {
+    expect(isHomeServiceBooking({ bookingType: 'home' })).toBe(true);
+  });
+
+  it('false for an onsite/barbershop booking', () => {
+    expect(isHomeServiceBooking({ serviceLocationType: 'barbershop', bookingType: 'onsite' })).toBe(false);
+  });
+
+  it('false when neither field is set', () => {
+    expect(isHomeServiceBooking({})).toBe(false);
+  });
+});
+
+/**
+ * Server-side mirror of the Barber app's own arrival gate
+ * (booking/[bookingId].tsx) -- must reject accepted -> in_progress for a
+ * Home Service booking whose tracking hasn't reached 'arrived' yet, closing
+ * the "UI hiding a button is not security" gap: a direct API call bypassing
+ * the client entirely must still be rejected.
+ */
+describe('canTransitionToInProgress', () => {
+  it('allows an on-the-spot booking to start service regardless of tracking (no travel concept)', () => {
+    expect(
+      canTransitionToInProgress({ bookingData: { serviceLocationType: 'barbershop' }, trackingStatus: undefined })
+    ).toBe(true);
+  });
+
+  it('allows a Home Service booking once tracking has reached arrived', () => {
+    expect(
+      canTransitionToInProgress({ bookingData: { serviceLocationType: 'customer_home' }, trackingStatus: 'arrived' })
+    ).toBe(true);
+  });
+
+  it('rejects a Home Service booking still en_route', () => {
+    expect(
+      canTransitionToInProgress({ bookingData: { serviceLocationType: 'customer_home' }, trackingStatus: 'en_route' })
+    ).toBe(false);
+  });
+
+  it('rejects a Home Service booking with no tracking document at all', () => {
+    expect(
+      canTransitionToInProgress({ bookingData: { serviceLocationType: 'customer_home' }, trackingStatus: undefined })
+    ).toBe(false);
   });
 });

@@ -21,7 +21,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { z } from 'zod';
 import { computeAvailability } from '../src/bookings/availability.js';
 import { applyReviewToAggregate } from '../src/bookings/rating-aggregate.js';
-import { isBarberAcceptingBookings } from '../src/bookings/service-booking-guard.js';
+import { canTransitionToInProgress, isBarberAcceptingBookings } from '../src/bookings/service-booking-guard.js';
 import { getSlotLockId } from '../src/bookings/slot-lock.js';
 import { authenticateRequest } from '../src/lib/auth-middleware.js';
 import { handleCors } from '../src/lib/cors.js';
@@ -617,6 +617,20 @@ async function handleBarberUpdateBookingStatus(ctx: RouteContext): Promise<void>
         },
       });
       return;
+    }
+
+    if (targetStatus === 'in_progress') {
+      const trackingSnap = await db.collection('bookingTracking').doc(bookingId).get();
+      const trackingStatus = trackingSnap.exists ? (trackingSnap.data()?.trackingStatus as string | undefined) : undefined;
+      if (!canTransitionToInProgress({ bookingData, trackingStatus })) {
+        res.status(400).json({
+          error: {
+            code: 'ARRIVAL_NOT_CONFIRMED',
+            message: 'Konfirmasi kedatangan di lokasi pelanggan sebelum memulai layanan.',
+          },
+        });
+        return;
+      }
     }
 
     const timestamp = new Date().toISOString();

@@ -248,4 +248,56 @@ describe('mapRawBookingToDomain', () => {
 
     expect(result.serviceAddress).toBe('Jl. Legacy 9');
   });
+
+  // Regression guard: payments.ts previously validated and used the
+  // customer's Home Service `location` to compute homeServiceFeeDistanceKm,
+  // then discarded it -- never persisting it on the booking document. That
+  // silently broke serviceLocation everywhere it's read (the customer
+  // tracking screen's distance/ETA, and the Barber Service Workspace's
+  // destination card), which always fell back to "no destination known" for
+  // every real booking. Now fixed at the source; these lock in the mapping.
+  it('18. a persisted home-service location maps to serviceLocation', () => {
+    const result = mapRawBookingToDomain(
+      'b1',
+      { customerId: 'c1', barberId: 'barber-1', status: 'pending', location: { latitude: -6.9, longitude: 107.6 } },
+      undefined,
+      undefined
+    );
+
+    expect(result.serviceLocation).toEqual({ latitude: -6.9, longitude: 107.6 });
+  });
+
+  it('19. an onsite booking (no location field, or location: null) leaves serviceLocation undefined -- never a fabricated {0,0}', () => {
+    const withoutField = mapRawBookingToDomain('b1', { customerId: 'c1', barberId: 'barber-1', status: 'pending' }, undefined, undefined);
+    const withNull = mapRawBookingToDomain(
+      'b1',
+      { customerId: 'c1', barberId: 'barber-1', status: 'pending', location: null },
+      undefined,
+      undefined
+    );
+
+    expect(withoutField.serviceLocation).toBeUndefined();
+    expect(withNull.serviceLocation).toBeUndefined();
+  });
+
+  // Regression guard: 'startedAt'/'completedAt' are the canonical fields
+  // POST /api/barber/bookings/status writes on accepted -> in_progress /
+  // in_progress -> completed -- the customer-side Booking domain type never
+  // carried them through the mapper at all.
+  it('20. startedAt/completedAt (set by the Barber service-status transition) are normalized to ISO strings', () => {
+    const result = mapRawBookingToDomain(
+      'b1',
+      {
+        customerId: 'c1',
+        barberId: 'barber-1',
+        status: 'in_progress',
+        startedAt: '2026-08-19T10:00:00.000Z',
+      },
+      undefined,
+      undefined
+    );
+
+    expect(result.startedAt).toBe('2026-08-19T10:00:00.000Z');
+    expect(result.completedAt).toBeUndefined();
+  });
 });

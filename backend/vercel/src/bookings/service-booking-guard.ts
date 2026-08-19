@@ -42,3 +42,26 @@ export type ServiceLocationType = 'barbershop' | 'customer_home';
 export function resolveServiceLocationType(bookingType: BookingType): ServiceLocationType {
   return bookingType === 'home' ? 'customer_home' : 'barbershop';
 }
+
+/** Same OR-check the Barber app's own isHomeService already uses (booking/[bookingId].tsx)
+ * so server and client can never disagree about which bookings are Home Service. */
+export function isHomeServiceBooking(bookingData: { serviceLocationType?: unknown; bookingType?: unknown }): boolean {
+  return bookingData.serviceLocationType === 'customer_home' || bookingData.bookingType === 'home';
+}
+
+/**
+ * Server-side mirror of the Home Service arrival gate the Barber app already
+ * enforced client-side only (booking/[bookingId].tsx: `tracking?.trackingStatus
+ * !== 'arrived'` blocks the "Mulai Layanan" tap) before allowing
+ * accepted -> in_progress. UI hiding a button is not security -- this is the
+ * actual enforcement point for POST /api/barber/bookings/status. An
+ * on-the-spot (non-Home-Service) booking has no travel/arrival concept at
+ * all, so it's always allowed here.
+ */
+export function canTransitionToInProgress(params: {
+  bookingData: { serviceLocationType?: unknown; bookingType?: unknown };
+  trackingStatus?: string | null;
+}): boolean {
+  if (!isHomeServiceBooking(params.bookingData)) return true;
+  return params.trackingStatus === 'arrived';
+}

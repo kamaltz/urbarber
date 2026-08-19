@@ -91,6 +91,19 @@ export interface BarberBooking {
   paymentStatus: PaymentStatus;
   notes?: string;
   createdAt: string;
+  /** 'home' | 'onsite' -- the only two values Zod accepts on creation (payments.ts). */
+  bookingType?: 'home' | 'onsite';
+  serviceLocationType?: 'barbershop' | 'customer_home';
+  /** Raw customer-supplied address text (payments.ts persists both `address` and `serviceAddress` with the same value). */
+  address?: string;
+  serviceAddress?: string;
+  /** Home Service destination coordinates -- see resolveServiceLocation in
+   * map-booking.ts. Absent for onsite bookings and for bookings created
+   * before this field was persisted. */
+  location?: { latitude: number; longitude: number };
+  /** Set by POST /api/barber/bookings/status on accepted -> in_progress / in_progress -> completed. */
+  startedAt?: string;
+  completedAt?: string;
 }
 
 export interface BarberScheduleDay {

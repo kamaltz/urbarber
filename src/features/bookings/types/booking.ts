@@ -75,6 +75,9 @@ export interface Booking {
   distanceKm?: number;
   scheduledAt: string; // ISO date
   scheduledTime: string; // HH:MM format
+  /** Set by POST /api/barber/bookings/status on accepted -> in_progress / in_progress -> completed. */
+  startedAt?: string;
+  completedAt?: string;
   totalPrice: number;
   subtotal: number;
   travelFee?: number;

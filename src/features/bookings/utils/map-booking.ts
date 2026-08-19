@@ -102,6 +102,19 @@ function resolveBookingType(data: Record<string, any>): 'home' | 'onsite' {
 }
 
 /**
+ * The customer's Home Service destination coordinates -- persisted on
+ * bookings/{bookingId}.location by handleCreatePayment (payments.ts).
+ * Absent (undefined) for onsite bookings and for any booking created before
+ * this field was persisted -- callers must treat that as "destination
+ * unknown", never fabricate one.
+ */
+function resolveServiceLocation(data: Record<string, any>): { latitude: number; longitude: number } | undefined {
+  const lat = data.location?.latitude;
+  const lng = data.location?.longitude;
+  return typeof lat === 'number' && typeof lng === 'number' ? { latitude: lat, longitude: lng } : undefined;
+}
+
+/**
  * Payment-created bookings (backend/vercel/api/payments.ts) persist a full
  * fee breakdown -- baseAmount/homeServiceFee/applicationFee/voucherDiscount/
  * voucherCode/tipAmount/totalPrice -- but until this fix the mapper only ever
@@ -164,8 +177,11 @@ export function mapRawBookingToDomain(
     bookingType: resolveBookingType(data),
     serviceLocationType: resolveServiceLocationType(data),
     serviceAddress: data.address || data.serviceAddress,
+    serviceLocation: resolveServiceLocation(data),
     scheduledAt: resolveDate(data),
     scheduledTime: resolveTime(data),
+    startedAt: normalizeTimestamp(data.startedAt) || undefined,
+    completedAt: normalizeTimestamp(data.completedAt) || undefined,
     totalPrice: resolveTotalPrice(data),
     subtotal: resolveSubtotal(data),
     travelFee: typeof data.homeServiceFee === 'number' ? data.homeServiceFee : undefined,

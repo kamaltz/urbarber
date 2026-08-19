@@ -36,6 +36,85 @@ import type {
   UpdateBarberScheduleRequest,
 } from '../types/barber';
 
+/**
+ * The payment-first booking creator (payments.ts handleCreatePayment) only
+ * ever persists a single `serviceId` on the booking document, never a
+ * `services` array -- so `data.services || []` (as getBarberBookings already
+ * does) is empty for every real booking, silently leaving the Barber's
+ * service-breakdown UI blank. Resolves the real name/price/duration from
+ * barberServices/{serviceId}, mirroring the customer-side equivalent
+ * (resolveServices in map-booking.ts). Falls back to a price-only synthetic
+ * entry (never a fabricated duration) if the service doc is gone or the read
+ * fails, so the screen still shows the amount actually charged.
+ */
+async function resolveBarberBookingServices(data: Record<string, any>): Promise<BarberService[]> {
+  if (Array.isArray(data.services) && data.services.length > 0) {
+    return data.services;
+  }
+
+  const fallbackPrice = typeof data.price === 'number' ? data.price : 0;
+
+  if (data.serviceId) {
+    try {
+      const serviceSnap = await getDoc(doc(firestore, 'barberServices', data.serviceId));
+      if (serviceSnap.exists()) {
+        const s = serviceSnap.data();
+        return [
+          {
+            serviceId: data.serviceId,
+            name: s.name || 'Layanan Barber',
+            description: s.description || '',
+            price: fallbackPrice || s.price || 0,
+            durationMinutes: typeof s.durationMinutes === 'number' ? s.durationMinutes : 0,
+            imageUrl: s.imageUrl,
+            isActive: s.isActive !== false,
+            createdAt: s.createdAt || '',
+          },
+        ];
+      }
+    } catch (error: any) {
+      if (__DEV__) {
+        console.warn('[BarberRepository resolveBarberBookingServices Error]', error?.code, error?.message || error);
+      }
+    }
+  }
+
+  return [
+    {
+      serviceId: data.serviceId || '',
+      name: data.serviceName || 'Layanan Cukur',
+      description: '',
+      price: fallbackPrice,
+      durationMinutes: 0,
+      isActive: true,
+      createdAt: '',
+    },
+  ];
+}
+
+/**
+ * Mapped explicitly rather than raw-spread: the booking doc has no
+ * `totalAmount` field, so a raw spread left it undefined and the detail
+ * screen fell back to `totalPrice` (the customer's gross payment, including
+ * applicationFee/tip) -- inconsistent with getBarberBookings/dashboard/
+ * analysis, which correctly sum only `price` (net service value) as the
+ * barber's "Nilai Layanan". Shared by getBookingDetail and
+ * subscribeToBookingDetail so the one-shot and realtime paths can never
+ * diverge in shape.
+ */
+function mapBarberBookingDetail(id: string, data: Record<string, any>, services: BarberService[]): BarberBooking {
+  return {
+    ...data,
+    bookingId: id,
+    status: mapLegacyBookingStatus(data.status),
+    totalAmount: data.price || 0,
+    homeServiceFee: data.homeServiceFee,
+    tipAmount: data.tipAmount,
+    grossAmount: data.grossAmount ?? data.totalPrice,
+    services,
+  } as BarberBooking;
+}
+
 export const barberRepository = {
   /**
    * Get barber profile
@@ -386,27 +465,53 @@ export const barberRepository = {
         return null;
       }
 
-      // Mapped explicitly rather than raw-spread: the booking doc has no
-      // `totalAmount` field, so a raw spread left it undefined and this
-      // screen fell back to `totalPrice` (the customer's gross payment,
-      // including applicationFee/tip) -- inconsistent with getBarberBookings
-      // above and dashboard/analysis, which correctly sum only `price`
-      // (net service value) as the barber's "Nilai Layanan".
-      return {
-        ...data,
-        bookingId: snapshot.id,
-        status: mapLegacyBookingStatus(data.status),
-        totalAmount: data.price || 0,
-        homeServiceFee: data.homeServiceFee,
-        tipAmount: data.tipAmount,
-        grossAmount: data.grossAmount ?? data.totalPrice,
-      } as BarberBooking;
+      const services = await resolveBarberBookingServices(data);
+      return mapBarberBookingDetail(snapshot.id, data, services);
     } catch (error: any) {
       if (__DEV__) {
         console.warn('[BarberRepository getBookingDetail Error]', error?.code, error?.message || error);
       }
       return null;
     }
+  },
+
+  /**
+   * Realtime booking-detail subscription for the active Service Workspace
+   * screen -- a customer/admin cancellation or a completion applied from
+   * another device must be reflected immediately, not only on the next
+   * manual refresh. Same ownership/mapping rules as getBookingDetail;
+   * onNext(null) covers "not found" and "not assigned to this barber"
+   * identically (never distinguished to the caller, matching the one-shot
+   * method's existing behavior).
+   */
+  subscribeToBookingDetail(
+    barberId: string,
+    bookingId: string,
+    onNext: (booking: BarberBooking | null) => void
+  ): () => void {
+    if (!barberId || !bookingId) {
+      onNext(null);
+      return () => {};
+    }
+
+    return onSnapshot(
+      doc(firestore, 'bookings', bookingId),
+      (snapshot) => {
+        if (!snapshot.exists()) {
+          onNext(null);
+          return;
+        }
+        const data = snapshot.data();
+        if (data.barberId !== barberId) {
+          onNext(null);
+          return;
+        }
+        void resolveBarberBookingServices(data).then((services) => {
+          onNext(mapBarberBookingDetail(snapshot.id, data, services));
+        });
+      },
+      () => onNext(null)
+    );
   },
 
   /**

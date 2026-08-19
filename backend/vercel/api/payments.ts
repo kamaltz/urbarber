@@ -335,6 +335,15 @@ async function handleCreatePayment(ctx: RouteContext): Promise<void> {
       // reads -- without this, a paid Home Service booking's address was
       // silently invisible in Admin.
       serviceAddress: address,
+      // The customer's Home Service coordinates were validated and used to
+      // compute homeServiceFeeDistanceKm above, then previously discarded --
+      // never persisted onto the booking document at all. That silently
+      // broke every distance/ETA feature keyed off it (Booking.serviceLocation
+      // in map-booking.ts, the customer tracking screen, and the Barber
+      // service workspace), which always fell back to "no destination known"
+      // for every real booking. null for onsite bookings, where there is no
+      // customer destination to navigate to.
+      location: location ?? null,
       bookingType,
       serviceLocationType,
       notes,
