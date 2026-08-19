@@ -92,6 +92,19 @@ export type GoogleAuthResult = GoogleAuthSuccess | GoogleAuthFailure;
 async function authenticateWithGoogle(): Promise<
   { success: true; userCredential: UserCredential } | GoogleAuthFailure
 > {
+  // Never let the native module run unconfigured -- that produces its own
+  // cryptic native error (often indistinguishable from a real config
+  // mismatch) instead of this clear, actionable one.
+  if (!configured) {
+    return {
+      success: false,
+      error: {
+        code: 'GOOGLE_SIGN_IN_NOT_CONFIGURED',
+        message: 'Masuk dengan Google belum tersedia di aplikasi ini. Silakan gunakan email dan kata sandi.',
+      },
+    };
+  }
+
   try {
     await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
     const response = await GoogleSignin.signIn();
@@ -151,6 +164,28 @@ async function authenticateWithGoogle(): Promise<
           code: 'ACCOUNT_EXISTS_DIFFERENT_CREDENTIAL',
           message:
             'Email ini sudah terdaftar dengan metode masuk lain. Silakan masuk menggunakan metode sebelumnya.',
+        },
+      };
+    }
+
+    // Native Android SDK status code 10 (CommonStatusCodes.DEVELOPER_ERROR) --
+    // always a build/console misconfiguration (SHA-1 fingerprint, package
+    // name, or OAuth client mismatch between Google Cloud Console, Firebase,
+    // and the signing certificate of this exact build), never something the
+    // end user caused or can fix. The native module's raw rejection message
+    // ("DEVELOPER_ERROR: Follow troubleshooting instructions at...") must
+    // never reach the user directly -- log it for diagnosis, surface a
+    // friendly message instead.
+    const rawMessage = typeof err?.message === 'string' ? err.message : '';
+    if (rawMessage.startsWith('DEVELOPER_ERROR') || String(err?.code) === '10') {
+      if (__DEV__) {
+        console.warn('[GoogleAuth] DEVELOPER_ERROR -- check SHA-1/package/OAuth client config.', rawMessage);
+      }
+      return {
+        success: false,
+        error: {
+          code: 'GOOGLE_SIGN_IN_MISCONFIGURED',
+          message: 'Masuk dengan Google sedang bermasalah. Silakan gunakan email dan kata sandi, atau coba lagi nanti.',
         },
       };
     }

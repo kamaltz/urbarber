@@ -65,7 +65,12 @@ vi.mock('../account-bootstrap.service', () => ({
   accountBootstrapService: { initializeAccount: initializeAccountMock },
 }));
 
-import { isGoogleAuthConfigured, loginExistingGoogleAccount, registerGoogleAccount } from '../google-auth.service';
+import {
+  configureGoogleSignIn,
+  isGoogleAuthConfigured,
+  loginExistingGoogleAccount,
+  registerGoogleAccount,
+} from '../google-auth.service';
 
 function mockUser(overrides: Partial<{ uid: string; displayName: string | null; email: string | null }> = {}) {
   return {
@@ -86,10 +91,35 @@ function mockFirestoreUser(exists: boolean, data: Record<string, unknown> = {}) 
   getDocMock.mockResolvedValue({ exists: () => exists, data: () => data });
 }
 
+/**
+ * Regression guard: previously, an unconfigured GoogleSignin (no webClientId,
+ * so GoogleSignin.configure() was never called) silently fell through to
+ * GoogleSignin.signIn() anyway, producing the native module's own cryptic
+ * failure instead of a clear one. Must run before ANY other test in this
+ * file calls configureGoogleSignIn() -- `configured` is private, idempotent,
+ * module-level state with no public way to reset it, so this only observes
+ * the true "never configured" state if it's the first test to touch the
+ * module (Vitest runs describe/it blocks in declaration order by default).
+ */
+describe('authenticateWithGoogle guard: never configured (must run first)', () => {
+  it('reports GOOGLE_SIGN_IN_NOT_CONFIGURED and never calls the native module before configureGoogleSignIn() has ever run', async () => {
+    const result = await loginExistingGoogleAccount();
+
+    expect(result.success).toBe(false);
+    if (!result.success) expect(result.error.code).toBe('GOOGLE_SIGN_IN_NOT_CONFIGURED');
+    expect(signInMock).not.toHaveBeenCalled();
+  });
+});
+
 describe('loginExistingGoogleAccount', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     hasPlayServicesMock.mockResolvedValue(true);
+    // Mirrors what both Login and Register screens actually do: call
+    // configureGoogleSignIn() (with a real webClientId) immediately before
+    // attempting sign-in. Idempotent, so calling it every test is harmless.
+    process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID = 'test-client-id.apps.googleusercontent.com';
+    configureGoogleSignIn();
   });
 
   it('1. existing account login succeeds without touching account bootstrap', async () => {
@@ -156,12 +186,30 @@ describe('loginExistingGoogleAccount', () => {
       expect(result.error.message).toMatch(/metode masuk lain/);
     }
   });
+
+  it('12. native DEVELOPER_ERROR (status code 10 -- SHA-1/package/OAuth client misconfiguration) is never shown raw to the user', async () => {
+    signInMock.mockRejectedValue({
+      code: '10',
+      message: 'DEVELOPER_ERROR: Follow troubleshooting instructions at https://react-native-google-signin.github.io/docs/troubleshooting',
+    });
+
+    const result = await loginExistingGoogleAccount();
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.code).toBe('GOOGLE_SIGN_IN_MISCONFIGURED');
+      expect(result.error.message).not.toMatch(/DEVELOPER_ERROR/);
+      expect(result.error.message).not.toMatch(/troubleshooting/);
+    }
+  });
 });
 
 describe('registerGoogleAccount', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     hasPlayServicesMock.mockResolvedValue(true);
+    process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID = 'test-client-id.apps.googleusercontent.com';
+    configureGoogleSignIn();
   });
 
   it('1. fresh Google Customer: app profile missing -> bootstraps customer and force-refreshes token', async () => {

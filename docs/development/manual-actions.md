@@ -12,8 +12,18 @@ This document registers all external dashboard, cloud platform, and infrastructu
 - **Action**: MANUAL ACTION REQUIRED: Enable Email/Password authentication. Ensure "Email link (passwordless sign-in)" is disabled unless specifically requested.
 
 ### MA-02: Configure Google OAuth 2.0 Sign-In Client ID
-- **Location**: Firebase Console -> Authentication -> Sign-in method -> Google
-- **Action**: MANUAL ACTION REQUIRED: Enable Google Sign-in provider. Add Web Client ID and Android SHA-1 fingerprint generated from local/EAS signing keystore into Firebase Project Settings.
+- **Location**: Firebase Console -> Authentication -> Sign-in method -> Google, and Google Cloud Console -> APIs & Services -> Credentials
+- **Symptom if skipped/wrong**: native sign-in fails immediately with `DEVELOPER_ERROR` (Android `CommonStatusCodes.DEVELOPER_ERROR`, code 10) -- this is always a config mismatch, never something fixable in app code.
+- **Action**: MANUAL ACTION REQUIRED, in order:
+  1. **Enable the provider**: Firebase Console -> Authentication -> Sign-in method -> Google -> Enable.
+  2. **Get the Web client ID (OAuth client type 3)**: Firebase auto-creates this when the Google provider is enabled -- copy it from the same screen ("Web SDK configuration" -> Web client ID), or from Google Cloud Console -> Credentials -> OAuth 2.0 Client IDs -> the entry of type "Web application". Set it locally as `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` in `.env.local`, and as the equivalent EAS environment variable for every build profile in `eas.json` (`development`, `preview`, `preview-v11`, `production`) -- see MA-08.
+  3. **Generate the SHA-1 (and SHA-256) fingerprint for each signing keystore actually used**:
+     - EAS-managed credentials (used by `preview`/`preview-v11`/`production` unless overridden): run `eas credentials`, select Android -> the relevant build profile -> "Keystore: Manage everything needed to build your project" -> view the keystore, which prints the SHA-1/SHA-256.
+     - Local debug keystore (used by `development`/Expo Go/local `expo run:android`): `keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android`.
+     - A production keystore not managed by EAS: `keytool -list -v -keystore <path-to-keystore> -alias <alias>`.
+  4. **Register every fingerprint from step 3** as a separate Android OAuth client under the SAME Firebase project: Firebase Console -> Project Settings -> Your apps -> the Android app (package `com.kamaltz.urbarber`, must match `app.json`'s `android.package` exactly) -> Add fingerprint. Each build profile with a different signing key needs its own registered fingerprint -- a fingerprint valid for `production` will not satisfy a `preview` APK signed differently, and vice versa.
+  5. **Download the resulting `google-services.json`** (Firebase Console -> Project Settings -> Your apps -> Android app -> download) after every fingerprint change, and supply it at build time via the `GOOGLE_SERVICES_JSON` env var / EAS secret that `app.config.js` reads (`android.googleServicesFile`) -- a stale `google-services.json` from before a fingerprint was added will still fail with `DEVELOPER_ERROR` even after step 4.
+  6. **Verify**: the Web client ID inside the downloaded `google-services.json` (an `oauth_client` entry with `client_type: 3`) must match `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` exactly -- a mismatch here also produces `DEVELOPER_ERROR`.
 
 ### MA-03: Create Cloud Firestore Instance & Deploy Security Rules
 - **Location**: Firebase Console -> Firestore Database -> Rules
@@ -64,7 +74,10 @@ This document registers all external dashboard, cloud platform, and infrastructu
 
   EXPO_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
   EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your_supabase_publishable_key
+
+  EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=your_google_oauth_web_client_id
   ```
+  `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` must also be set as an EAS environment variable for every non-development build profile (see MA-02) -- a value only in `.env.local` never reaches an EAS-built binary.
 
 ---
 
