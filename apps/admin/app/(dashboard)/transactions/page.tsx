@@ -3,6 +3,7 @@
 import { AdminApiClient, type AdminTransaction } from '@/lib/api-client';
 import { getErrorMessage } from '@/lib/errors';
 import { shortId } from '@/lib/format';
+import Link from 'next/link';
 import { Fragment, useEffect, useState } from 'react';
 
 const PROVIDER_OPTIONS = ['all', 'cash_on_service', 'midtrans_sandbox'] as const;
@@ -203,7 +204,13 @@ export default function TransactionsPage() {
                     {shortId(tx.transactionId)}
                   </td>
                   <td style={{ padding: '1rem', fontSize: '0.875rem' }}>
-                    {shortId(tx.bookingId)}
+                    {tx.bookingId ? (
+                      <Link href={`/bookings/${tx.bookingId}`} style={{ color: '#3B82F6', fontWeight: '600' }}>
+                        {shortId(tx.bookingId)}
+                      </Link>
+                    ) : (
+                      '-'
+                    )}
                   </td>
                   <td style={{ padding: '1rem' }}>
                     {tx.provider === 'cash_on_service' ? 'Cash' : 'Midtrans'}

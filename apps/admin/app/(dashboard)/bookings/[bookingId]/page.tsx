@@ -274,6 +274,52 @@ export default function BookingDetailPage() {
         )}
       </div>
 
+      {/* Refund */}
+      {booking.refundRequired && (
+        <div
+          style={{
+            backgroundColor: booking.refund?.status === 'review_required' ? '#FFFBEB' : '#FEF2F2',
+            border: `1px solid ${booking.refund?.status === 'review_required' ? '#FDE68A' : '#FECACA'}`,
+            borderRadius: '0.5rem',
+            padding: '1.5rem',
+            marginBottom: '1.5rem',
+          }}
+        >
+          <h2 style={{ fontSize: '1.125rem', fontWeight: '600', marginBottom: '1rem' }}>Refund</h2>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', fontSize: '0.875rem' }}>
+            <div>
+              <div style={{ color: '#6B7280', marginBottom: '0.25rem' }}>Status</div>
+              <div style={{ fontWeight: '600' }}>
+                {booking.refund?.status === 'review_required' ? 'Perlu Ditinjau Admin' : booking.refund?.status === 'auto_approved' ? 'Disetujui Otomatis' : 'Perlu Ditinjau'}
+              </div>
+            </div>
+            <div>
+              <div style={{ color: '#6B7280', marginBottom: '0.25rem' }}>Jumlah</div>
+              <div style={{ fontWeight: '700' }}>{booking.refund?.amount !== undefined ? `Rp ${booking.refund.amount.toLocaleString('id-ID')}` : '-'}</div>
+            </div>
+            <div>
+              <div style={{ color: '#6B7280', marginBottom: '0.25rem' }}>Diajukan Oleh</div>
+              <div style={{ fontWeight: '600', textTransform: 'capitalize' }}>{booking.refund?.initiatedBy || '-'}</div>
+            </div>
+            <div>
+              <div style={{ color: '#6B7280', marginBottom: '0.25rem' }}>Alasan</div>
+              <div style={{ fontWeight: '600' }}>{booking.refund?.reason || '-'}</div>
+            </div>
+            <div>
+              <div style={{ color: '#6B7280', marginBottom: '0.25rem' }}>Diajukan Pada</div>
+              <div style={{ fontWeight: '600' }}>{booking.refund?.requestedAt || '-'}</div>
+            </div>
+            <div>
+              <div style={{ color: '#6B7280', marginBottom: '0.25rem' }}>Selesai Pada</div>
+              <div style={{ fontWeight: '600' }}>{booking.refund?.resolvedAt || 'Belum diproses'}</div>
+            </div>
+          </div>
+          <p style={{ fontSize: '0.75rem', color: '#9CA3AF', marginTop: '0.75rem' }}>
+            Pengembalian dana aktual (transfer/refund gateway Midtrans) diproses manual oleh admin di luar aplikasi ini. Perbarui providerRefundId dan status setelah refund selesai diproses.
+          </p>
+        </div>
+      )}
+
       {/* Notes */}
       {booking.notes && (
         <div

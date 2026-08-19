@@ -161,7 +161,12 @@ class PaymentApiService {
   }
 
   async cancelBookingPayment(bookingId: string, reason?: string) {
-    return this.fetchWithAuth<{ success: boolean; message: string }>('/api/bookings/cancel', {
+    return this.fetchWithAuth<{
+      success: boolean;
+      message: string;
+      /** null when the booking wasn't paid -- nothing to refund. */
+      refund: { status: 'auto_approved' | 'review_required'; amount: number; reason: string } | null;
+    }>('/api/bookings/cancel', {
       method: 'POST',
       body: JSON.stringify({ bookingId, reason }),
     });

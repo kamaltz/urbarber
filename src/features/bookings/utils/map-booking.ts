@@ -159,6 +159,8 @@ export function mapRawBookingToDomain(
     services: resolveServices(data, serviceDoc),
     status: mapLegacyBookingStatus(data.status),
     paymentStatus: data.paymentStatus,
+    refundRequired: data.refundRequired === true,
+    refund: data.refund || undefined,
     bookingType: resolveBookingType(data),
     serviceLocationType: resolveServiceLocationType(data),
     serviceAddress: data.address || data.serviceAddress,

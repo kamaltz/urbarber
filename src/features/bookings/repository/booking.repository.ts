@@ -252,9 +252,20 @@ class BookingRepository {
   }
 
   /**
-   * Cancel a booking (transition allowed from 'pending' or 'accepted' to 'cancelled')
+   * Cancel a booking (transition allowed from 'pending' or 'accepted' to 'cancelled').
+   *
+   * Routed through the trusted backend (POST /api/bookings/cancel) rather
+   * than a direct Firestore write: cancellation now also decides and applies
+   * the refund lifecycle (auto-approved vs review-required), restores
+   * voucher usage where applicable, and releases the slot lock -- all inside
+   * one atomic transaction server-side (see refund-service.ts). A direct
+   * client write could do none of that (no refundRequired, no slot release),
+   * silently orphaning the slot and losing the customer's refund eligibility.
    */
-  async cancelBooking(bookingId: string): Promise<{ success: boolean; error?: any }> {
+  async cancelBooking(
+    bookingId: string,
+    reason?: string
+  ): Promise<{ success: boolean; refund?: { status: 'auto_approved' | 'review_required'; amount: number; reason: string } | null; error?: any }> {
     try {
       const booking = await this.getBookingDetail(bookingId);
 
@@ -276,12 +287,13 @@ class BookingRepository {
         };
       }
 
-      await updateDoc(doc(firestore, 'bookings', bookingId), {
-        status: 'cancelled',
-        updatedAt: Timestamp.now(),
-      });
+      const result = await paymentApiService.cancelBookingPayment(bookingId, reason);
 
-      return { success: true };
+      if (!result.success) {
+        return { success: false, error: result.error };
+      }
+
+      return { success: true, refund: result.data.refund };
     } catch (error: any) {
       if (__DEV__) {
         console.warn('[BookingRepository cancelBooking Error]', error?.code, error?.message || error);

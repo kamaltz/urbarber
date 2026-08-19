@@ -148,6 +148,20 @@ export interface AdminPricingBreakdown {
   grossAmount?: number;
 }
 
+// Refund lifecycle written by handleCancelBooking/handleBarberRespondToBooking
+// (backend/vercel/src/payments/refund-service.ts). `refund` is present only
+// once a paid booking has actually been cancelled; paymentStatus itself is
+// never overwritten by a refund -- see that file's doc comment.
+export interface AdminBookingRefund {
+  status: 'auto_approved' | 'review_required';
+  amount: number;
+  reason: string;
+  initiatedBy: 'customer' | 'barber' | 'admin';
+  requestedAt: string;
+  resolvedAt?: string | null;
+  providerRefundId?: string | null;
+}
+
 // Bookings - Phase 3: Summary for admin monitoring list
 export interface AdminBookingSummary extends AdminPricingBreakdown {
   bookingId: string;
@@ -163,6 +177,8 @@ export interface AdminBookingSummary extends AdminPricingBreakdown {
   paymentStatus: 'not_required' | 'initiated' | 'pending' | 'paid' | 'failed' | 'expired' | 'cancelled' | 'refunded' | 'partially_refunded';
   totalPrice: number;
   createdAt: string;
+  refundRequired?: boolean;
+  refund?: AdminBookingRefund;
 }
 
 // Bookings - Phase 3: Detail for admin booking review

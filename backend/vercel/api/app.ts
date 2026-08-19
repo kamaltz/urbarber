@@ -26,6 +26,8 @@ import { getSlotLockId } from '../src/bookings/slot-lock.js';
 import { authenticateRequest } from '../src/lib/auth-middleware.js';
 import { handleCors } from '../src/lib/cors.js';
 import { adminAuth, db } from '../src/lib/firebase-admin.js';
+import { computeRefundUpdate, decideRefund } from '../src/payments/refund-service.js';
+import { FieldValue } from 'firebase-admin/firestore';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const midtransClient = require('midtrans-client');
@@ -452,20 +454,73 @@ async function handleBarberRespondBooking(ctx: RouteContext): Promise<void> {
       updateData.rejectionReason = reason;
     }
 
-    // Batch 08: If barber rejects a PAID booking, mark for refund reconciliation
-    // Payment remains 'paid' (not refunded automatically)
-    // Admin must manually handle refund via dashboard
-    if (action === 'reject' && bookingData.paymentStatus === 'paid') {
-      updateData.refundRequired = true;
-    }
+    let refundSummary: { status: string; amount: number; reason: string } | null = null;
 
-    await bookingRef.update(updateData);
-
-    // Release slot lock if rejected (payment audit trail preserved)
     if (action === 'reject') {
       const slotLockId = getSlotLockId(barberId, bookingData.date, bookingData.startTime);
       const slotLockRef = db.collection('slotLocks').doc(slotLockId);
-      await slotLockRef.delete();
+
+      // Batch 08 + refund lifecycle: a barber reject is always a full,
+      // auto-approved refund (the booking never progressed past 'pending',
+      // so there's no operational-progress question). Payment truth
+      // (paymentStatus) is never touched -- see refund-service.ts.
+      if (bookingData.paymentStatus === 'paid') {
+        const paymentRef = db.collection('payments').doc(bookingId);
+
+        await db.runTransaction(async (t) => {
+          const paymentSnap = await t.get(paymentRef);
+          const paymentData = paymentSnap.exists ? paymentSnap.data() || {} : {};
+
+          const voucherCode: string | undefined = paymentData.voucherCode;
+          const voucherRedemptionRef = voucherCode ? db.collection('voucherRedemptions').doc(bookingId) : null;
+          const voucherRedemptionSnap = voucherRedemptionRef ? await t.get(voucherRedemptionRef) : null;
+
+          const decision = decideRefund({ initiator: 'barber', bookingStatus: bookingData.status });
+          const refundResult = computeRefundUpdate({
+            bookingId,
+            bookingData,
+            paymentData,
+            decision,
+            initiator: 'barber',
+            timestamp,
+            voucherRedemption:
+              voucherRedemptionSnap && voucherRedemptionSnap.exists ? voucherRedemptionSnap.data() : undefined,
+          });
+
+          Object.assign(updateData, refundResult.bookingUpdate);
+          refundSummary = {
+            status: decision.status,
+            amount: refundResult.bookingUpdate.refund.amount,
+            reason: decision.reason,
+          };
+
+          t.update(bookingRef, updateData);
+          t.delete(slotLockRef);
+
+          if (refundResult.voucherRestore) {
+            t.update(refundResult.voucherRestore.voucherRef, { usageCount: FieldValue.increment(-1) });
+            t.set(
+              refundResult.voucherRestore.voucherUserRedemptionRef,
+              { count: FieldValue.increment(-1) },
+              { merge: true }
+            );
+            t.update(refundResult.voucherRestore.voucherRedemptionRef, {
+              reversedAt: timestamp,
+              reversedReason: decision.reason,
+            });
+          } else if (refundResult.voucherRedemptionReversalOnly) {
+            t.update(refundResult.voucherRedemptionReversalOnly, {
+              reversedAt: timestamp,
+              reversedReason: decision.reason,
+            });
+          }
+        });
+      } else {
+        await bookingRef.update(updateData);
+        await slotLockRef.delete();
+      }
+    } else {
+      await bookingRef.update(updateData);
     }
 
     res.status(200).json({
@@ -473,6 +528,7 @@ async function handleBarberRespondBooking(ctx: RouteContext): Promise<void> {
       bookingId,
       status: updateData.status,
       message: `Pesanan ${action === 'accept' ? 'diterima' : 'ditolak'}`,
+      refund: refundSummary,
     });
   } catch (err: any) {
     console.error('[Barber/bookings/respond] Error:', err.message);
@@ -890,35 +946,95 @@ async function handleCancelBooking(ctx: RouteContext): Promise<void> {
     }
 
     const timestamp = new Date().toISOString();
+    const initiator: 'customer' | 'admin' = authUser.appRole === 'admin' ? 'admin' : 'customer';
+    let refundSummary: { status: string; amount: number; reason: string } | null = null;
 
-    const updateData: Record<string, any> = {
-      status: 'cancelled',
-      cancelledAt: timestamp,
-      cancellationReason: reason,
-      updatedAt: timestamp,
-    };
+    // Refund lifecycle + slot release run inside one transaction so the
+    // booking update, voucher restoration, and slot-lock delete either all
+    // commit or none do -- re-reads booking/payment/tracking/voucher-
+    // redemption fresh here (not the outer pre-check snapshots) per
+    // Firestore's read-before-write transaction rule, and so this reflects
+    // the latest committed state.
+    await db.runTransaction(async (t) => {
+      const [freshBookingSnap, freshPaymentSnap] = await Promise.all([t.get(bookingRef), t.get(paymentRef)]);
+      const freshBookingData = freshBookingSnap.exists ? freshBookingSnap.data() || {} : bookingData;
+      const freshPaymentData = freshPaymentSnap.exists ? freshPaymentSnap.data() || {} : {};
 
-    // Batch 08: If customer cancels a PAID booking, mark for refund reconciliation
-    // Payment remains 'paid' (not automatically refunded in Batch 08)
-    // Admin must manually handle refund via dashboard after Batch 08
-    if (paymentData.status === 'paid') {
-      updateData.refundRequired = true;
-    }
+      const updateData: Record<string, any> = {
+        status: 'cancelled',
+        cancelledAt: timestamp,
+        cancellationReason: reason,
+        updatedAt: timestamp,
+      };
 
-    // Update booking
-    await bookingRef.update(updateData);
+      if (freshPaymentData.status === 'paid') {
+        // Only relevant for a customer cancelling their own already-accepted
+        // booking -- this is the one case the policy distinguishes by
+        // whether the barber is already en_route/arrived (see
+        // refund-service.ts's decideRefund doc comment).
+        let trackingStatus: string | null = null;
+        if (initiator === 'customer' && freshBookingData.status === 'accepted') {
+          const trackingSnap = await t.get(db.collection('bookingTracking').doc(bookingId));
+          trackingStatus = trackingSnap.exists ? trackingSnap.data()?.trackingStatus ?? null : null;
+        }
 
-    // Release slot lock (calendar availability freed, but payment audit preserved)
-    if (bookingData.barberId && bookingData.date && bookingData.startTime) {
-      const slotLockId = getSlotLockId(bookingData.barberId, bookingData.date, bookingData.startTime);
-      await db.collection('slotLocks').doc(slotLockId).delete();
-    }
+        const voucherCode: string | undefined = freshPaymentData.voucherCode;
+        const voucherRedemptionRef = voucherCode ? db.collection('voucherRedemptions').doc(bookingId) : null;
+        const voucherRedemptionSnap = voucherRedemptionRef ? await t.get(voucherRedemptionRef) : null;
+
+        const decision = decideRefund({ initiator, bookingStatus: freshBookingData.status, trackingStatus });
+        const refundResult = computeRefundUpdate({
+          bookingId,
+          bookingData: freshBookingData,
+          paymentData: freshPaymentData,
+          decision,
+          initiator,
+          timestamp,
+          voucherRedemption:
+            voucherRedemptionSnap && voucherRedemptionSnap.exists ? voucherRedemptionSnap.data() : undefined,
+        });
+
+        Object.assign(updateData, refundResult.bookingUpdate);
+        refundSummary = {
+          status: decision.status,
+          amount: refundResult.bookingUpdate.refund.amount,
+          reason: decision.reason,
+        };
+
+        if (refundResult.voucherRestore) {
+          t.update(refundResult.voucherRestore.voucherRef, { usageCount: FieldValue.increment(-1) });
+          t.set(
+            refundResult.voucherRestore.voucherUserRedemptionRef,
+            { count: FieldValue.increment(-1) },
+            { merge: true }
+          );
+          t.update(refundResult.voucherRestore.voucherRedemptionRef, {
+            reversedAt: timestamp,
+            reversedReason: decision.reason,
+          });
+        } else if (refundResult.voucherRedemptionReversalOnly) {
+          t.update(refundResult.voucherRedemptionReversalOnly, {
+            reversedAt: timestamp,
+            reversedReason: decision.reason,
+          });
+        }
+      }
+
+      t.update(bookingRef, updateData);
+
+      // Release slot lock (calendar availability freed, but payment audit preserved)
+      if (freshBookingData.barberId && freshBookingData.date && freshBookingData.startTime) {
+        const slotLockId = getSlotLockId(freshBookingData.barberId, freshBookingData.date, freshBookingData.startTime);
+        t.delete(db.collection('slotLocks').doc(slotLockId));
+      }
+    });
 
     res.status(200).json({
       success: true,
       bookingId,
       status: 'cancelled',
       message: 'Pesanan berhasil dibatalkan',
+      refund: refundSummary,
     });
   } catch (err: any) {
     console.error('[Bookings/cancel] Error:', err.message);

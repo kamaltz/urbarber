@@ -72,6 +72,16 @@ export function resolveBookingAddress(data: Record<string, any>): string | undef
   return data.serviceAddress || data.address;
 }
 
+/** Refund lifecycle written by handleCancelBooking/handleBarberRespondToBooking
+ * (see src/payments/refund-service.ts) -- absent on any booking never cancelled
+ * paid, or predating this field. */
+export function resolveBookingRefund(data: Record<string, any>) {
+  return {
+    refundRequired: data.refundRequired === true,
+    refund: data.refund ?? undefined,
+  };
+}
+
 /**
  * Admin listing row shape (bookings list + dashboard recentBookings). Keeps
  * the exact field names apps/admin already renders (customerName,
@@ -100,6 +110,7 @@ export function mapAdminBookingSummary(
     totalPrice: resolveBookingAmount(data),
     createdAt: data.createdAt,
     ...resolveBookingPricingBreakdown(data),
+    ...resolveBookingRefund(data),
   };
 }
 
@@ -139,5 +150,6 @@ export function mapAdminBookingDetail(
     updatedAt: data.updatedAt,
     paidAt: data.paidAt,
     ...resolveBookingPricingBreakdown(data),
+    ...resolveBookingRefund(data),
   };
 }

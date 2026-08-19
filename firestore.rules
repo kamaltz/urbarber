@@ -434,6 +434,11 @@ service cloud.firestore {
           && request.resource.data.barberId == resource.data.barberId
           && request.resource.data.createdAt == resource.data.createdAt
           && (!('paymentStatus' in request.resource.data) || request.resource.data.paymentStatus == resource.data.paymentStatus)
+          // Refund lifecycle is trusted-backend-only (Admin SDK, see
+          // handleCancelBooking in api/app.ts) -- a client-side cancel must
+          // never be able to introduce or alter these fields itself.
+          && (!('refundRequired' in request.resource.data) || request.resource.data.refundRequired == resource.data.refundRequired)
+          && (!('refund' in request.resource.data) || request.resource.data.refund == resource.data.refund)
         )
         ||
         // Barber transitions: pending -> accepted / rejected, accepted -> in_progress, in_progress -> completed
@@ -452,6 +457,8 @@ service cloud.firestore {
           && request.resource.data.barberId == resource.data.barberId
           && request.resource.data.createdAt == resource.data.createdAt
           && (!('paymentStatus' in request.resource.data) || request.resource.data.paymentStatus == resource.data.paymentStatus)
+          && (!('refundRequired' in request.resource.data) || request.resource.data.refundRequired == resource.data.refundRequired)
+          && (!('refund' in request.resource.data) || request.resource.data.refund == resource.data.refund)
         )
         ||
         isAdmin()

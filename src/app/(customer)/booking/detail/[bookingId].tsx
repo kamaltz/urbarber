@@ -127,13 +127,26 @@ export default function BookingDetailScreen() {
             try {
               const result = await cancelBooking();
               if (result.success) {
+                const refundMessage = !result.refund
+                  ? 'Pesanan berhasil dibatalkan.'
+                  : result.refund.status === 'auto_approved'
+                  ? `Pesanan dibatalkan. Dana sebesar Rp${result.refund.amount.toLocaleString('id-ID')} akan dikembalikan sepenuhnya.`
+                  : 'Pesanan dibatalkan. Karena barber sudah dalam perjalanan, pengembalian dana akan ditinjau oleh admin terlebih dahulu.';
+
                 // Defer navigation using InteractionManager to allow Fabric to complete
                 // view tree reconciliation before transitioning to new screen.
                 // Critical fix for Fabric crash: "addViewAt: child already has a parent"
                 // Pattern from booking/invoice.tsx (batch 09 remediation)
-                InteractionManager.runAfterInteractions(() => {
-                  handleBack();
-                });
+                Alert.alert('Pesanan Dibatalkan', refundMessage, [
+                  {
+                    text: 'OK',
+                    onPress: () => {
+                      InteractionManager.runAfterInteractions(() => {
+                        handleBack();
+                      });
+                    },
+                  },
+                ]);
               } else {
                 setCancelling(false);
                 Alert.alert('Gagal', result.error?.message || 'Gagal membatalkan booking.');

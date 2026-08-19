@@ -40,6 +40,18 @@ export interface Shop {
   address?: string;
 }
 
+export type RefundDecisionStatus = 'auto_approved' | 'review_required';
+
+export interface RefundInfo {
+  status: RefundDecisionStatus;
+  amount: number;
+  reason: string;
+  initiatedBy: 'customer' | 'barber' | 'admin';
+  requestedAt: string;
+  resolvedAt?: string | null;
+  providerRefundId?: string | null;
+}
+
 export interface Booking {
   id: string;
   barberId: string;
@@ -50,6 +62,8 @@ export interface Booking {
   services: Service[];
   status: BookingStatus;
   paymentStatus?: DomainPaymentStatus;
+  refundRequired?: boolean;
+  refund?: RefundInfo;
   bookingType: BookingType;
   serviceLocationType?: 'barbershop' | 'customer_home';
   serviceAddress?: string;
