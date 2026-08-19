@@ -9,7 +9,9 @@ import { formatCurrency } from '@/utils/formatters';
 import { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   RefreshControl,
   ScrollView,
   Switch,
@@ -18,6 +20,8 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+
+const DURATION_PRESETS = [15, 30, 45, 60, 90, 120];
 
 export default function BarberServicesScreen() {
   const { user } = useAuth();
@@ -100,6 +104,7 @@ export default function BarberServicesScreen() {
   };
 
   const handleSaveService = async () => {
+    if (saving) return; // guards against a double-tap firing two submits before disabled re-renders
     const trimmedName = name.trim();
     if (!trimmedName) {
       Alert.alert('Validasi Gagal', 'Nama layanan tidak boleh kosong.');
@@ -139,6 +144,7 @@ export default function BarberServicesScreen() {
         if (res.success) {
           setModalVisible(false);
           fetchServices();
+          Alert.alert('Berhasil', 'Layanan berhasil diperbarui.');
         } else {
           Alert.alert('Gagal', res.error?.message || 'Gagal memperbarui layanan.');
         }
@@ -153,6 +159,7 @@ export default function BarberServicesScreen() {
         if (res.success) {
           setModalVisible(false);
           fetchServices();
+          Alert.alert('Berhasil', 'Layanan baru berhasil ditambahkan.');
         } else {
           Alert.alert('Gagal', res.error?.message || 'Gagal menambah layanan.');
         }
@@ -272,9 +279,11 @@ export default function BarberServicesScreen() {
 
       {/* Add / Edit Service Modal */}
       <Modal visible={modalVisible} animationType="slide" transparent>
-        <View className="flex-1 bg-black/60 justify-end">
-          <View className="bg-white rounded-t-[32px] p-6 gap-4 border-t border-white/20 shadow-lg">
-            <View className="flex-row items-center justify-between border-b border-slate-100 pb-3.5">
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          className="flex-1 justify-end bg-black/60">
+          <View className="max-h-[88%] rounded-t-[32px] border-t border-white/20 bg-white shadow-lg">
+            <View className="flex-row items-center justify-between border-b border-slate-100 px-6 pb-3.5 pt-6">
               <Text className="font-bold text-[#363062] text-lg">
                 {editingService ? 'Edit Layanan Barber' : 'Tambah Layanan Baru'}
               </Text>
@@ -285,60 +294,88 @@ export default function BarberServicesScreen() {
               </TouchableOpacity>
             </View>
 
-            <View className="gap-1">
-              <Text className="text-xs font-bold text-[#363062] uppercase tracking-wider">Nama Layanan *</Text>
-              <TextInput
-                value={name}
-                onChangeText={setName}
-                placeholder="Contoh: Potong Rambut Fade"
-                placeholderTextColor="#94A3B8"
-                className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-[#363062] text-sm font-medium"
-              />
-            </View>
+            <ScrollView className="px-6" keyboardShouldPersistTaps="handled" contentContainerClassName="gap-4 py-4">
+              <View className="gap-1">
+                <Text className="text-xs font-bold text-[#363062] uppercase tracking-wider">Nama Layanan *</Text>
+                <TextInput
+                  value={name}
+                  onChangeText={setName}
+                  placeholder="Contoh: Potong Rambut Fade"
+                  placeholderTextColor="#94A3B8"
+                  maxLength={100}
+                  returnKeyType="next"
+                  className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-[#363062] text-sm font-medium"
+                />
+                <Text className="text-[11px] text-slate-400">{name.length}/100 karakter</Text>
+              </View>
 
-            <View className="gap-1">
-              <Text className="text-xs font-bold text-[#363062] uppercase tracking-wider">Deskripsi Layanan</Text>
-              <TextInput
-                value={description}
-                onChangeText={setDescription}
-                placeholder="Penjelasan singkat layanan pangkas..."
-                placeholderTextColor="#94A3B8"
-                multiline
-                numberOfLines={3}
-                textAlignVertical="top"
-                className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-[#363062] text-sm font-medium h-20"
-              />
-            </View>
+              <View className="gap-1">
+                <Text className="text-xs font-bold text-[#363062] uppercase tracking-wider">Deskripsi Layanan</Text>
+                <TextInput
+                  value={description}
+                  onChangeText={setDescription}
+                  placeholder="Penjelasan singkat layanan pangkas..."
+                  placeholderTextColor="#94A3B8"
+                  multiline
+                  numberOfLines={3}
+                  maxLength={500}
+                  textAlignVertical="top"
+                  className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-[#363062] text-sm font-medium h-20"
+                />
+                <Text className="text-[11px] text-slate-400">{description.length}/500 karakter (opsional)</Text>
+              </View>
 
-            <View className="flex-row gap-3">
-              <View className="flex-1 gap-1">
+              <View className="gap-1">
                 <Text className="text-xs font-bold text-[#363062] uppercase tracking-wider">Harga (Rp) *</Text>
                 <TextInput
                   value={priceStr}
-                  onChangeText={setPriceStr}
+                  onChangeText={(v) => setPriceStr(v.replace(/[^0-9]/g, ''))}
                   placeholder="50000"
                   placeholderTextColor="#94A3B8"
-                  keyboardType="numeric"
+                  keyboardType="number-pad"
+                  returnKeyType="next"
                   className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-[#363062] text-sm font-medium"
                 />
+                <Text className="text-[11px] text-slate-400">
+                  {priceStr && !isNaN(parseInt(priceStr, 10)) ? formatCurrency(parseInt(priceStr, 10)) : 'Harga layanan dalam Rupiah'}
+                </Text>
               </View>
 
-              <View className="flex-1 gap-1">
+              <View className="gap-1.5">
                 <Text className="text-xs font-bold text-[#363062] uppercase tracking-wider">Durasi (Menit) *</Text>
+                <View className="flex-row flex-wrap gap-2">
+                  {DURATION_PRESETS.map((preset) => (
+                    <TouchableOpacity
+                      key={preset}
+                      onPress={() => setDurationStr(String(preset))}
+                      className={`rounded-lg px-3 py-2 border ${
+                        durationStr === String(preset)
+                          ? 'bg-[#363062] border-[#363062]'
+                          : 'bg-slate-50 border-slate-200'
+                      }`}>
+                      <Text className={`text-xs font-bold ${durationStr === String(preset) ? 'text-white' : 'text-slate-600'}`}>
+                        {preset}m
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
                 <TextInput
                   value={durationStr}
-                  onChangeText={setDurationStr}
+                  onChangeText={(v) => setDurationStr(v.replace(/[^0-9]/g, ''))}
                   placeholder="30"
                   placeholderTextColor="#94A3B8"
-                  keyboardType="numeric"
+                  keyboardType="number-pad"
+                  returnKeyType="done"
                   className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-[#363062] text-sm font-medium"
                 />
+                <Text className="text-[11px] text-slate-400">Durasi antara 15-480 menit</Text>
               </View>
-            </View>
+            </ScrollView>
 
-            <View className="flex-row gap-3 mt-2 mb-2">
+            <View className="flex-row gap-3 px-6 pt-2 pb-6">
               <TouchableOpacity
                 onPress={() => setModalVisible(false)}
+                disabled={saving}
                 className="flex-1 h-13 items-center justify-center rounded-xl bg-slate-100 active:bg-slate-200">
                 <Text className="text-xs font-bold text-slate-700">Batal</Text>
               </TouchableOpacity>
@@ -355,7 +392,7 @@ export default function BarberServicesScreen() {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
