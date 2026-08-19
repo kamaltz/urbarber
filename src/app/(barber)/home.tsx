@@ -1,6 +1,7 @@
 import { BarberBottomNavigation } from '@/components/navigation/BarberBottomNavigation';
 import { AppButton } from '@/components/ui/AppButton';
 import { AppCard } from '@/components/ui/AppCard';
+import { Avatar } from '@/components/ui/Avatar';
 import { Header } from '@/components/ui/Header';
 import { Loading } from '@/components/ui/Loading';
 import { SymbolIcon } from '@/components/ui/SymbolIcon';
@@ -26,11 +27,7 @@ export default function BarberHomeScreen() {
     if (!barberId) return;
     try {
       setError(null);
-      const [profData, bookData] = await Promise.all([
-        barberRepository.getBarberProfile(barberId),
-        barberRepository.getBarberBookings(barberId),
-      ]);
-      setProfile(profData);
+      const bookData = await barberRepository.getBarberBookings(barberId);
       setBookings(bookData);
     } catch (err: any) {
       setError(err?.message || 'Gagal memuat data ringkasan dashboard.');
@@ -43,13 +40,10 @@ export default function BarberHomeScreen() {
   useEffect(() => {
     let isMounted = true;
     if (!barberId) return;
-    Promise.all([
-      barberRepository.getBarberProfile(barberId),
-      barberRepository.getBarberBookings(barberId),
-    ])
-      .then(([profData, bookData]) => {
+    barberRepository
+      .getBarberBookings(barberId)
+      .then((bookData) => {
         if (!isMounted) return;
-        setProfile(profData);
         setBookings(bookData);
       })
       .catch((err: any) => {
@@ -66,6 +60,20 @@ export default function BarberHomeScreen() {
     return () => {
       isMounted = false;
     };
+  }, [barberId]);
+
+  // Realtime profile: previously a one-shot getBarberProfile refetched only
+  // on screen focus, so editing the profile (name/business name/photo) while
+  // this screen stayed mounted underneath never updated until a focus event.
+  // barbers/{barberId} is the same canonical doc the Barber Profile screen
+  // itself edits, so this listener reflects an edit immediately, no restart
+  // needed.
+  useEffect(() => {
+    if (!barberId) return;
+    const unsubscribe = barberRepository.subscribeToBarberProfile(barberId, (profData) => {
+      setProfile(profData);
+    });
+    return unsubscribe;
   }, [barberId]);
 
   useFocusEffect(
@@ -125,7 +133,7 @@ export default function BarberHomeScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-slate-50">
-      <Header title="Dashboard Master Barber" showBackButton={false} />
+      <Header title="Dashboard Barber" showBackButton={false} />
 
       <ScrollView
         className="flex-1 px-4 py-4"
@@ -133,14 +141,14 @@ export default function BarberHomeScreen() {
         {/* Barber Info Header & Store Status Toggle */}
         <AppCard className="mb-4 bg-slate-900 border-0 p-5">
           <View className="flex-row items-center gap-4">
-            <View className="w-14 h-14 rounded-full bg-amber-500 items-center justify-center">
-              <Text className="text-slate-900 font-bold text-xl">
-                {(profile?.name || user?.displayName || 'B')[0].toUpperCase()}
-              </Text>
-            </View>
+            <Avatar
+              source={profile?.profileImageUrl ? { uri: profile.profileImageUrl } : undefined}
+              name={profile?.displayName || profile?.name || user?.displayName || 'B'}
+              size="lg"
+            />
             <View className="flex-1">
               <Text className="text-white font-bold text-lg">
-                {profile?.shopName || profile?.name || user?.displayName || 'Master Barber'}
+                {profile?.shopName || profile?.displayName || profile?.name || user?.displayName || 'Barber'}
               </Text>
               <Text className="text-slate-400 text-xs mt-0.5" numberOfLines={1}>
                 {profile?.shopAddress || user?.email}
