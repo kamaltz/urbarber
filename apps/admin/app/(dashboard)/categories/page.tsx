@@ -1,12 +1,27 @@
 'use client';
 
 import { useAdminAuth } from '@/features/auth/AdminAuthProvider';
-import { AdminApiClient, type AdminCategory } from '@/lib/api-client';
+import { AdminApiClient, type AdminCategory, type CategoryRecommendationRule } from '@/lib/api-client';
 import { getAdminErrorMessage } from '@/lib/errors';
 import { useToast } from '@/components/ui/Toast';
 import { useEffect, useState } from 'react';
 
-const EMPTY_FORM = { name: '', description: '', icon: '', active: true, order: 0 };
+const RECOMMENDATION_RULES: { value: CategoryRecommendationRule; label: string; helper: string }[] = [
+  { value: 'default', label: 'Default', helper: 'Urutan relevansi bawaan aplikasi.' },
+  { value: 'history', label: 'Berdasarkan Riwayat', helper: 'Barber yang pernah dipesan Pelanggan diprioritaskan. Tanpa riwayat, kembali ke Default.' },
+  { value: 'nearest', label: 'Terdekat dari Pelanggan', helper: 'Diurutkan berdasarkan jarak. Tanpa lokasi Pelanggan, kembali ke Default.' },
+  { value: 'cheapest', label: 'Harga Termurah', helper: 'Layanan dengan harga terendah lebih dulu. Tanpa harga valid, kembali ke Default.' },
+  { value: 'highest_rating', label: 'Rating Tertinggi', helper: 'Rating tertinggi lebih dulu; Barber tanpa rating ditampilkan setelah Barber berating.' },
+  { value: 'most_popular', label: 'Paling Populer', helper: 'Diurutkan berdasarkan jumlah ulasan. Tanpa ulasan, kembali ke Default.' },
+  { value: 'soonest_available', label: 'Tersedia Paling Cepat', helper: 'Jadwal kosong tercepat lebih dulu. Tanpa data jadwal, kembali ke Default.' },
+  { value: 'newest', label: 'Barber Terbaru', helper: 'Barber yang baru terdaftar/disetujui lebih dulu.' },
+];
+
+const RULE_LABEL: Record<CategoryRecommendationRule, string> = Object.fromEntries(
+  RECOMMENDATION_RULES.map((r) => [r.value, r.label])
+) as Record<CategoryRecommendationRule, string>;
+
+const EMPTY_FORM = { name: '', description: '', icon: '', active: true, order: 0, recommendationRule: 'default' as CategoryRecommendationRule };
 
 export default function CategoriesPage() {
   const { admin } = useAdminAuth();
@@ -69,6 +84,7 @@ export default function CategoriesPage() {
           icon: formData.icon.trim(),
           active: formData.active,
           order: formData.order,
+          recommendationRule: formData.recommendationRule,
         });
         setCategories((prev) => prev.map((c) => (c.id === editingId ? updated : c)));
         showToast('Kategori berhasil diperbarui.');
@@ -78,7 +94,8 @@ export default function CategoriesPage() {
           formData.description.trim(),
           formData.icon.trim(),
           formData.active,
-          formData.order
+          formData.order,
+          formData.recommendationRule
         );
         setCategories((prev) => [...prev, created]);
         showToast('Kategori berhasil dibuat.');
@@ -123,6 +140,7 @@ export default function CategoriesPage() {
       icon: cat.icon || '',
       active: cat.active,
       order: cat.order,
+      recommendationRule: cat.recommendationRule || 'default',
     });
     setEditingId(cat.id);
     setNameError(null);
@@ -208,6 +226,12 @@ export default function CategoriesPage() {
                 <p className="mt-3 min-h-[2.5rem] text-sm text-slate-600">
                   {cat.description || <span className="italic text-slate-400">Tidak ada deskripsi.</span>}
                 </p>
+
+                <div className="mt-2">
+                  <span className="rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700">
+                    Rekomendasi: {RULE_LABEL[cat.recommendationRule] || RULE_LABEL.default}
+                  </span>
+                </div>
 
                 <div className="mt-4 flex items-center gap-4 border-t border-slate-100 pt-3 text-sm font-medium">
                   <button onClick={() => handleEdit(cat)} className="text-blue-600 hover:text-blue-800">
@@ -309,6 +333,27 @@ export default function CategoriesPage() {
                 />
                 Aktif (tampil di aplikasi)
               </label>
+
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-700">Aturan Rekomendasi</label>
+                <select
+                  value={formData.recommendationRule}
+                  onChange={(e) =>
+                    setFormData({ ...formData, recommendationRule: e.target.value as CategoryRecommendationRule })
+                  }
+                  disabled={saving}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                >
+                  {RECOMMENDATION_RULES.map((rule) => (
+                    <option key={rule.value} value={rule.value}>
+                      {rule.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-slate-500">
+                  {RECOMMENDATION_RULES.find((r) => r.value === formData.recommendationRule)?.helper}
+                </p>
+              </div>
             </div>
 
             <div className="mt-6 flex gap-3">

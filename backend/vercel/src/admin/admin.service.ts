@@ -833,6 +833,9 @@ export async function getCategoriesList(): Promise<AdminCategory[]> {
       icon: d.data().icon,
       active: d.data().active,
       order: d.data().order,
+      // Legacy categories created before this field existed default to
+      // 'default' -- never an invalid/unset ordering strategy.
+      recommendationRule: d.data().recommendationRule || 'default',
       createdAt: d.data().createdAt,
       updatedAt: d.data().updatedAt,
     }));
@@ -877,9 +880,14 @@ export async function createCategory(
       name: req.name.trim(),
       name_normalized: normalizedName,
       description: req.description || '',
-      icon: req.icon,
+      // Firestore rejects `undefined` field values outright -- an omitted
+      // icon (no icon picker selection) previously crashed every category
+      // creation that didn't happen to also pass one; pre-existing bug
+      // uncovered while adding recommendationRule test coverage here.
+      icon: req.icon ?? null,
       active: req.active !== false,
       order: req.order !== undefined ? req.order : maxOrder,
+      recommendationRule: req.recommendationRule || 'default',
       createdAt: now,
       updatedAt: now,
       createdBy: adminUid,
@@ -936,6 +944,7 @@ export async function updateCategory(
       }
       updateData.order = req.order;
     }
+    if (req.recommendationRule !== undefined) updateData.recommendationRule = req.recommendationRule;
 
     await db.collection('categories').doc(categoryId).update(updateData);
 

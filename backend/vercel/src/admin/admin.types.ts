@@ -141,6 +141,24 @@ export interface AdminPricingBreakdown {
 // Categories
 // ============================================================================
 
+/**
+ * Safe, closed enum for how a category's Barber listing may be ordered for
+ * customer discovery -- never an executable expression or arbitrary code.
+ * See CATEGORY_RECOMMENDATION_RULES (admin.validation.ts) for the canonical
+ * validation list and applyCategoryRecommendationRule
+ * (src/features/location/services/recommendation-rules.ts, mobile) for the
+ * ordering/fallback behavior each value produces.
+ */
+export type CategoryRecommendationRule =
+  | 'default'
+  | 'history'
+  | 'nearest'
+  | 'cheapest'
+  | 'highest_rating'
+  | 'most_popular'
+  | 'soonest_available'
+  | 'newest';
+
 export interface AdminCategory {
   id: string;
   name: string;
@@ -148,6 +166,7 @@ export interface AdminCategory {
   icon?: string;
   active: boolean;
   order: number;
+  recommendationRule: CategoryRecommendationRule;
   createdAt?: any;
   updatedAt?: any;
 }
@@ -282,6 +301,7 @@ export interface CategoryCreateRequest {
   icon?: string;
   active?: boolean;
   order?: number;
+  recommendationRule?: CategoryRecommendationRule;
 }
 
 export interface CategoryUpdateRequest {
@@ -290,6 +310,7 @@ export interface CategoryUpdateRequest {
   icon?: string;
   active?: boolean;
   order?: number;
+  recommendationRule?: CategoryRecommendationRule;
 }
 
 // ============================================================================

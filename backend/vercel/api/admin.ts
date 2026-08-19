@@ -77,6 +77,7 @@ import {
     validateCategoryName,
     validateDocumentType,
     validatePageSize,
+    validateRecommendationRule,
     validatePricingSettings,
     validateRejectionReason,
     validateTargetStatus,
@@ -708,7 +709,7 @@ async function handleCreateCategory(ctx: RouteContext): Promise<void> {
   const admin = await requireAdmin(req, res);
   if (!admin) return;
 
-  const { name, description, icon, active, order } = req.body || {};
+  const { name, description, icon, active, order, recommendationRule } = req.body || {};
 
   const nameValidation = validateCategoryName(name);
   if (!nameValidation.valid) {
@@ -716,8 +717,14 @@ async function handleCreateCategory(ctx: RouteContext): Promise<void> {
     return;
   }
 
+  const ruleValidation = validateRecommendationRule(recommendationRule);
+  if (!ruleValidation.valid) {
+    res.status(400).json({ error: { code: 'INVALID_RECOMMENDATION_RULE', message: ruleValidation.message } });
+    return;
+  }
+
   try {
-    const category = await createCategory({ name, description, icon, active, order }, admin.uid);
+    const category = await createCategory({ name, description, icon, active, order, recommendationRule }, admin.uid);
     res.status(201).json({ data: category });
   } catch (err: any) {
     console.error('[Admin/categories POST]', err.message);
@@ -744,7 +751,7 @@ async function handleUpdateCategory(ctx: RouteContext): Promise<void> {
     return;
   }
 
-  const { name, description, icon, active, order } = req.body || {};
+  const { name, description, icon, active, order, recommendationRule } = req.body || {};
 
   // Validate name if provided
   if (name !== undefined) {
@@ -761,8 +768,14 @@ async function handleUpdateCategory(ctx: RouteContext): Promise<void> {
     return;
   }
 
+  const ruleValidation = validateRecommendationRule(recommendationRule);
+  if (!ruleValidation.valid) {
+    res.status(400).json({ error: { code: 'INVALID_RECOMMENDATION_RULE', message: ruleValidation.message } });
+    return;
+  }
+
   try {
-    const category = await updateCategory(categoryId, { name, description, icon, active, order }, admin.uid);
+    const category = await updateCategory(categoryId, { name, description, icon, active, order, recommendationRule }, admin.uid);
     res.status(200).json({ data: category });
   } catch (err: any) {
     console.error('[Admin/categories/:id PATCH]', err.message);

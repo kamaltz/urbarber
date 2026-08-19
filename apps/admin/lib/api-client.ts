@@ -239,6 +239,16 @@ export interface AdminBarberDetail extends AdminBarberSummary {
 }
 
 // Phase 2: Category Management
+export type CategoryRecommendationRule =
+  | 'default'
+  | 'history'
+  | 'nearest'
+  | 'cheapest'
+  | 'highest_rating'
+  | 'most_popular'
+  | 'soonest_available'
+  | 'newest';
+
 export interface AdminCategory {
   id: string;
   name: string;
@@ -246,6 +256,7 @@ export interface AdminCategory {
   icon?: string;
   active: boolean;
   order: number;
+  recommendationRule: CategoryRecommendationRule;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -612,13 +623,14 @@ export class AdminApiClient {
     description?: string,
     icon?: string,
     active?: boolean,
-    order?: number
+    order?: number,
+    recommendationRule?: CategoryRecommendationRule
   ): Promise<AdminCategory> {
     const response = await this.request<ApiResponse<AdminCategory>>(
       `/api/admin/categories`,
       {
         method: 'POST',
-        body: JSON.stringify({ name, description, icon, active, order }),
+        body: JSON.stringify({ name, description, icon, active, order, recommendationRule }),
       }
     );
     return response.data!;
@@ -636,6 +648,7 @@ export class AdminApiClient {
       icon?: string;
       active?: boolean;
       order?: number;
+      recommendationRule?: CategoryRecommendationRule;
     }
   ): Promise<AdminCategory> {
     const response = await this.request<ApiResponse<AdminCategory>>(

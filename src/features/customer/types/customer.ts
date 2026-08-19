@@ -96,6 +96,9 @@ export interface CategoryChip {
   label: string;
   isActive: boolean;
   order?: number;
+  /** Mirrors backend/vercel/src/admin/admin.types.ts CategoryRecommendationRule.
+   * Defaults to 'default' for categories created before this field existed. */
+  recommendationRule?: import('@/features/location/services/recommendation-rules').CategoryRecommendationRule;
 }
 
 export interface CustomerSettings {

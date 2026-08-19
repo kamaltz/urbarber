@@ -69,6 +69,7 @@ export const customerRepository = {
           label: data.name || docSnap.id,
           isActive: false,
           order: data.order ?? 0,
+          recommendationRule: data.recommendationRule || 'default',
         };
       });
       return categories.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
@@ -221,7 +222,7 @@ export const customerRepository = {
       const lng = hasRealLocation ? (filters!.longitude as number) : DEFAULT_DISCOVERY_CENTER.longitude;
 
       const { discoveryService } = await import('@/features/location/services/discovery.service');
-      const { results: nearbyResults, queryStatus } = await discoveryService.searchNearbyBarbers({
+      const { results: rawNearbyResults, queryStatus } = await discoveryService.searchNearbyBarbers({
         latitude: lat,
         longitude: lng,
         radiusKm: 25,
@@ -235,6 +236,29 @@ export const customerRepository = {
         ...cat,
         isActive: cat.id === filters?.category,
       }));
+
+      // Apply the selected category's Admin-configured recommendation rule.
+      // Never affects eligibility -- rawNearbyResults is already fully
+      // filtered by discoveryService (verificationStatus/listingStatus/
+      // acceptingNewBookings); this only reorders what's already eligible.
+      // Only 'nearest'/'highest_rating'/'most_popular'/'newest' have a real
+      // signal available at this call site -- 'cheapest'/'history'/
+      // 'soonest_available' deterministically fall back to the existing
+      // distance-ascending order (see applyCategoryRecommendationRule).
+      const selectedCategory = filters?.category ? categories.find((c) => c.id === filters.category) : undefined;
+      const { applyCategoryRecommendationRule } = await import('@/features/location/services/recommendation-rules');
+      const nearbyResults = selectedCategory
+        ? applyCategoryRecommendationRule(
+            rawNearbyResults.map((r) => ({
+              item: r,
+              distanceKm: r.distanceKm,
+              ratingAverage: r.barber.ratingAverage,
+              reviewCount: r.barber.reviewCount,
+              createdAt: r.barber.createdAt,
+            })),
+            selectedCategory.recommendationRule || 'default'
+          )
+        : rawNearbyResults;
 
       const nearbyBarbers = nearbyResults.map((r) => ({
         barberId: r.barber.barberId,

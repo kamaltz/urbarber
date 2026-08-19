@@ -103,6 +103,34 @@ export function validateCategoryName(name: unknown): { valid: boolean; message?:
 }
 
 /**
+ * Closed enum of category recommendation rules -- a safe, fixed set of
+ * canonical sort strategies for customer discovery, never an executable
+ * expression. Mirrored client-side by CategoryRecommendationRule
+ * (src/features/location/services/recommendation-rules.ts).
+ */
+export const CATEGORY_RECOMMENDATION_RULES = [
+  'default',
+  'history',
+  'nearest',
+  'cheapest',
+  'highest_rating',
+  'most_popular',
+  'soonest_available',
+  'newest',
+] as const;
+
+export function validateRecommendationRule(value: unknown): { valid: boolean; message?: string } {
+  if (value === undefined) return { valid: true };
+  if (typeof value !== 'string' || !(CATEGORY_RECOMMENDATION_RULES as readonly string[]).includes(value)) {
+    return {
+      valid: false,
+      message: `Aturan rekomendasi tidak valid. Pilih salah satu: ${CATEGORY_RECOMMENDATION_RULES.join(', ')}.`,
+    };
+  }
+  return { valid: true };
+}
+
+/**
  * Validate pagination page size.
  */
 export function validatePageSize(pageSize: unknown): { valid: boolean; message?: string; normalizedSize: number } {
