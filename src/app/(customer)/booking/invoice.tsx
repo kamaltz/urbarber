@@ -4,7 +4,9 @@ import { AppCard } from '@/components/ui/AppCard';
 import { Loading } from '@/components/ui/Loading';
 import { TIP_OPTIONS } from '@/constants/payment';
 import { routes } from '@/constants/routes';
+import { useAuth } from '@/features/auth/hooks/use-auth';
 import { PaymentSummary } from '@/features/bookings/components/PaymentSummary';
+import { bookingRepository } from '@/features/bookings/repository/booking.repository';
 import { paymentRepository } from '@/features/payments/repository/payment.repository';
 import { createPaidCheckoutGuard } from '@/features/payments/utils/paid-checkout-guard';
 import { isPayButtonDisabled } from '@/features/payments/utils/pay-button-state';
@@ -79,6 +81,31 @@ export default function BookingInvoiceScreen() {
   const [appliedVoucher, setAppliedVoucher] = useState<{ code: string; discountAmount: number } | null>(null);
   const [voucherLoading, setVoucherLoading] = useState(false);
   const [voucherMessage, setVoucherMessage] = useState<{ text: string; ok: boolean } | null>(null);
+
+  // Payment-First booking-exclusivity invariant (backend-authoritative, see
+  // POST /api/payments/create -- this is a UX precheck only, never the source
+  // of truth): block entry to checkout up front if the customer already has
+  // an active booking, and also handle the 409 CUSTOMER_HAS_ACTIVE_BOOKING the
+  // backend returns if one slipped through between this check and submission.
+  const { user } = useAuth();
+  // Resuming an existing (already-created) invoice is never blocked by its own
+  // booking -- the precheck only applies before a booking has been created here.
+  const shouldPrecheckActiveBooking = Boolean(user?.uid) && !params.bookingId;
+  const [activeBookingBlock, setActiveBookingBlock] = useState<{ bookingId: string; status: string } | null>(null);
+  const [checkingActiveBooking, setCheckingActiveBooking] = useState(shouldPrecheckActiveBooking);
+
+  useEffect(() => {
+    if (!shouldPrecheckActiveBooking || !user?.uid) return;
+    let cancelled = false;
+    bookingRepository.getActiveBookings(user.uid).then((active) => {
+      if (cancelled) return;
+      setActiveBookingBlock(active.length > 0 ? { bookingId: active[0].id, status: active[0].status } : null);
+      setCheckingActiveBooking(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [shouldPrecheckActiveBooking, user?.uid]);
 
   const handleApplyVoucher = async () => {
     if (!voucherInput.trim() || !params.serviceId) return;
@@ -169,6 +196,10 @@ export default function BookingInvoiceScreen() {
         tipAmount: res.data.tipAmount,
         totalAmount: res.data.totalAmount,
       });
+    } else if (res.error?.code === 'CUSTOMER_HAS_ACTIVE_BOOKING' && res.error.bookingId) {
+      // Backend is authoritative -- the mount-time precheck above is UX-only and
+      // can race a booking created from another device/tab since it ran.
+      setActiveBookingBlock({ bookingId: res.error.bookingId, status: res.error.status || 'pending' });
     } else {
       setError(res.error?.message || 'Gagal menyiapkan tagihan pembayaran.');
     }
@@ -314,12 +345,38 @@ export default function BookingInvoiceScreen() {
     }
   };
 
-  if (loading && !bookingId) {
+  if ((loading || checkingActiveBooking) && !bookingId) {
     return (
       <CustomerScreen title="Tagihan Pembayaran" description="Menyiapkan gerbang pembayaran Midtrans Snap...">
         <View className="py-20 items-center justify-center">
           <Loading />
-          <Text className="text-xs text-slate-500 mt-4 font-medium">Menghubungkan ke Vercel Backend & Midtrans Sandbox...</Text>
+          <Text className="text-xs text-slate-500 mt-4 font-medium">
+            {checkingActiveBooking ? 'Memeriksa pemesanan Anda...' : 'Menghubungkan ke Vercel Backend & Midtrans Sandbox...'}
+          </Text>
+        </View>
+      </CustomerScreen>
+    );
+  }
+
+  if (activeBookingBlock && !bookingId) {
+    return (
+      <CustomerScreen title="Tagihan Pembayaran" description="Satu pemesanan aktif pada satu waktu.">
+        <View className="py-10">
+          <AppCard className="p-5 border-amber-200 bg-amber-50">
+            <Text className="text-sm font-bold text-amber-900 mb-2">Pemesanan Aktif Ditemukan</Text>
+            <Text className="text-xs text-amber-800 leading-5">
+              Anda masih memiliki pemesanan yang sedang berlangsung. Selesaikan atau batalkan pemesanan
+              tersebut sebelum membuat pemesanan baru.
+            </Text>
+          </AppCard>
+          <View className="gap-3 mt-5">
+            <AppButton
+              label="Lihat Pemesanan Aktif"
+              onPress={() => router.replace(routes.customer.activeBooking(activeBookingBlock.bookingId))}
+              variant="primary"
+            />
+            <AppButton label="Kembali ke Beranda" onPress={() => router.replace(routes.customer.home)} variant="secondary" />
+          </View>
         </View>
       </CustomerScreen>
     );

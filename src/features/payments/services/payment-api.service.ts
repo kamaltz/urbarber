@@ -64,6 +64,10 @@ export interface ApiErrorResponse {
   error?: {
     code?: string;
     message?: string;
+    /** Present on 409 CUSTOMER_HAS_ACTIVE_BOOKING -- lets the client navigate
+     * straight to the blocking booking without a second lookup. */
+    bookingId?: string;
+    status?: string;
   };
 }
 
@@ -79,7 +83,10 @@ class PaymentApiService {
   private async fetchWithAuth<T>(
     endpoint: string,
     options: RequestInit = {}
-  ): Promise<{ success: true; data: T } | { success: false; error: { code: string; message: string } }> {
+  ): Promise<
+    | { success: true; data: T }
+    | { success: false; error: { code: string; message: string; bookingId?: string; status?: string } }
+  > {
     try {
       const token = await this.getAuthToken();
       const url = `${BASE_URL.replace(/\/$/, '')}${endpoint}`;
@@ -109,7 +116,7 @@ class PaymentApiService {
         const errCode = json?.error?.code || 'API_ERROR';
         return {
           success: false,
-          error: { code: errCode, message: errMessage },
+          error: { code: errCode, message: errMessage, bookingId: json?.error?.bookingId, status: json?.error?.status },
         };
       }
 

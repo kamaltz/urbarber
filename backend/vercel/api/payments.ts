@@ -10,6 +10,7 @@
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { z } from 'zod';
+import { assertNoActiveBooking, CustomerHasActiveBookingError } from '../src/bookings/active-booking-guard.js';
 import { calculateDistanceKm } from '../src/bookings/geo-utils.js';
 import { isBarberAcceptingBookings, isServiceActive, resolveServiceLocationType } from '../src/bookings/service-booking-guard.js';
 import { acquireSlotLock, getSlotLockId, SlotNotAvailableError } from '../src/bookings/slot-lock.js';
@@ -364,10 +365,24 @@ async function handleCreatePayment(ctx: RouteContext): Promise<void> {
 
     try {
       await db.runTransaction(async (t) => {
+        // Payment-First booking-exclusivity invariant: read before acquireSlotLock's
+        // own read+write so every read in this transaction happens before any write.
+        await assertNoActiveBooking(t, db, customerId);
         await acquireSlotLock(t, slotLockRef, { barberId, date, startTime, customerId });
         t.set(bookingRef, bookingData);
       });
     } catch (lockErr) {
+      if (lockErr instanceof CustomerHasActiveBookingError) {
+        res.status(409).json({
+          error: {
+            code: 'CUSTOMER_HAS_ACTIVE_BOOKING',
+            message: 'Anda masih memiliki pemesanan yang sedang berlangsung. Selesaikan atau batalkan pemesanan tersebut sebelum membuat pemesanan baru.',
+            bookingId: lockErr.bookingId,
+            status: lockErr.status,
+          },
+        });
+        return;
+      }
       if (lockErr instanceof SlotNotAvailableError) {
         res.status(409).json({
           error: {

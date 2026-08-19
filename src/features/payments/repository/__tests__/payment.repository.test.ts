@@ -112,4 +112,26 @@ describe('paymentRepository.createBookingPayment', () => {
     expect(result.data).toBeUndefined();
     expect(result.error).toEqual({ code: 'SERVICE_NOT_FOUND', message: 'Layanan tidak ditemukan.' });
   });
+
+  it('a 409 CUSTOMER_HAS_ACTIVE_BOOKING error carries bookingId/status through so the client can navigate to it', async () => {
+    createBookingPaymentMock.mockResolvedValue({
+      success: false,
+      error: {
+        code: 'CUSTOMER_HAS_ACTIVE_BOOKING',
+        message: 'Anda masih memiliki pemesanan yang sedang berlangsung.',
+        bookingId: 'booking-existing-1',
+        status: 'accepted',
+      },
+    });
+
+    const result = await paymentRepository.createBookingPayment(BASE_PAYLOAD);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toEqual({
+      code: 'CUSTOMER_HAS_ACTIVE_BOOKING',
+      message: 'Anda masih memiliki pemesanan yang sedang berlangsung.',
+      bookingId: 'booking-existing-1',
+      status: 'accepted',
+    });
+  });
 });
