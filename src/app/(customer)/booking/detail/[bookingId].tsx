@@ -20,12 +20,50 @@ import { PaymentSummary } from '@/features/bookings/components/PaymentSummary';
 import { ProgressTracker } from '@/features/bookings/components/ProgressTracker';
 import { ServiceList } from '@/features/bookings/components/ServiceList';
 import { useBookingDetail } from '@/features/bookings/hooks/use-booking-detail';
+import type { Booking, BookingStatus } from '@/features/bookings/types/booking';
 import { chatRepository } from '@/features/chat/repository/chat.repository';
+
+const STATUS_INFO: Record<BookingStatus, { label: string; explanation: string; badgeClass: string }> = {
+  pending: {
+    label: 'Menunggu Konfirmasi',
+    explanation: 'Barber belum menerima pemesanan Anda. Anda dapat membatalkan selama menunggu.',
+    badgeClass: 'bg-amber-100 text-amber-800',
+  },
+  accepted: {
+    label: 'Diterima',
+    explanation: 'Barber telah menerima pemesanan Anda dan akan segera menuju lokasi/menyiapkan layanan.',
+    badgeClass: 'bg-blue-100 text-blue-800',
+  },
+  in_progress: {
+    label: 'Sedang Berlangsung',
+    explanation: 'Layanan sedang berlangsung. Selamat menikmati layanan dari Barber Anda.',
+    badgeClass: 'bg-[#EDEFFB] text-[#363062]',
+  },
+  completed: {
+    label: 'Selesai',
+    explanation: 'Layanan telah selesai. Terima kasih telah menggunakan URBarber -- jangan lupa beri penilaian.',
+    badgeClass: 'bg-emerald-100 text-emerald-800',
+  },
+  cancelled: {
+    label: 'Dibatalkan',
+    explanation: 'Pemesanan ini telah dibatalkan.',
+    badgeClass: 'bg-slate-200 text-slate-600',
+  },
+  rejected: {
+    label: 'Ditolak',
+    explanation: 'Barber menolak pemesanan ini. Silakan coba barber lain.',
+    badgeClass: 'bg-rose-100 text-rose-700',
+  },
+};
+
+function isHomeService(booking: Booking): boolean {
+  return booking.bookingType === 'home' || booking.serviceLocationType === 'customer_home';
+}
 
 export default function BookingDetailScreen() {
   const { bookingId } = useLocalSearchParams<{ bookingId: string }>();
 
-  const { booking, loading, error, cancelBooking } = useBookingDetail(bookingId || '');
+  const { booking, loading, error, refresh, cancelBooking } = useBookingDetail(bookingId || '');
   const [chatInitializing, setChatInitializing] = useState(false);
   const [cancelling, setCancelling] = useState(false);
 
@@ -52,15 +90,26 @@ export default function BookingDetailScreen() {
           <Text className="text-center text-lg font-semibold text-[#363062]">
             {error || 'Booking tidak ditemukan'}
           </Text>
-          <AppButton
-            label="Kembali"
-            onPress={handleBack}
-            className="mt-6 h-12 rounded-xl px-8"
-          />
+          <Text className="mt-1 text-center text-xs text-slate-500">
+            {error ? 'Periksa koneksi internet Anda dan coba lagi.' : 'Pemesanan mungkin telah dihapus.'}
+          </Text>
+          <View className="mt-6 flex-row gap-3">
+            {error ? <AppButton label="Coba Lagi" onPress={refresh} className="h-12 rounded-xl px-8" /> : null}
+            <AppButton
+              label="Kembali"
+              onPress={handleBack}
+              variant={error ? 'secondary' : 'primary'}
+              className="h-12 rounded-xl px-8"
+            />
+          </View>
         </View>
       </SafeAreaView>
     );
   }
+
+  const statusInfo = STATUS_INFO[booking.status];
+  const homeService = isHomeService(booking);
+  const trackingAvailable = homeService && ['accepted', 'in_progress'].includes(booking.status);
 
   const handleCancel = () => {
     if (cancelling) return;
@@ -130,14 +179,50 @@ export default function BookingDetailScreen() {
               </View>
               <Text className="text-lg font-bold text-[#363062]">Detail Pemesanan</Text>
             </Pressable>
+            <View className={`rounded-full px-3 py-1.5 ${statusInfo.badgeClass}`}>
+              <Text className="text-xs font-bold">{statusInfo.label}</Text>
+            </View>
           </View>
 
           <View className="gap-5 px-4 py-5">
-            {/* Booking Header */}
-            <BookingHeader shop={booking.shop ?? { name: 'URBarber Shop', address: '' }} />
+            {/* Status Card */}
+            <View className="rounded-2xl bg-white p-4.5 border border-slate-200/80 shadow-xs gap-3">
+              <View className="flex-row items-center justify-between">
+                <Text className="text-xs font-bold text-[#363062] uppercase tracking-wider">Status Pemesanan</Text>
+                <View className={`rounded-full px-2.5 py-1 ${statusInfo.badgeClass}`}>
+                  <Text className="text-[11px] font-bold">{statusInfo.label}</Text>
+                </View>
+              </View>
+              <Text className="text-xs text-slate-600 leading-5">{statusInfo.explanation}</Text>
+            </View>
 
-            {/* Progress Tracker */}
-            <ProgressTracker status={booking.status} />
+            {/* Progress Timeline (only meaningful for the active pipeline) */}
+            {!['cancelled', 'rejected'].includes(booking.status) ? (
+              <ProgressTracker status={booking.status} />
+            ) : null}
+
+            {/* Barber Card */}
+            <BookingHeader shop={booking.shop ?? { name: 'URBarber Shop', address: '', imageUrl: '', location: '', distance: '', rating: '' }} />
+
+            <View className="rounded-2xl bg-white p-4.5 border border-slate-200/80 shadow-xs gap-2">
+              <Text className="text-xs font-bold text-[#363062] uppercase tracking-wider">
+                ✂️ Detail Barber
+              </Text>
+              <View className="rounded-xl bg-slate-50 p-3 border border-slate-200/60 mt-1">
+                <Text className="text-sm font-bold text-[#363062]">{booking.barber?.name || 'Master Barber'}</Text>
+                <Text className="mt-0.5 text-xs text-slate-500 font-medium">{booking.barber?.specialization || 'Barber Profesional'}</Text>
+              </View>
+              {booking.barberId ? (
+                <Pressable
+                  onPress={() =>
+                    router.push({ pathname: '/(customer)/barber/[barberId]', params: { barberId: booking.barberId } })
+                  }
+                  className="self-start"
+                >
+                  <Text className="text-xs font-bold text-[#D2691E]">Lihat Profil Barber →</Text>
+                </Pressable>
+              ) : null}
+            </View>
 
             {/* Date & Time Container */}
             <View className="rounded-2xl bg-white p-4.5 border border-slate-200/80 shadow-xs gap-2">
@@ -157,24 +242,32 @@ export default function BookingDetailScreen() {
               </View>
             </View>
 
-            {/* Barber Info Container */}
-            <View className="rounded-2xl bg-white p-4.5 border border-slate-200/80 shadow-xs gap-2">
-              <Text className="text-xs font-bold text-[#363062] uppercase tracking-wider">
-                ✂️ Master Barber
-              </Text>
-              <View className="rounded-xl bg-slate-50 p-3 border border-slate-200/60 mt-1">
-                <Text className="text-sm font-bold text-[#363062]">{booking.barber?.name || 'Master Barber'}</Text>
-                <Text className="mt-0.5 text-xs text-slate-500 font-medium">{booking.barber?.specialization || 'Barber Profesional'}</Text>
-              </View>
-            </View>
-
             {/* Services Container */}
             <View className="rounded-2xl bg-white p-4.5 border border-slate-200/80 shadow-xs gap-3">
-              <Text className="text-xs font-bold text-[#363062] uppercase tracking-wider">
-                💇 Layanan yang Dipilih
-              </Text>
+              <View className="flex-row items-center justify-between">
+                <Text className="text-xs font-bold text-[#363062] uppercase tracking-wider">
+                  💇 Layanan yang Dipilih
+                </Text>
+                <View className="rounded-full bg-slate-100 px-2.5 py-1">
+                  <Text className="text-[11px] font-bold text-slate-600">
+                    {homeService ? 'Cukur di Rumah' : 'Datang ke Barber'}
+                  </Text>
+                </View>
+              </View>
               <ServiceList services={booking.services ?? []} />
             </View>
+
+            {/* Location (home service only) */}
+            {homeService && booking.serviceAddress ? (
+              <View className="rounded-2xl bg-white p-4.5 border border-slate-200/80 shadow-xs gap-2">
+                <Text className="text-xs font-bold text-[#363062] uppercase tracking-wider">
+                  📍 Lokasi Layanan
+                </Text>
+                <View className="rounded-xl bg-slate-50 p-3 border border-slate-200/60 mt-1">
+                  <Text className="text-xs font-medium text-slate-700 leading-5">{booking.serviceAddress}</Text>
+                </View>
+              </View>
+            ) : null}
 
             {/* Payment Summary */}
             <PaymentSummary
@@ -183,6 +276,7 @@ export default function BookingDetailScreen() {
               handlingFee={booking.handlingFee}
               discount={booking.discount}
               couponCode={booking.couponCode}
+              tipAmount={booking.tipAmount}
               totalPrice={booking.totalPrice}
             />
 
@@ -215,15 +309,17 @@ export default function BookingDetailScreen() {
               ) : null}
             </View>
 
-            {/* Action Buttons */}
+            {/* Action Buttons -- only actions valid for the current state are shown */}
             <View className="gap-3 mb-4">
-              <View className="flex-row gap-3">
-                <Pressable
-                  onPress={() => router.push(`/(customer)/booking/tracking/${booking.id}` as any)}
-                  className="flex-1 items-center gap-1.5 rounded-xl bg-white p-3 border border-slate-200/80 shadow-xs active:bg-slate-50">
-                  <Text className="text-xl">🗺️</Text>
-                  <Text className="text-xs font-bold text-[#363062]">Peta Navigasi</Text>
-                </Pressable>
+              <View className="flex-row flex-wrap gap-3">
+                {trackingAvailable ? (
+                  <Pressable
+                    onPress={() => router.push(`/(customer)/booking/tracking/${booking.id}` as any)}
+                    className="flex-1 items-center gap-1.5 rounded-xl bg-white p-3 border border-slate-200/80 shadow-xs active:bg-slate-50">
+                    <Text className="text-xl">🗺️</Text>
+                    <Text className="text-xs font-bold text-[#363062]">Lacak Barber</Text>
+                  </Pressable>
+                ) : null}
 
                 <Pressable
                   onPress={handleOpenChat}
@@ -243,6 +339,15 @@ export default function BookingDetailScreen() {
                     booking.paymentStatus === 'paid' ? 'text-[#363062]' : 'text-slate-400'
                   }`}>Chat Barber</Text>
                 </Pressable>
+
+                {booking.status === 'completed' ? (
+                  <Pressable
+                    onPress={() => router.push(`/(customer)/booking/rating/${booking.id}` as any)}
+                    className="flex-1 items-center gap-1.5 rounded-xl bg-white p-3 border border-slate-200/80 shadow-xs active:bg-slate-50">
+                    <Text className="text-xl">⭐</Text>
+                    <Text className="text-xs font-bold text-[#363062]">Nilai Layanan</Text>
+                  </Pressable>
+                ) : null}
 
                 {['pending', 'accepted'].includes(booking.status) && (
                   <Pressable

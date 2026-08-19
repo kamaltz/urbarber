@@ -67,6 +67,7 @@ export interface Booking {
   handlingFee?: number;
   discount?: number;
   couponCode?: string;
+  tipAmount?: number;
   paymentMethod?: PaymentMethod;
   createdAt: string;
   updatedAt: string;

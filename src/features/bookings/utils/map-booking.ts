@@ -101,6 +101,26 @@ function resolveBookingType(data: Record<string, any>): 'home' | 'onsite' {
   return 'onsite';
 }
 
+/**
+ * Payment-created bookings (backend/vercel/api/payments.ts) persist a full
+ * fee breakdown -- baseAmount/homeServiceFee/applicationFee/voucherDiscount/
+ * voucherCode/tipAmount/totalPrice -- but until this fix the mapper only ever
+ * read data.price (== baseAmount) into BOTH subtotal and totalPrice, silently
+ * dropping every fee/discount/tip from the customer's own booking-detail
+ * Payment Summary. Falls back to resolvePrice for legacy documents that
+ * predate this breakdown.
+ */
+function resolveSubtotal(data: Record<string, any>): number {
+  if (typeof data.baseAmount === 'number') return data.baseAmount;
+  return resolvePrice(data);
+}
+
+function resolveTotalPrice(data: Record<string, any>): number {
+  if (typeof data.totalPrice === 'number') return data.totalPrice;
+  if (typeof data.grossAmount === 'number') return data.grossAmount;
+  return resolvePrice(data);
+}
+
 function resolveBarberIdentity(barberDoc: Record<string, any> | undefined) {
   const name = barberDoc?.shopName || barberDoc?.businessName || barberDoc?.displayName || barberDoc?.name || 'Barber URBarber';
   const address = barberDoc?.shopAddress || barberDoc?.address || '';
@@ -116,7 +136,6 @@ export function mapRawBookingToDomain(
   serviceDoc: Record<string, any> | undefined
 ): Booking {
   const identity = resolveBarberIdentity(barberDoc);
-  const price = resolvePrice(data);
 
   return {
     id,
@@ -145,8 +164,13 @@ export function mapRawBookingToDomain(
     serviceAddress: data.address || data.serviceAddress,
     scheduledAt: resolveDate(data),
     scheduledTime: resolveTime(data),
-    totalPrice: price,
-    subtotal: price,
+    totalPrice: resolveTotalPrice(data),
+    subtotal: resolveSubtotal(data),
+    travelFee: typeof data.homeServiceFee === 'number' ? data.homeServiceFee : undefined,
+    handlingFee: typeof data.applicationFee === 'number' ? data.applicationFee : undefined,
+    discount: typeof data.voucherDiscount === 'number' ? data.voucherDiscount : undefined,
+    couponCode: data.voucherCode || undefined,
+    tipAmount: typeof data.tipAmount === 'number' ? data.tipAmount : undefined,
     createdAt: normalizeTimestamp(data.createdAt),
     updatedAt: normalizeTimestamp(data.updatedAt),
   } as Booking;

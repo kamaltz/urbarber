@@ -11,10 +11,12 @@ import { AppButton } from '@/components/ui/AppButton';
 import { Loading } from '@/components/ui/Loading';
 import { Booking, BookingTracking } from '@/features/bookings/types/booking';
 import { bookingRepository } from '@/features/bookings/repository/booking.repository';
-import { trackingService } from '@/features/location/services/tracking.service';
-import { calculateDistanceKm } from '@/features/location/utils/geo.utils';
+import { trackingService, STALE_LOCATION_THRESHOLD_MS } from '@/features/location/services/tracking.service';
+import { calculateDistanceKm, estimateEtaMinutes } from '@/features/location/utils/geo.utils';
 import { MAP_CONFIG } from '@/config/map.config';
 import { Camera, Map, Marker } from '@maplibre/maplibre-react-native';
+
+const ARRIVING_THRESHOLD_KM = 0.15; // "Barber hampir tiba" below this distance
 
 export default function CustomerTrackingScreen() {
   const { bookingId } = useLocalSearchParams<{ bookingId: string }>();
@@ -58,6 +60,14 @@ export default function CustomerTrackingScreen() {
     };
   }, [bookingId]);
 
+  // 3. Tick every few seconds so "Lokasi diperbarui X detik lalu" stays live
+  // between Firestore updates, instead of only refreshing on the next write.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 5000);
+    return () => clearInterval(interval);
+  }, []);
+
   const handleBack = () => {
     if (router.canGoBack()) {
       router.back();
@@ -87,22 +97,34 @@ export default function CustomerTrackingScreen() {
     );
   }
 
-  // Calculate straight-line distance if coordinates exist
-  let distanceText = 'Menghitung jarak...';
-  if (tracking?.location?.latitude && booking.serviceLocation?.latitude) {
-    const dist = calculateDistanceKm(
-      tracking.location.latitude,
-      tracking.location.longitude,
-      booking.serviceLocation.latitude,
-      booking.serviceLocation.longitude
-    );
-    distanceText = `~${dist} km (jarak garis lurus)`;
-  } else {
-    distanceText = 'Jarak garis lurus estimasi';
-  }
+  // Straight-line distance + a labeled-as-estimate ETA range. No routing API
+  // exists in this app, so distance is always Haversine and ETA is always a
+  // range, never a precise number (see estimateEtaMinutes).
+  const distanceKm =
+    tracking?.location?.latitude && booking.serviceLocation?.latitude
+      ? calculateDistanceKm(
+          tracking.location.latitude,
+          tracking.location.longitude,
+          booking.serviceLocation.latitude,
+          booking.serviceLocation.longitude
+        )
+      : null;
+  const distanceText = distanceKm !== null ? `~${distanceKm} km (garis lurus)` : 'Menghitung jarak...';
+  const isArriving = distanceKm !== null && distanceKm <= ARRIVING_THRESHOLD_KM;
+  const eta = distanceKm !== null && !isArriving ? estimateEtaMinutes(distanceKm, tracking?.speed) : null;
 
   const trackingStatus = tracking?.trackingStatus || 'inactive';
   const isActive = tracking?.isActive ?? false;
+
+  const lastUpdateSecondsAgo = tracking?.updatedAt
+    ? Math.max(0, Math.round((now - new Date(tracking.updatedAt).getTime()) / 1000))
+    : null;
+  const lastUpdateText =
+    lastUpdateSecondsAgo === null
+      ? null
+      : lastUpdateSecondsAgo < 60
+      ? `Lokasi diperbarui ${lastUpdateSecondsAgo} detik lalu`
+      : `Lokasi diperbarui ${Math.round(lastUpdateSecondsAgo / 60)} menit lalu`;
 
   return (
     <SafeAreaView className="flex-1 bg-white">
@@ -132,7 +154,9 @@ export default function CustomerTrackingScreen() {
 
           <Text className="text-lg font-bold text-white mt-2">
             {trackingStatus === 'en_route'
-              ? '🛵 Master Barber Sedang Dalam Perjalanan'
+              ? isArriving
+                ? '🎯 Barber Hampir Tiba'
+                : '🛵 Barber Sedang Menuju Lokasi Anda'
               : trackingStatus === 'arrived'
               ? '📍 Barber Sudah Sampai di Lokasi Anda'
               : trackingStatus === 'stopped'
@@ -140,10 +164,25 @@ export default function CustomerTrackingScreen() {
               : '⏳ Barber Belum Memulai Keberangkatan'}
           </Text>
 
-          <Text className="text-xs text-slate-400 mt-1">
-            {tracking?.updatedAt
-              ? `Pembaruan terakhir: ${new Date(tracking.updatedAt).toLocaleTimeString('id-ID')}`
-              : 'Menunggu konfirmasi keberangkatan Barber...'}
+          {trackingStatus === 'en_route' ? (
+            <View className="mt-3 gap-1.5">
+              {isStale ? (
+                <Text className="text-sm font-semibold text-amber-300">Menunggu pembaruan lokasi Barber</Text>
+              ) : (
+                <>
+                  <Text className="text-base font-bold text-white">{distanceText}</Text>
+                  {!isArriving && eta ? (
+                    <Text className="text-sm font-semibold text-orange-200">
+                      Perkiraan tiba {eta.minMinutes}–{eta.maxMinutes} menit
+                    </Text>
+                  ) : null}
+                </>
+              )}
+            </View>
+          ) : null}
+
+          <Text className="text-xs text-slate-400 mt-2">
+            {lastUpdateText || 'Menunggu konfirmasi keberangkatan Barber...'}
           </Text>
         </View>
 
@@ -186,8 +225,18 @@ export default function CustomerTrackingScreen() {
           <View className="rounded-xl bg-white p-4 border border-slate-200 gap-2">
             <View className="flex-row justify-between items-center">
               <Text className="text-xs text-slate-500 font-semibold">Estimasi Jarak</Text>
-              <Text className="text-xs font-bold text-[#D2691E]">{distanceText}</Text>
+              <Text className="text-xs font-bold text-[#D2691E]">
+                {isArriving ? 'Barber hampir tiba' : distanceText}
+              </Text>
             </View>
+            {eta && !isArriving && !isStale ? (
+              <View className="flex-row justify-between items-center">
+                <Text className="text-xs text-slate-500 font-semibold">Perkiraan Tiba</Text>
+                <Text className="text-xs font-bold text-slate-900">
+                  {eta.minMinutes}–{eta.maxMinutes} menit (Perkiraan)
+                </Text>
+              </View>
+            ) : null}
             {tracking?.location ? (
               <Text className="text-xs font-mono text-slate-600">
                 Koordinat Barber: {tracking.location.latitude.toFixed(5)}, {tracking.location.longitude.toFixed(5)}

@@ -193,6 +193,51 @@ describe('mapRawBookingToDomain', () => {
     expect(result.serviceLocationType).toBeUndefined();
   });
 
+  it('16. a payment-created document with a fee breakdown surfaces homeServiceFee/applicationFee/voucherDiscount/voucherCode/tipAmount, never collapsing them into subtotal alone', () => {
+    const result = mapRawBookingToDomain(
+      'b1',
+      {
+        customerId: 'c1',
+        barberId: 'barber-1',
+        status: 'pending',
+        price: 50000,
+        baseAmount: 50000,
+        homeServiceFee: 10000,
+        applicationFee: 2000,
+        voucherDiscount: 5000,
+        voucherCode: 'HEMAT5K',
+        tipAmount: 3000,
+        totalPrice: 60000,
+        grossAmount: 60000,
+      },
+      undefined,
+      undefined
+    );
+
+    expect(result.subtotal).toBe(50000);
+    expect(result.travelFee).toBe(10000);
+    expect(result.handlingFee).toBe(2000);
+    expect(result.discount).toBe(5000);
+    expect(result.couponCode).toBe('HEMAT5K');
+    expect(result.tipAmount).toBe(3000);
+    expect(result.totalPrice).toBe(60000);
+  });
+
+  it('17. a legacy document with no fee breakdown leaves travelFee/handlingFee/discount/couponCode/tipAmount undefined rather than 0/fabricated', () => {
+    const result = mapRawBookingToDomain(
+      'b1',
+      { customerId: 'c1', barberId: 'barber-1', status: 'pending', totalAmount: 40000, totalPrice: 40000 },
+      undefined,
+      undefined
+    );
+
+    expect(result.travelFee).toBeUndefined();
+    expect(result.handlingFee).toBeUndefined();
+    expect(result.discount).toBeUndefined();
+    expect(result.couponCode).toBeUndefined();
+    expect(result.tipAmount).toBeUndefined();
+  });
+
   it('15. Admin-shaped document (serviceAddress, no address) still resolves an address', () => {
     const result = mapRawBookingToDomain(
       'b1',
