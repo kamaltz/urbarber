@@ -10,6 +10,7 @@ import {
 } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import styles from './login.module.css';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -48,73 +49,73 @@ export default function LoginPage() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f3f4f6', padding: '1rem' }}>
-      <div style={{ backgroundColor: 'white', borderRadius: '0.75rem', padding: '2rem', maxWidth: '400px', width: '100%', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-        <h1 style={{ fontSize: '1.875rem', fontWeight: 'bold', marginBottom: '0.5rem', color: '#1f2937' }}>
-          URBarber Admin
-        </h1>
-        <p style={{ color: '#6b7280', marginBottom: '2rem' }}>
-          Platform administrasi URBarber
+    <div className={styles.page}>
+      <div className={styles.brandPanel}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/urbarber-logo.png" alt="URBarber" className={styles.brandLogo} />
+        <h2 className={styles.brandHeadline}>Kelola platform URBarber dengan mudah dan aman.</h2>
+        <p className={styles.brandSubtext}>
+          Pantau barber, booking, transaksi, dan pengaturan layanan dari satu dasbor administrasi.
         </p>
+      </div>
 
-        <form onSubmit={handleLogin}>
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', fontWeight: '500', color: '#374151' }}>
-              Email
-            </label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="admin@example.com"
-              required
-              style={{ width: '100%' }}
-              disabled={loading}
-            />
-          </div>
+      <div className={styles.formPanel}>
+        <div className={styles.card}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/urbarber-logo.png" alt="URBarber" className={styles.mobileLogo} />
+          <h1 className={styles.title}>Masuk Admin</h1>
+          <p className={styles.subtitle}>Platform administrasi URBarber</p>
 
-          <div style={{ marginBottom: '1.5rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', fontWeight: '500', color: '#374151' }}>
-              Password
-            </label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              required
-              style={{ width: '100%' }}
-              disabled={loading}
-            />
-          </div>
-
-          {error && (
-            <div style={{ backgroundColor: '#fee2e2', border: '1px solid #fecaca', color: '#991b1b', padding: '0.75rem', borderRadius: '0.5rem', marginBottom: '1rem', fontSize: '0.875rem' }}>
-              {error}
+          <form onSubmit={handleLogin}>
+            <div className={styles.fieldGroup}>
+              <label className={styles.label} htmlFor="admin-email">
+                Email
+              </label>
+              <input
+                id="admin-email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="admin@example.com"
+                required
+                autoComplete="username"
+                className={styles.input}
+                disabled={loading}
+              />
             </div>
-          )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            style={{
-              width: '100%',
-              backgroundColor: loading ? '#9ca3af' : '#208aef',
-              color: 'white',
-              padding: '0.75rem',
-              borderRadius: '0.5rem',
-              fontWeight: '500',
-              opacity: loading ? 0.7 : 1,
-              cursor: loading ? 'not-allowed' : 'pointer',
-            }}
-          >
-            {loading ? 'Sedang login...' : 'Login'}
-          </button>
-        </form>
+            <div className={styles.fieldGroup}>
+              <label className={styles.label} htmlFor="admin-password">
+                Password
+              </label>
+              <input
+                id="admin-password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                required
+                autoComplete="current-password"
+                className={styles.input}
+                disabled={loading}
+              />
+            </div>
 
-        <p style={{ marginTop: '1.5rem', fontSize: '0.875rem', color: '#6b7280', textAlign: 'center' }}>
-          Hubungi administrator untuk akses admin.
-        </p>
+            {error && (
+              <div className={styles.errorBanner} role="alert">
+                <span aria-hidden="true">⚠</span>
+                <span>{error}</span>
+              </div>
+            )}
+
+            <button type="submit" disabled={loading} className={styles.submitButton}>
+              {loading && <span className={styles.spinner} aria-hidden="true" />}
+              {loading ? 'Sedang login...' : 'Login'}
+            </button>
+          </form>
+
+          <p className={styles.footerText}>Hubungi administrator untuk akses admin.</p>
+        </div>
       </div>
     </div>
   );
