@@ -88,6 +88,11 @@ export interface PublicBarberSummary {
   verificationStatus: 'pending' | 'approved' | 'rejected';
   status: 'active' | 'suspended';
   serviceTypes?: string[];
+  /** Whether this Barber accepts at-shop / home-service bookings. Defaults to
+   * true when unset on the source document (matches discoveryService's
+   * same-field fallback), so a legacy doc isn't silently excluded from either. */
+  acceptsAtBarbershop?: boolean;
+  acceptsHomeService?: boolean;
   createdAt?: string;
 }
 
@@ -123,6 +128,13 @@ export interface CustomerHomeData {
     bookingTime?: string;
     status?: string;
   } | null;
+  /** Present only once a real location lookup has resolved (see
+   * DiscoveryLocationMode) -- 'nearestBarbers' distances are only trustworthy
+   * when this is 'granted'. */
+  locationMode?: DiscoveryLocationMode;
+  nearestBarbers?: NearbyBarber[];
+  topRatedBarbers?: NearbyBarber[];
+  homeServiceBarbers?: NearbyBarber[];
 }
 
 export interface CustomerExploreData {

@@ -26,8 +26,11 @@ export default function ExploreScreen() {
   const customerId = user?.uid || '';
   const { isFavorite, toggleFavorite } = useFavorites();
 
-  const params = useLocalSearchParams<{ category?: string }>();
+  const params = useLocalSearchParams<{ category?: string; serviceType?: string; sort?: string }>();
   const initialCategory = params.category;
+  const initialServiceType =
+    params.serviceType === 'barbershop' || params.serviceType === 'customer_home' ? params.serviceType : undefined;
+  const initialSort = params.sort as any;
 
   const {
     exploreData,
@@ -40,8 +43,15 @@ export default function ExploreScreen() {
     onSearchQueryChange,
     onCategorySelect,
     clearSearch,
+    activeServiceType,
+    activeSort,
+    clearAdvancedFilters,
     refresh,
-  } = useCustomerSearch(customerId, initialCategory);
+  } = useCustomerSearch(customerId, initialCategory, initialServiceType, initialSort);
+
+  const serviceTypeLabel = activeServiceType === 'barbershop' ? 'Di Tempat' : activeServiceType === 'customer_home' ? 'Datang ke Rumah' : undefined;
+  const sortLabel =
+    activeSort === 'nearest' ? 'Terdekat' : activeSort === 'highest_rating' ? 'Rating Tertinggi' : activeSort === 'most_popular' ? 'Terpopuler' : undefined;
 
   const [selectedBarberId, setSelectedBarberId] = useState<string | undefined>();
   const cameraRef = useRef<CameraRef>(null);
@@ -174,6 +184,25 @@ export default function ExploreScreen() {
           ) : null}
         </View>
       </View>
+
+      {/* Active advanced filters from Home's filter sheet */}
+      {(serviceTypeLabel || sortLabel) ? (
+        <View className="mb-4 flex-row flex-wrap items-center gap-2">
+          {serviceTypeLabel ? (
+            <View className="rounded-full bg-[#EDEFFB] px-3 py-1.5 border border-[#363062]/20">
+              <Text className="text-xs font-semibold text-[#363062]">{serviceTypeLabel}</Text>
+            </View>
+          ) : null}
+          {sortLabel ? (
+            <View className="rounded-full bg-[#EDEFFB] px-3 py-1.5 border border-[#363062]/20">
+              <Text className="text-xs font-semibold text-[#363062]">Urutkan: {sortLabel}</Text>
+            </View>
+          ) : null}
+          <Pressable onPress={clearAdvancedFilters} className="px-2 py-1.5">
+            <Text className="text-xs font-semibold text-slate-500">Hapus filter ✕</Text>
+          </Pressable>
+        </View>
+      ) : null}
 
       {/* Category Filter Chips */}
       {exploreData?.categoryChips && exploreData.categoryChips.length > 0 ? (

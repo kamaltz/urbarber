@@ -119,6 +119,8 @@ export const customerRepository = {
           verificationStatus: data.verificationStatus || 'approved',
           status: data.status || 'active',
           serviceTypes: Array.isArray(data.serviceTypes) ? data.serviceTypes : [],
+          acceptsAtBarbershop: data.acceptsAtBarbershop ?? true,
+          acceptsHomeService: data.acceptsHomeService ?? true,
           createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : undefined,
         } as PublicBarberSummary;
       });
@@ -139,9 +141,18 @@ export const customerRepository = {
   },
 
   /**
-   * Get customer home data containing live active barbers & categories
+   * Get customer home data containing live active barbers & categories.
+   * `coords`, when supplied (a real, resolved foreground location -- never a
+   * default/fallback center), also populates `nearestBarbers` with real
+   * Haversine distances via discoveryService and sets `locationMode: 'granted'`.
+   * Without it, Home still renders fully (rating-sorted / home-service-flagged
+   * lists need no location), just without a "nearest" section claiming a
+   * distance the app doesn't actually know.
    */
-  async getCustomerHomeData(customerId: string): Promise<CustomerHomeData | null> {
+  async getCustomerHomeData(
+    customerId: string,
+    coords?: { latitude: number; longitude: number }
+  ): Promise<CustomerHomeData | null> {
     try {
       const { bookingRepository } = await import('@/features/bookings/repository/booking.repository');
 
@@ -159,7 +170,6 @@ export const customerRepository = {
         name: b.displayName,
         status: b.status === 'active' ? 'Tersedia' : 'Tutup',
         rating: b.ratingAverage,
-        distance: 'Garut',
         imageUrl: b.profileImageUrl,
         location: b.address,
       }));
@@ -169,6 +179,71 @@ export const customerRepository = {
         title: c.label,
         subtitle: `Layanan ${c.label}`,
       }));
+
+      const serviceTypeLabel = (b: { acceptsAtBarbershop?: boolean; acceptsHomeService?: boolean }) => {
+        if (b.acceptsAtBarbershop !== false && b.acceptsHomeService !== false) return 'Di Tempat & Rumah';
+        if (b.acceptsHomeService !== false) return 'Datang ke Rumah';
+        return 'Di Tempat';
+      };
+
+      // "Rekomendasi untuk Anda": getPublicBarbers() already sorts
+      // ratingAverage DESC / reviewCount DESC, so this is honestly rating-led
+      // without needing location.
+      const topRatedBarbers = barbers.slice(0, 8).map((b) => ({
+        barberId: b.id,
+        name: b.displayName,
+        imageUrl: b.profileImageUrl,
+        serviceType: serviceTypeLabel(b),
+        location: b.address,
+        distance: '',
+        rating: b.ratingAverage,
+        reviewCount: b.reviewCount,
+      }));
+
+      const homeServiceBarbers = barbers
+        .filter((b) => b.acceptsHomeService !== false)
+        .slice(0, 8)
+        .map((b) => ({
+          barberId: b.id,
+          name: b.displayName,
+          imageUrl: b.profileImageUrl,
+          serviceType: serviceTypeLabel(b),
+          location: b.address,
+          distance: '',
+          rating: b.ratingAverage,
+          reviewCount: b.reviewCount,
+        }));
+
+      let nearestBarbers = topRatedBarbers;
+      let locationMode: import('../types/customer').DiscoveryLocationMode | undefined;
+
+      if (coords) {
+        try {
+          const { discoveryService } = await import('@/features/location/services/discovery.service');
+          const { results } = await discoveryService.searchNearbyBarbers({
+            latitude: coords.latitude,
+            longitude: coords.longitude,
+            radiusKm: 25,
+          });
+          locationMode = 'granted';
+          nearestBarbers = results.slice(0, 8).map((r) => ({
+            barberId: r.barber.barberId,
+            name: r.barber.name,
+            imageUrl: r.barber.profileImageUrl,
+            serviceType: serviceTypeLabel(r.barber),
+            location: r.barber.shopAddress || '',
+            distance: r.formattedDistance,
+            rating: r.barber.ratingAverage ?? 0,
+            reviewCount: r.barber.reviewCount ?? 0,
+            latitude: r.barber.location?.latitude,
+            longitude: r.barber.location?.longitude,
+          }));
+        } catch (geoError: any) {
+          if (__DEV__) {
+            console.warn('[CustomerRepository getCustomerHomeData nearest Error]', geoError?.message || geoError);
+          }
+        }
+      }
 
       // Same real active-booking source as the booking history list (Batch
       // 10B-5G) -- a customer may have more than one active booking, so the
@@ -196,6 +271,10 @@ export const customerRepository = {
               status: primaryActive.status,
             }
           : null,
+        locationMode,
+        nearestBarbers,
+        topRatedBarbers,
+        homeServiceBarbers,
       };
     } catch (error: any) {
       if (__DEV__ && !isOfflineError(error)) {
@@ -214,7 +293,16 @@ export const customerRepository = {
   async searchBarbers(
     customerId: string,
     query: string,
-    filters?: { category?: string; latitude?: number; longitude?: number }
+    filters?: {
+      category?: string;
+      latitude?: number;
+      longitude?: number;
+      serviceType?: 'barbershop' | 'customer_home';
+      /** Explicit sort, e.g. from Home's filter sheet. Takes precedence over
+       * the selected category's Admin-configured recommendationRule when both
+       * are present. */
+      sort?: import('@/features/location/services/recommendation-rules').CategoryRecommendationRule;
+    }
   ): Promise<CustomerExploreData | null> {
     try {
       const hasRealLocation = typeof filters?.latitude === 'number' && typeof filters?.longitude === 'number';
@@ -226,6 +314,7 @@ export const customerRepository = {
         latitude: lat,
         longitude: lng,
         radiusKm: 25,
+        serviceType: filters?.serviceType,
         categoryId: filters?.category,
         searchQuery: query,
       });
@@ -237,17 +326,20 @@ export const customerRepository = {
         isActive: cat.id === filters?.category,
       }));
 
-      // Apply the selected category's Admin-configured recommendation rule.
-      // Never affects eligibility -- rawNearbyResults is already fully
-      // filtered by discoveryService (verificationStatus/listingStatus/
-      // acceptingNewBookings); this only reorders what's already eligible.
-      // Only 'nearest'/'highest_rating'/'most_popular'/'newest' have a real
-      // signal available at this call site -- 'cheapest'/'history'/
-      // 'soonest_available' deterministically fall back to the existing
-      // distance-ascending order (see applyCategoryRecommendationRule).
+      // Apply an explicit sort (e.g. from Home's filter sheet) when given,
+      // otherwise fall back to the selected category's Admin-configured
+      // recommendation rule. Never affects eligibility -- rawNearbyResults is
+      // already fully filtered by discoveryService (verificationStatus/
+      // listingStatus/acceptingNewBookings); this only reorders what's
+      // already eligible. Only 'nearest'/'highest_rating'/'most_popular'/
+      // 'newest' have a real signal available at this call site --
+      // 'cheapest'/'history'/'soonest_available' deterministically fall back
+      // to the existing distance-ascending order (see
+      // applyCategoryRecommendationRule).
       const selectedCategory = filters?.category ? categories.find((c) => c.id === filters.category) : undefined;
+      const effectiveRule = filters?.sort || selectedCategory?.recommendationRule;
       const { applyCategoryRecommendationRule } = await import('@/features/location/services/recommendation-rules');
-      const nearbyResults = selectedCategory
+      const nearbyResults = effectiveRule
         ? applyCategoryRecommendationRule(
             rawNearbyResults.map((r) => ({
               item: r,
@@ -256,7 +348,7 @@ export const customerRepository = {
               reviewCount: r.barber.reviewCount,
               createdAt: r.barber.createdAt,
             })),
-            selectedCategory.recommendationRule || 'default'
+            effectiveRule
           )
         : rawNearbyResults;
 

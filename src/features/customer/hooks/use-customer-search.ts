@@ -7,23 +7,43 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { customerLocationService } from '../services/customer-location.service';
 import { customerRepository } from '../repository/customer.repository';
 import type { CustomerExploreData } from '../types/customer';
+import type { CategoryRecommendationRule } from '@/features/location/services/recommendation-rules';
 
 export type CustomerLocationUiStatus = 'idle' | 'requesting' | 'granted' | 'denied' | 'unavailable';
+type ServiceTypeFilter = 'barbershop' | 'customer_home' | undefined;
 
-export function useCustomerSearch(customerId: string, initialCategory?: string) {
+export function useCustomerSearch(
+  customerId: string,
+  initialCategory?: string,
+  initialServiceType?: ServiceTypeFilter,
+  initialSort?: CategoryRecommendationRule
+) {
   const [exploreData, setExploreData] = useState<CustomerExploreData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | undefined>(initialCategory);
+
   const [locationUiStatus, setLocationUiStatus] = useState<CustomerLocationUiStatus>('idle');
+
+  // Applied once, from the entry route params (e.g. Home's filter sheet).
+  // Explore itself has no UI to change these this pass beyond clearing them
+  // -- state (not a ref) so activeServiceType/activeSort below stay safe to
+  // read during render.
+  const [serviceType, setServiceType] = useState<ServiceTypeFilter>(initialServiceType);
+  const [sort, setSort] = useState<CategoryRecommendationRule | undefined>(initialSort);
 
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastQueryIdRef = useRef<number>(0);
   const coordsRef = useRef<{ latitude: number; longitude: number } | null>(null);
 
   const fetchExplore = useCallback(
-    async (query: string, category?: string) => {
+    async (
+      query: string,
+      category?: string,
+      svcType?: ServiceTypeFilter,
+      sortRule?: CategoryRecommendationRule
+    ) => {
       const currentQueryId = ++lastQueryIdRef.current;
       try {
         setLoading(true);
@@ -31,6 +51,8 @@ export function useCustomerSearch(customerId: string, initialCategory?: string) 
           category,
           latitude: coordsRef.current?.latitude,
           longitude: coordsRef.current?.longitude,
+          serviceType: svcType,
+          sort: sortRule,
         });
 
         if (currentQueryId === lastQueryIdRef.current) {
@@ -57,14 +79,15 @@ export function useCustomerSearch(customerId: string, initialCategory?: string) 
     async function init() {
       await Promise.resolve();
       if (!active) return;
-      await fetchExplore(searchQuery, selectedCategory);
+      await fetchExplore(searchQuery, selectedCategory, serviceType, sort);
     }
 
     void init();
     return () => {
       active = false;
     };
-  }, [fetchExplore, searchQuery, selectedCategory]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchExplore, searchQuery, selectedCategory, serviceType, sort]);
 
   /**
    * Foreground location lookup: runs once on mount, independent of the search-trigger
@@ -84,8 +107,8 @@ export function useCustomerSearch(customerId: string, initialCategory?: string) 
       setLocationUiStatus(result.status);
     }
 
-    await fetchExplore(searchQuery, selectedCategory);
-  }, [fetchExplore, searchQuery, selectedCategory]);
+    await fetchExplore(searchQuery, selectedCategory, serviceType, sort);
+  }, [fetchExplore, searchQuery, selectedCategory, serviceType, sort]);
 
   useEffect(() => {
     let active = true;
@@ -99,7 +122,7 @@ export function useCustomerSearch(customerId: string, initialCategory?: string) 
         coordsRef.current = { latitude: result.latitude, longitude: result.longitude };
         setLocationUiStatus('granted');
         // Refine the already-fetched (default-area) results now that a real position exists.
-        await fetchExplore(searchQuery, selectedCategory);
+        await fetchExplore(searchQuery, selectedCategory, serviceType, sort);
       } else {
         coordsRef.current = null;
         setLocationUiStatus(result.status);
@@ -110,8 +133,9 @@ export function useCustomerSearch(customerId: string, initialCategory?: string) 
     return () => {
       active = false;
     };
-    // Runs once per customerId -- deliberately excludes searchQuery/selectedCategory/fetchExplore
-    // so it doesn't re-request the OS location permission dialog on every keystroke or filter change.
+    // Runs once per customerId -- deliberately excludes searchQuery/selectedCategory/
+    // serviceType/sort/fetchExplore so it doesn't re-request the OS location permission
+    // dialog on every keystroke or filter change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customerId]);
 
@@ -123,21 +147,27 @@ export function useCustomerSearch(customerId: string, initialCategory?: string) 
     }
 
     searchTimeoutRef.current = setTimeout(() => {
-      void fetchExplore(newQuery, selectedCategory);
+      void fetchExplore(newQuery, selectedCategory, serviceType, sort);
     }, 300);
-  }, [fetchExplore, selectedCategory]);
+  }, [fetchExplore, selectedCategory, serviceType, sort]);
 
   const onCategorySelect = useCallback((categoryId?: string) => {
     const nextCategory = selectedCategory === categoryId ? undefined : categoryId;
     setSelectedCategory(nextCategory);
-    void fetchExplore(searchQuery, nextCategory);
-  }, [fetchExplore, searchQuery, selectedCategory]);
+    void fetchExplore(searchQuery, nextCategory, serviceType, sort);
+  }, [fetchExplore, searchQuery, selectedCategory, serviceType, sort]);
 
   const clearSearch = useCallback(() => {
     setSearchQuery('');
     setSelectedCategory(undefined);
-    void fetchExplore('', undefined);
-  }, [fetchExplore]);
+    void fetchExplore('', undefined, serviceType, sort);
+  }, [fetchExplore, serviceType, sort]);
+
+  const clearAdvancedFilters = useCallback(() => {
+    setServiceType(undefined);
+    setSort(undefined);
+    void fetchExplore(searchQuery, selectedCategory, undefined, undefined);
+  }, [fetchExplore, searchQuery, selectedCategory]);
 
   return {
     exploreData,
@@ -150,6 +180,9 @@ export function useCustomerSearch(customerId: string, initialCategory?: string) 
     onSearchQueryChange,
     onCategorySelect,
     clearSearch,
-    refresh: () => fetchExplore(searchQuery, selectedCategory),
+    activeServiceType: serviceType,
+    activeSort: sort,
+    clearAdvancedFilters,
+    refresh: () => fetchExplore(searchQuery, selectedCategory, serviceType, sort),
   };
 }
