@@ -1,6 +1,7 @@
 import { CustomerScreen } from '@/components/navigation/CustomerScreen';
 import { AppButton } from '@/components/ui/AppButton';
 import { Avatar } from '@/components/ui/Avatar';
+import { SymbolIcon } from '@/components/ui/SymbolIcon';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { useCustomerProfile } from '@/features/customer/hooks/use-customer-profile';
 import { pickImage, storageService } from '@/features/services/storage.service';
@@ -11,10 +12,10 @@ import { useState } from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 
 const MENU_ITEMS = [
-  { label: 'Informasi Akun', path: '/(customer)/profile/account', icon: '👤', description: 'Lihat & edit data diri' },
-  { label: 'Ubah Password', path: '/(customer)/profile/change-password', icon: '🔒', description: 'Keamanan akun & sandi' },
-  { label: 'Bantuan & FAQ', path: '/(customer)/profile/help', icon: '❓', description: 'Pusat bantuan & panduan' },
-  { label: 'Tentang Aplikasi', path: '/(customer)/profile/about', icon: 'ℹ️', description: 'Versi & informasi URBarber' },
+  { label: 'Informasi Akun', path: '/(customer)/profile/account', icon: 'person.fill', description: 'Lihat & edit data diri' },
+  { label: 'Ubah Password', path: '/(customer)/profile/change-password', icon: 'lock', description: 'Keamanan akun & sandi' },
+  { label: 'Bantuan & FAQ', path: '/(customer)/profile/help', icon: 'questionmark.circle', description: 'Pusat bantuan & panduan' },
+  { label: 'Tentang Aplikasi', path: '/(customer)/profile/about', icon: 'info.circle', description: 'Versi & informasi URBarber' },
 ] as const;
 
 export default function ProfileScreen() {
@@ -187,7 +188,7 @@ export default function ProfileScreen() {
           >
             <View className="flex-row items-center gap-3">
               <View className="h-10 w-10 items-center justify-center rounded-xl bg-[#EDEFFB]">
-                <Text className="text-base">{item.icon}</Text>
+                <SymbolIcon name={item.icon} size={20} color="#363062" />
               </View>
               <View>
                 <Text className="font-bold text-[#363062] text-sm">{item.label}</Text>
