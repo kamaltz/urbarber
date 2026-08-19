@@ -417,27 +417,34 @@ export const barberRepository = {
         if (customerDocs[i]?.exists()) customerMap.set(id, customerDocs[i]!.data()!);
       });
 
-      // Map raw booking data to BarberBooking domain shape
-      return raw.map(({ id, data }) => {
-        const customerProfile = customerMap.get(data.customerId) || {};
-        const bookingDate = data.date || data.bookingDate || '';
-        const bookingTime = data.startTime || data.scheduledTime || '';
+      // Map raw booking data to BarberBooking domain shape. Service metadata
+      // is resolved via the same canonical resolveBarberBookingServices used
+      // by getBookingDetail/subscribeToBookingDetail -- a raw `data.services
+      // || []` read is empty for every real (serviceId-only) booking, which
+      // previously left this list's service name/price/duration blank.
+      return Promise.all(
+        raw.map(async ({ id, data }) => {
+          const customerProfile = customerMap.get(data.customerId) || {};
+          const bookingDate = data.date || data.bookingDate || '';
+          const bookingTime = data.startTime || data.scheduledTime || '';
+          const services = await resolveBarberBookingServices(data);
 
-        return {
-          bookingId: id,
-          customerId: data.customerId || '',
-          customerName: customerProfile.fullName || customerProfile.name || 'Pelanggan',
-          customerCode: data.customerCode,
-          bookingDate,
-          bookingTime,
-          status: mapLegacyBookingStatus(data.status),
-          services: data.services || [],
-          totalAmount: data.price || 0,
-          paymentStatus: data.paymentStatus || 'pending',
-          notes: data.notes,
-          createdAt: data.createdAt?.toISOString?.() || data.createdAt || '',
-        } as BarberBooking;
-      });
+          return {
+            bookingId: id,
+            customerId: data.customerId || '',
+            customerName: customerProfile.fullName || customerProfile.name || 'Pelanggan',
+            customerCode: data.customerCode,
+            bookingDate,
+            bookingTime,
+            status: mapLegacyBookingStatus(data.status),
+            services,
+            totalAmount: data.price || 0,
+            paymentStatus: data.paymentStatus || 'pending',
+            notes: data.notes,
+            createdAt: data.createdAt?.toISOString?.() || data.createdAt || '',
+          } as BarberBooking;
+        })
+      );
     } catch (error: any) {
       if (__DEV__) {
         console.warn('[BarberRepository getBarberBookings Error]', error?.code, error?.message || error);

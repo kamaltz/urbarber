@@ -209,6 +209,9 @@ export default function BarberBookingsScreen() {
 
                 <View className="gap-1 mb-3">
                   <Text className="text-slate-600 text-xs font-medium">
+                    ✂️ Layanan: <Text className="font-semibold text-slate-900">{b.services?.[0]?.name || 'Layanan Cukur'}</Text>
+                  </Text>
+                  <Text className="text-slate-600 text-xs font-medium">
                     🗓 Tanggal: <Text className="font-semibold text-slate-900">{b.bookingDate}</Text>
                   </Text>
                   <Text className="text-slate-600 text-xs font-medium">
