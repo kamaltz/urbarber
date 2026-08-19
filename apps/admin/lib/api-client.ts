@@ -1,7 +1,17 @@
 import { firebaseAuth } from './firebase';
 import { ApiError } from './errors';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000';
+const configuredApiBaseUrl =
+  process.env.NEXT_PUBLIC_API_BASE_URL;
+
+if (!configuredApiBaseUrl && process.env.NODE_ENV === 'production') {
+  throw new Error(
+    'NEXT_PUBLIC_API_BASE_URL wajib dikonfigurasi untuk production.',
+  );
+}
+
+const API_BASE_URL =
+  configuredApiBaseUrl || 'http://localhost:3000';
 
 export interface ApiResponse<T = unknown> {
   data?: T;

@@ -15,6 +15,17 @@
         "buildType": "apk"
       }
     },
+    "preview-v11": {
+      "extends": "preview",
+      "environment": "preview",
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_PAYMENT_API_BASE_URL": "https://urbarber-payment-api-v11-rc.vercel.app"
+      },
+      "android": {
+        "buildType": "apk"
+      }
+    },
     "production": {
       "autoIncrement": true
     }
