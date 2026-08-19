@@ -9,10 +9,11 @@ import { MAP_CONFIG } from '@/config/map.config';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { useFavorites } from '@/features/customer/context/favorites-context';
 import { useCustomerSearch } from '@/features/customer/hooks/use-customer-search';
-import { Camera, Map, Marker } from '@maplibre/maplibre-react-native';
+import { Camera, type CameraRef, Map, Marker } from '@maplibre/maplibre-react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Pressable,
   ScrollView,
   Text,
@@ -43,6 +44,7 @@ export default function ExploreScreen() {
   } = useCustomerSearch(customerId, initialCategory);
 
   const [selectedBarberId, setSelectedBarberId] = useState<string | undefined>();
+  const cameraRef = useRef<CameraRef>(null);
 
   const handleBarberPress = useCallback((barberId: string) => {
     setSelectedBarberId(barberId);
@@ -66,6 +68,21 @@ export default function ExploreScreen() {
   };
   const showCustomerMarker = exploreData?.locationMode === 'granted';
   const showDefaultAreaNotice = exploreData?.locationMode === 'default_area' && locationUiStatus !== 'requesting';
+
+  // MapLibre's <Camera initialViewState> only ever applies once, on mount --
+  // if the search center/results resolve asynchronously after the map first
+  // renders (the common case: location/barbers load a beat after mount, or
+  // the customer switches filters), the viewport never follows. This button
+  // re-fetches AND explicitly re-centers the camera via its imperative ref,
+  // so barber markers reliably end up on-screen.
+  const handleRefreshMap = useCallback(() => {
+    cameraRef.current?.easeTo({
+      center: [center.longitude, center.latitude],
+      zoom: MAP_CONFIG.defaultViewport.zoom,
+      duration: 400,
+    });
+    void refresh();
+  }, [center.latitude, center.longitude, refresh]);
 
   return (
     <CustomerScreen
@@ -92,9 +109,10 @@ export default function ExploreScreen() {
         ) : null}
 
         {/* Map */}
-        <View className="mb-4 h-64 overflow-hidden rounded-2xl border border-slate-200">
+        <View className="relative mb-4 h-64 overflow-hidden rounded-2xl border border-slate-200">
           <Map mapStyle={MAP_CONFIG.styleUrl} style={{ flex: 1 }}>
             <Camera
+              ref={cameraRef}
               initialViewState={{
                 center: [center.longitude, center.latitude],
                 zoom: MAP_CONFIG.defaultViewport.zoom,
@@ -122,7 +140,20 @@ export default function ExploreScreen() {
             </Marker>
           ))}
         </Map>
-      </View>
+
+          <Pressable
+            onPress={handleRefreshMap}
+            disabled={loading}
+            accessibilityLabel="Segarkan peta"
+            className="absolute bottom-3 right-3 h-10 w-10 items-center justify-center rounded-full bg-white shadow-md border border-slate-200 active:bg-slate-50"
+          >
+            {loading ? (
+              <ActivityIndicator size="small" color="#363062" />
+            ) : (
+              <Text className="text-base">🔄</Text>
+            )}
+          </Pressable>
+        </View>
 
       {/* Search Input Box */}
       <View className="mb-4">
