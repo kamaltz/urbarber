@@ -1,19 +1,37 @@
 import { AppButton } from '@/components/ui/AppButton';
-import { AppCard } from '@/components/ui/AppCard';
 import { Header } from '@/components/ui/Header';
 import { Loading } from '@/components/ui/Loading';
-import { SymbolIcon } from '@/components/ui/SymbolIcon';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { barberRepository } from '@/features/barbers/repository/barber.repository';
 import { barberApiService } from '@/features/barbers/services/barber-api.service';
+import { CustomerDetailCard } from '@/features/barbers/components/service-workspace/CustomerDetailCard';
+import { CustomerLocationCard } from '@/features/barbers/components/service-workspace/CustomerLocationCard';
+import { ServiceDetailCard } from '@/features/barbers/components/service-workspace/ServiceDetailCard';
+import { ServiceProgressTimeline } from '@/features/barbers/components/service-workspace/ServiceProgressTimeline';
+import { ServiceSummaryCard } from '@/features/barbers/components/service-workspace/ServiceSummaryCard';
+import { ServiceTimerCard } from '@/features/barbers/components/service-workspace/ServiceTimerCard';
+import { getAppointmentCountdown } from '@/features/barbers/utils/appointment-countdown';
+import { getElapsedTime } from '@/features/barbers/utils/service-timer';
+import { getServiceWorkspaceStage, type ServiceWorkspaceStage } from '@/features/barbers/utils/service-workspace-stage';
 import type { BarberBooking } from '@/features/barbers/types/barber';
 import { chatRepository } from '@/features/chat/repository/chat.repository';
+import { customerRepository } from '@/features/customer/repository/customer.repository';
 import type { BookingTracking } from '@/features/bookings/types/booking';
 import { trackingService } from '@/features/location/services/tracking.service';
-import { formatCurrency } from '@/utils/formatters';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { Alert, RefreshControl, ScrollView, Text, View } from 'react-native';
+
+const STAGE_LABEL: Record<ServiceWorkspaceStage, { label: string; badgeClass: string; textClass: string }> = {
+  requires_response: { label: 'Menunggu Konfirmasi', badgeClass: 'bg-amber-500/20 border-amber-500/40', textClass: 'text-amber-300' },
+  awaiting_trip: { label: 'Menunggu Waktu Layanan', badgeClass: 'bg-amber-500/20 border-amber-500/40', textClass: 'text-amber-300' },
+  en_route: { label: 'Sedang Menuju Pelanggan', badgeClass: 'bg-sky-500/20 border-sky-500/40', textClass: 'text-sky-300' },
+  arrived: { label: 'Tiba di Lokasi Pelanggan', badgeClass: 'bg-sky-500/20 border-sky-500/40', textClass: 'text-sky-300' },
+  ready_to_start: { label: 'Menunggu Waktu Layanan', badgeClass: 'bg-amber-500/20 border-amber-500/40', textClass: 'text-amber-300' },
+  in_progress: { label: 'Sedang Melayani', badgeClass: 'bg-purple-500/20 border-purple-500/40', textClass: 'text-purple-300' },
+  completed: { label: 'Selesai', badgeClass: 'bg-emerald-500/20 border-emerald-500/40', textClass: 'text-emerald-300' },
+  terminal_other: { label: 'Berakhir', badgeClass: 'bg-slate-500/20 border-slate-500/40', textClass: 'text-slate-300' },
+};
 
 export default function BarberBookingDetailScreen() {
   const { bookingId } = useLocalSearchParams<{ bookingId: string }>();
@@ -21,205 +39,196 @@ export default function BarberBookingDetailScreen() {
   const barberId = user?.uid || '';
 
   const [booking, setBooking] = useState<BarberBooking | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [mutating, setMutating] = useState<boolean>(false);
-  const [refreshing, setRefreshing] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
-  const [chatInitializing, setChatInitializing] = useState<boolean>(false);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [notFound, setNotFound] = useState(false);
+  const [mutating, setMutating] = useState(false);
+  const [chatInitializing, setChatInitializing] = useState(false);
   const [tracking, setTracking] = useState<BookingTracking | null>(null);
-  const isHomeService =
-    (booking as any)?.serviceLocationType === 'customer_home' ||
-    (booking as any)?.bookingType === 'home';
+  const [isTrackingStale, setIsTrackingStale] = useState(false);
+  const [customerProfile, setCustomerProfile] = useState<{ name: string; profileImageUrl?: string } | null>(null);
+  const [now, setNow] = useState(() => Date.now());
 
-  const fetchDetail = useCallback(async () => {
+  // Realtime booking subscription -- a customer/admin cancellation or a
+  // completion applied elsewhere must be reflected immediately here.
+  useEffect(() => {
     if (!barberId || !bookingId) return;
-    try {
-      setError(null);
-      const data = await barberRepository.getBookingDetail(barberId, bookingId);
+    const unsubscribe = barberRepository.subscribeToBookingDetail(barberId, bookingId, (data) => {
       setBooking(data);
-      if (!data) {
-        setError('Detail pesanan tidak ditemukan atau tidak ditugaskan kepada Anda.');
-      }
-    } catch (err: any) {
-      setError(err?.message || 'Gagal memuat detail pesanan.');
-    } finally {
+      setNotFound(!data);
       setLoading(false);
       setRefreshing(false);
-    }
+    });
+    return unsubscribe;
   }, [barberId, bookingId]);
 
   useEffect(() => {
     if (!bookingId) return;
-    return trackingService.subscribeToTracking(bookingId, (data) => setTracking(data));
+    return trackingService.subscribeToTracking(bookingId, (data, stale) => {
+      setTracking(data);
+      setIsTrackingStale(stale);
+    });
   }, [bookingId]);
 
-  // Recovery path for a process/navigation interruption between authoritative
-  // booking completion and the terminal tracking write.
   useEffect(() => {
-    if (
-      booking?.status !== 'completed' ||
-      !isHomeService ||
-      !tracking ||
-      tracking.trackingStatus === 'stopped'
-    ) {
-      return;
-    }
+    if (!booking?.customerId) return;
+    return customerRepository.subscribeToCustomerNameAndPhoto(booking.customerId, setCustomerProfile);
+  }, [booking?.customerId]);
 
-    void trackingService.stopBarberTracking(bookingId).then((result) => {
-      if (!result.success) {
-        setError(result.error || 'Layanan selesai, tetapi tracking belum dapat dihentikan.');
-      }
-    });
+  // One tick per second drives both the service timer and the
+  // "diperbarui N detik lalu" / appointment countdown copy.
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const isHomeService = booking ? booking.serviceLocationType === 'customer_home' || booking.bookingType === 'home' : false;
+
+  // Recovery: if the booking reaches a terminal state (cancelled elsewhere,
+  // rejected, or completed) while tracking is still live, stop it -- never
+  // leave a foreground GPS watcher running for a booking that's no longer
+  // active.
+  useEffect(() => {
+    if (!booking || !isHomeService) return;
+    const terminal = booking.status === 'completed' || booking.status === 'cancelled' || booking.status === 'rejected';
+    if (!terminal || !tracking || tracking.trackingStatus === 'stopped') return;
+    void trackingService.stopBarberTracking(bookingId);
   }, [booking?.status, bookingId, isHomeService, tracking]);
 
-  useEffect(() => {
-    let isMounted = true;
-    if (!barberId || !bookingId) return;
-    barberRepository
-      .getBookingDetail(barberId, bookingId)
-      .then((data) => {
-        if (!isMounted) return;
-        setBooking(data);
-        if (!data) {
-          setError('Detail pesanan tidak ditemukan atau tidak ditugaskan kepada Anda.');
-        }
-      })
-      .catch((err: any) => {
-        if (!isMounted) return;
-        setError(err?.message || 'Gagal memuat detail pesanan.');
-      })
-      .finally(() => {
-        if (isMounted) {
-          setLoading(false);
-          setRefreshing(false);
-        }
-      });
+  const stage: ServiceWorkspaceStage | null = booking
+    ? getServiceWorkspaceStage({ bookingStatus: booking.status, isHomeService, trackingStatus: tracking?.trackingStatus })
+    : null;
 
-    return () => {
-      isMounted = false;
-    };
-  }, [barberId, bookingId]);
+  const elapsed = useMemo(() => getElapsedTime(booking?.startedAt, now), [booking?.startedAt, now]);
+  const estimatedMinutes = useMemo(() => {
+    const total = (booking?.services || []).reduce((sum, s) => sum + (s.durationMinutes || 0), 0);
+    return total > 0 ? total : null;
+  }, [booking?.services]);
+
+  const appointmentCountdown = useMemo(() => {
+    if (!booking || stage === 'in_progress' || stage === 'completed' || stage === 'terminal_other') return null;
+    return getAppointmentCountdown(booking.bookingDate, booking.bookingTime, now);
+  }, [booking, stage, now]);
+
+  const lastUpdateSecondsAgo = tracking?.updatedAt
+    ? Math.max(0, Math.round((now - new Date(tracking.updatedAt).getTime()) / 1000))
+    : null;
 
   const handleRefresh = () => {
     setRefreshing(true);
-    fetchDetail();
+    // Realtime subscriptions already keep this current; this just gives the
+    // pull gesture a visible, bounded acknowledgement.
+    setTimeout(() => setRefreshing(false), 400);
   };
 
-  // Respond Action (Accept / Reject)
+  const isPaid = booking?.paymentStatus === 'paid';
+
   const handleRespond = (action: 'accept' | 'reject') => {
     const actionLabel = action === 'accept' ? 'Menerima' : 'Menolak';
-    Alert.alert(
-      `Konfirmasi ${actionLabel} Pesanan`,
-      `Apakah Anda yakin ingin ${actionLabel.toLowerCase()} pesanan ini?`,
-      [
-        { text: 'Batal', style: 'cancel' },
-        {
-          text: actionLabel,
-          style: action === 'reject' ? 'destructive' : 'default',
-          onPress: async () => {
-            setMutating(true);
-            setError(null);
-            const res = await barberApiService.respondBooking(bookingId, action);
-            setMutating(false);
-
-            if (res.success) {
-              Alert.alert('Sukses', `Pesanan berhasil di-${action === 'accept' ? 'terima' : 'tolak'}.`);
-              fetchDetail();
-            } else {
-              if (res.error?.code === 'PAYMENT_REFUND_REQUIRED') {
-                Alert.alert(
-                  'Pengembalian Dana Diperlukan',
-                  'Pembayaran pesanan ini telah dikonfirmasi lunas. Pengembalian dana (refund) belum dapat diproses secara otomatis oleh sistem.'
-                );
-              } else {
-                Alert.alert('Gagal', res.error?.message || 'Gagal merespons pesanan.');
-              }
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  // Update Status Action (in_progress / completed)
-  const handleUpdateStatus = (targetStatus: 'in_progress' | 'completed') => {
-    const label = targetStatus === 'in_progress' ? 'Mulai Layanan' : 'Selesaikan Layanan';
-    Alert.alert(
-      `Konfirmasi ${label}`,
-      `Apakah Anda yakin ingin memperbarui status pesanan menjadi ${
-        targetStatus === 'in_progress' ? 'Dalam Proses' : 'Selesai'
-      }?`,
-      [
-        { text: 'Batal', style: 'cancel' },
-        {
-          text: label,
-          onPress: async () => {
-            if (
-              targetStatus === 'in_progress' &&
-              isHomeService &&
-              tracking?.trackingStatus !== 'arrived'
-            ) {
+    Alert.alert(`Konfirmasi ${actionLabel} Pesanan`, `Apakah Anda yakin ingin ${actionLabel.toLowerCase()} pesanan ini?`, [
+      { text: 'Batal', style: 'cancel' },
+      {
+        text: actionLabel,
+        style: action === 'reject' ? 'destructive' : 'default',
+        onPress: async () => {
+          setMutating(true);
+          const res = await barberApiService.respondBooking(bookingId, action);
+          setMutating(false);
+          if (!res.success) {
+            if (res.error?.code === 'PAYMENT_REFUND_REQUIRED') {
               Alert.alert(
-                'Urutan tracking belum lengkap',
-                'Catat keberangkatan dan kedatangan sebelum memulai layanan di rumah pelanggan.',
+                'Pengembalian Dana Diperlukan',
+                'Pembayaran pesanan ini telah dikonfirmasi lunas. Pengembalian dana (refund) belum dapat diproses secara otomatis oleh sistem.'
               );
-              return;
-            }
-            setMutating(true);
-            setError(null);
-            const res = await barberApiService.updateBookingStatus(bookingId, targetStatus);
-
-            if (res.success) {
-              if (targetStatus === 'completed' && isHomeService) {
-                const trackingResult = await trackingService.stopBarberTracking(bookingId);
-                if (!trackingResult.success) {
-                  setMutating(false);
-                  Alert.alert(
-                    'Layanan selesai, tracking belum berhenti',
-                    trackingResult.error || 'Coba buka ulang detail booking untuk menghentikan tracking.',
-                  );
-                  fetchDetail();
-                  return;
-                }
-              }
-              setMutating(false);
-              Alert.alert('Sukses', `Status layanan berhasil diperbarui.`);
-              fetchDetail();
             } else {
-              setMutating(false);
-              Alert.alert('Gagal', res.error?.message || 'Gagal memperbarui status layanan.');
+              Alert.alert('Gagal', res.error?.message || 'Gagal merespons pesanan.');
             }
+          }
+        },
+      },
+    ]);
+  };
+
+  const handleStartTrip = () => {
+    Alert.alert('Mulai Perjalanan', 'Mulai perjalanan menuju lokasi pelanggan?', [
+      { text: 'Batal', style: 'cancel' },
+      {
+        text: 'Mulai',
+        onPress: async () => {
+          setMutating(true);
+          const result = await trackingService.startBarberTracking(bookingId);
+          setMutating(false);
+          if (!result.success) Alert.alert('Gagal', result.error || 'Gagal memulai perjalanan.');
+        },
+      },
+    ]);
+  };
+
+  const handleMarkArrived = () => {
+    Alert.alert('Konfirmasi Kedatangan', 'Pastikan Anda sudah berada di lokasi pelanggan.', [
+      { text: 'Belum', style: 'cancel' },
+      {
+        text: 'Saya Sudah Tiba',
+        onPress: async () => {
+          setMutating(true);
+          const result = await trackingService.markBarberArrived(bookingId);
+          setMutating(false);
+          if (!result.success) Alert.alert('Gagal', result.error || 'Gagal mencatat kedatangan.');
+        },
+      },
+    ]);
+  };
+
+  const handleStartService = () => {
+    Alert.alert('Mulai Pelayanan', 'Mulai pelayanan sekarang?', [
+      { text: 'Batal', style: 'cancel' },
+      {
+        text: 'Mulai',
+        onPress: async () => {
+          setMutating(true);
+          const res = await barberApiService.updateBookingStatus(bookingId, 'in_progress');
+          setMutating(false);
+          if (!res.success) Alert.alert('Gagal', res.error?.message || 'Gagal memulai pelayanan.');
+        },
+      },
+    ]);
+  };
+
+  const handleCompleteService = () => {
+    Alert.alert(
+      'Selesaikan Pelayanan',
+      'Layanan akan ditandai selesai dan tidak dapat dikembalikan ke status sedang berlangsung.',
+      [
+        { text: 'Kembali', style: 'cancel' },
+        {
+          text: 'Selesaikan',
+          onPress: async () => {
+            setMutating(true);
+            const res = await barberApiService.updateBookingStatus(bookingId, 'completed');
+            if (res.success && isHomeService) {
+              const trackingResult = await trackingService.stopBarberTracking(bookingId);
+              if (!trackingResult.success) {
+                setMutating(false);
+                Alert.alert(
+                  'Layanan selesai, tracking belum berhenti',
+                  trackingResult.error || 'Coba buka ulang layar ini untuk menghentikan tracking.'
+                );
+                return;
+              }
+            }
+            setMutating(false);
+            if (!res.success) Alert.alert('Gagal', res.error?.message || 'Gagal menyelesaikan pelayanan.');
           },
         },
       ]
     );
   };
-
-  const handleTrackingAction = async (action: 'start' | 'arrive') => {
-    setMutating(true);
-    const result =
-      action === 'start'
-        ? await trackingService.startBarberTracking(bookingId)
-        : await trackingService.markBarberArrived(bookingId);
-    setMutating(false);
-
-    if (!result.success) {
-      Alert.alert('Gagal', result.error || 'Gagal memperbarui tracking.');
-    }
-  };
-
-  if (loading && !refreshing) return <Loading />;
-
-  const isPaid =
-    // Batch 08: Use canonical 'paid' status for payment verification
-    booking?.paymentStatus === 'paid';
 
   const handleOpenChat = async () => {
     if (!isPaid || !bookingId) {
       Alert.alert('Chat tidak tersedia', 'Chat dapat dibuka setelah pelanggan menyelesaikan pembayaran.');
       return;
     }
-
     setChatInitializing(true);
     try {
       const conversationId = await chatRepository.ensureConversation(bookingId);
@@ -231,227 +240,138 @@ export default function BarberBookingDetailScreen() {
     }
   };
 
+  const handleBack = () => {
+    if (router.canGoBack()) router.back();
+    else router.replace('/(barber)/home');
+  };
+
+  if (loading && !refreshing) return <Loading />;
+
   return (
     <View className="flex-1 bg-slate-50">
-      <Header title="Detail Pesanan Pelanggan" />
+      <Header title="Melayani Pelanggan" showBackButton onBackPress={handleBack} />
 
       <ScrollView
         className="flex-1 px-4 py-4"
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}>
-        {error ? (
-          <AppCard className="mb-4 bg-red-50 border-red-200">
-            <Text className="text-red-700 text-sm">{error}</Text>
-            <AppButton label="Coba Lagi" onPress={fetchDetail} variant="secondary" className="mt-2" />
-          </AppCard>
-        ) : null}
-
-        {booking ? (
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
+      >
+        {notFound || !booking || !stage ? (
+          <View className="rounded-2xl bg-red-50 border border-red-200 p-4">
+            <Text className="text-red-700 text-sm">Detail pesanan tidak ditemukan atau tidak ditugaskan kepada Anda.</Text>
+          </View>
+        ) : (
           <View className="gap-4 mb-8">
-            {/* Status Header Banner */}
-            <AppCard className="p-4 bg-slate-900 border-0">
+            {/* Status Header */}
+            <View className="rounded-2xl bg-slate-900 p-4">
               <View className="flex-row items-center justify-between">
-                <Text className="text-slate-400 text-xs font-semibold uppercase tracking-wider">
-                  Status Pesanan
-                </Text>
-                <View
-                  className={
-                    booking.status === 'completed'
-                      ? 'bg-emerald-500/20 px-3 py-1 rounded-full border border-emerald-500/40'
-                      : booking.status === 'accepted' || booking.status === 'in_progress'
-                      ? 'bg-sky-500/20 px-3 py-1 rounded-full border border-sky-500/40'
-                      : booking.status === 'rejected'
-                      ? 'bg-red-500/20 px-3 py-1 rounded-full border border-red-500/40'
-                      : 'bg-amber-500/20 px-3 py-1 rounded-full border border-amber-500/40'
-                  }>
-                  <Text className="text-white text-xs font-bold uppercase">
-                    {booking.status === 'pending'
-                      ? 'Menunggu Konfirmasi'
-                      : booking.status === 'accepted'
-                      ? 'Disetujui'
-                      : booking.status === 'in_progress'
-                      ? 'Dalam Proses'
-                      : booking.status === 'completed'
-                      ? 'Selesai'
-                      : booking.status === 'rejected'
-                      ? 'Ditolak'
-                      : 'Dibatalkan'}
+                <Text className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Status Layanan</Text>
+                <View className={['px-3 py-1 rounded-full border', STAGE_LABEL[stage].badgeClass].join(' ')}>
+                  <Text className={['text-xs font-bold', STAGE_LABEL[stage].textClass].join(' ')}>
+                    {STAGE_LABEL[stage].label}
                   </Text>
                 </View>
               </View>
-              <Text className="text-slate-400 text-[11px] mt-2">Nilai Layanan</Text>
-              <Text className="text-white font-extrabold text-xl">
-                {formatCurrency(booking.totalAmount || 0)}
+              <Text className="text-white font-extrabold text-lg mt-2">
+                🗓 {booking.bookingDate} · ⏰ {booking.bookingTime}
               </Text>
-              {(booking.homeServiceFee || booking.tipAmount) ? (
-                <Text className="text-slate-400 text-[11px] mt-1">
-                  {booking.homeServiceFee ? `+ Biaya ke Rumah ${formatCurrency(booking.homeServiceFee)}  ` : ''}
-                  {booking.tipAmount ? `+ Tip ${formatCurrency(booking.tipAmount)}` : ''}
+              {appointmentCountdown ? (
+                <Text className={['text-xs font-semibold mt-1', appointmentCountdown.isLate ? 'text-amber-300' : 'text-slate-400'].join(' ')}>
+                  {appointmentCountdown.label}
                 </Text>
               ) : null}
-              <Text className="text-slate-400 text-xs mt-1">
+              <Text className="text-slate-400 text-xs mt-2">
                 Status Pembayaran:{' '}
                 <Text className={isPaid ? 'text-emerald-400 font-bold' : 'text-amber-400 font-bold'}>
                   {isPaid ? '✓ LUNAS' : '⏳ BELUM DIBAYAR'}
                 </Text>
               </Text>
-            </AppCard>
+            </View>
 
-            {/* Customer Information */}
-            <AppCard className="p-4 gap-2">
-              <Text className="font-bold text-slate-900 text-sm border-b border-slate-100 pb-2">
-                Informasi Pelanggan
-              </Text>
-              <View className="flex-row items-center gap-2">
-                <SymbolIcon name="person.fill" size={16} color="#64748b" />
-                <Text className="text-slate-900 font-bold text-sm">
-                  {booking.customerName || 'Pelanggan URBarber'}
-                </Text>
-              </View>
-              {(booking as any).customerPhone ? (
-                <Text className="text-slate-600 text-xs">📱 Phone: {(booking as any).customerPhone}</Text>
-              ) : null}
-              <Text className="text-slate-600 text-xs">
-                📍 Alamat Layanan: {(booking as any).address || 'Alamat Pelanggan'}
-              </Text>
-              {booking.notes ? (
-                <Text className="text-slate-500 text-xs italic bg-slate-50 p-2.5 rounded-lg mt-1">
-                  Catatan: &quot;{booking.notes}&quot;
-                </Text>
-              ) : null}
-            </AppCard>
+            {stage === 'completed' ? (
+              <ServiceSummaryCard
+                customerName={customerProfile?.name || booking.customerName}
+                serviceName={booking.services?.[0]?.name || 'Layanan Cukur'}
+                startedAt={booking.startedAt}
+                completedAt={booking.completedAt}
+              />
+            ) : (
+              <>
+                <ServiceProgressTimeline stage={stage} isHomeService={isHomeService} />
 
-            {/* Chat Button */}
-            <Pressable
-              onPress={handleOpenChat}
-              disabled={!isPaid || chatInitializing}
-              className={`mx-0 px-4 py-3 rounded-lg flex-row items-center justify-center gap-2 ${
-                isPaid ? 'bg-[#D2691E]' : 'bg-slate-300'
-              }`}
-            >
-              {chatInitializing ? (
-                <ActivityIndicator size="small" color={isPaid ? '#fff' : '#64748b'} />
-              ) : (
-                <Text className="text-xl">💬</Text>
-              )}
-              <Text className={`font-semibold ${isPaid ? 'text-white' : 'text-slate-500'}`}>
-                Chat dengan Pelanggan
-              </Text>
-            </Pressable>
+                <CustomerDetailCard
+                  name={customerProfile?.name || booking.customerName || 'Pelanggan URBarber'}
+                  avatarUrl={customerProfile?.profileImageUrl}
+                  notes={booking.notes}
+                  onChatPress={handleOpenChat}
+                  chatEnabled={isPaid}
+                  chatLoading={chatInitializing}
+                />
 
-            {/* Service & Time Details */}
-            <AppCard className="p-4 gap-2">
-              <Text className="font-bold text-slate-900 text-sm border-b border-slate-100 pb-2">
-                Rincian Layanan & Jadwal
-              </Text>
-              <Text className="text-slate-700 text-xs font-semibold">
-                🗓 Tanggal: {booking.bookingDate}
-              </Text>
-              <Text className="text-slate-700 text-xs font-semibold">
-                ⏰ Jam: {booking.bookingTime}
-              </Text>
+                {isHomeService ? (
+                  <CustomerLocationCard
+                    stage={stage}
+                    destination={booking.location}
+                    destinationAddress={booking.serviceAddress || booking.address}
+                    barberLocation={tracking?.location}
+                    barberSpeed={tracking?.speed}
+                    lastUpdateSecondsAgo={lastUpdateSecondsAgo}
+                    isStale={isTrackingStale}
+                  />
+                ) : null}
 
-              {booking.services && booking.services.length > 0 ? (
-                <View className="mt-2 gap-1 border-t border-slate-100 pt-2">
-                  {booking.services.map((svc, i) => (
-                    <View key={i} className="flex-row items-center justify-between">
-                      <Text className="text-slate-900 text-xs font-medium">{svc.name}</Text>
-                      <Text className="text-slate-700 text-xs font-bold">
-                        {formatCurrency(svc.price)}
-                      </Text>
+                <ServiceDetailCard
+                  services={booking.services || []}
+                  totalAmount={booking.totalAmount}
+                  homeServiceFee={booking.homeServiceFee}
+                  tipAmount={booking.tipAmount}
+                  bookingDate={booking.bookingDate}
+                  bookingTime={booking.bookingTime}
+                  isHomeService={isHomeService}
+                  estimatedMinutes={estimatedMinutes}
+                />
+
+                {stage === 'in_progress' && elapsed ? (
+                  <ServiceTimerCard
+                    formattedElapsed={elapsed.formatted}
+                    elapsedSeconds={elapsed.totalSeconds}
+                    estimatedMinutes={estimatedMinutes}
+                  />
+                ) : null}
+
+                {/* Primary CTA -- exactly one, matching the real current stage */}
+                {stage === 'requires_response' ? (
+                  <View className="gap-3">
+                    {!isPaid ? (
+                      <View className="bg-amber-50 border border-amber-200 p-3 rounded-xl">
+                        <Text className="text-amber-800 text-xs text-center font-medium">
+                          ⚠️ Pesanan ini belum dibayar oleh pelanggan. Terima pesanan hanya dapat dilakukan setelah pembayaran lunas.
+                        </Text>
+                      </View>
+                    ) : null}
+                    <View className="flex-row gap-3">
+                      <AppButton label="Tolak Pesanan" onPress={() => handleRespond('reject')} variant="secondary" disabled={mutating} className="flex-1 border-red-200" />
+                      <AppButton label="Terima Pesanan" onPress={() => handleRespond('accept')} variant="primary" disabled={mutating || !isPaid} className="flex-1" />
                     </View>
-                  ))}
-                </View>
-              ) : null}
-            </AppCard>
-
-            {/* Operational Status Action Buttons */}
-            {booking.status === 'pending' ? (
-              <View className="gap-3 mt-2">
-                {!isPaid ? (
-                  <View className="bg-amber-50 border border-amber-200 p-3 rounded-xl">
-                    <Text className="text-amber-800 text-xs text-center font-medium">
-                      ⚠️ Pesanan ini belum dibayar oleh pelanggan. Terima pesanan hanya dapat dilakukan setelah pembayaran lunas.
+                  </View>
+                ) : stage === 'awaiting_trip' ? (
+                  <AppButton label={mutating ? 'Memproses...' : 'Mulai Perjalanan'} onPress={handleStartTrip} variant="primary" disabled={mutating} className="bg-emerald-600" />
+                ) : stage === 'en_route' ? (
+                  <AppButton label={mutating ? 'Memproses...' : 'Saya Sudah Tiba'} onPress={handleMarkArrived} variant="primary" disabled={mutating} className="bg-sky-600" />
+                ) : stage === 'arrived' || stage === 'ready_to_start' ? (
+                  <AppButton label={mutating ? 'Memproses...' : 'Mulai Pelayanan'} onPress={handleStartService} variant="primary" disabled={mutating} className="bg-purple-600" />
+                ) : stage === 'in_progress' ? (
+                  <AppButton label={mutating ? 'Memproses...' : 'Selesaikan Pelayanan'} onPress={handleCompleteService} variant="primary" disabled={mutating} className="bg-emerald-600" />
+                ) : stage === 'terminal_other' ? (
+                  <View className="bg-slate-100 p-4 rounded-xl items-center">
+                    <Text className="text-slate-500 text-xs font-semibold">
+                      Pesanan ini {booking.status === 'rejected' ? 'ditolak' : 'dibatalkan'} dan tidak dapat diproses lagi.
                     </Text>
                   </View>
                 ) : null}
-                <View className="flex-row gap-3">
-                  <AppButton
-                    label="Tolak Pesanan"
-                    onPress={() => handleRespond('reject')}
-                    variant="secondary"
-                    disabled={mutating}
-                    className="flex-1 border-red-200"
-                  />
-                  <AppButton
-                    label="Terima Pesanan"
-                    onPress={() => handleRespond('accept')}
-                    variant="primary"
-                    disabled={mutating || !isPaid}
-                    className="flex-1"
-                  />
-                </View>
-              </View>
-            ) : null}
-
-            {booking.status === 'accepted' && isHomeService && !tracking ? (
-              <View className="mt-2">
-                <AppButton
-                  label={mutating ? 'Memproses...' : 'Berangkat ke Lokasi'}
-                  onPress={() => handleTrackingAction('start')}
-                  variant="primary"
-                  disabled={mutating}
-                  className="w-full bg-emerald-600"
-                />
-              </View>
-            ) : null}
-
-            {booking.status === 'accepted' && isHomeService && tracking?.trackingStatus === 'en_route' ? (
-              <View className="mt-2">
-                <AppButton
-                  label={mutating ? 'Memproses...' : 'Tandai Sudah Sampai'}
-                  onPress={() => handleTrackingAction('arrive')}
-                  variant="primary"
-                  disabled={mutating}
-                  className="w-full bg-sky-600"
-                />
-              </View>
-            ) : null}
-
-            {booking.status === 'accepted' && (!isHomeService || tracking?.trackingStatus === 'arrived') ? (
-              <View className="mt-2">
-                <AppButton
-                  label={mutating ? 'Memproses...' : 'Mulai Layanan (In Progress)'}
-                  onPress={() => handleUpdateStatus('in_progress')}
-                  variant="primary"
-                  disabled={mutating}
-                  className="w-full bg-purple-600"
-                />
-              </View>
-            ) : null}
-
-            {booking.status === 'in_progress' ? (
-              <View className="mt-2">
-                <AppButton
-                  label={mutating ? 'Memproses...' : 'Selesaikan Layanan (Completed)'}
-                  onPress={() => handleUpdateStatus('completed')}
-                  variant="primary"
-                  disabled={mutating}
-                  className="w-full bg-emerald-600"
-                />
-              </View>
-            ) : null}
-
-            {booking.status === 'completed' ||
-            booking.status === 'rejected' ||
-            booking.status === 'cancelled' ? (
-              <View className="bg-slate-100 p-4 rounded-xl items-center mt-2">
-                <Text className="text-slate-500 text-xs font-semibold">
-                  Pesanan ini sudah mencapai status terminal ({booking.status}) dan tidak dapat diubah lagi.
-                </Text>
-              </View>
-            ) : null}
+              </>
+            )}
           </View>
-        ) : null}
+        )}
       </ScrollView>
     </View>
   );
