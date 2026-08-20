@@ -11,7 +11,7 @@ import { useFavorites } from '@/features/customer/context/favorites-context';
 import { useCustomerSearch } from '@/features/customer/hooks/use-customer-search';
 import { Camera, type CameraRef, Map, Marker } from '@maplibre/maplibre-react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -94,6 +94,48 @@ export default function ExploreScreen() {
     void refresh();
   }, [center.latitude, center.longitude, refresh]);
 
+  // Auto-fit the viewport to whatever's actually on screen (§12) -- a fixed
+  // zoom-13 center never moved to follow results, so a barber a bit further
+  // out (still within the query's 25km radius) could be returned in the list
+  // but sit off-screen on the map. Runs whenever markers/center change, not
+  // just on manual refresh.
+  useEffect(() => {
+    if (!cameraRef.current) return;
+
+    const points: { latitude: number; longitude: number }[] = [];
+    if (showCustomerMarker) points.push(center);
+    barberMarkers.forEach((b) =>
+      points.push({ latitude: b.latitude as number, longitude: b.longitude as number })
+    );
+
+    if (points.length === 0) return;
+
+    const lats = points.map((p) => p.latitude);
+    const lngs = points.map((p) => p.longitude);
+    const north = Math.max(...lats);
+    const south = Math.min(...lats);
+    const east = Math.max(...lngs);
+    const west = Math.min(...lngs);
+    const spread = Math.max(north - south, east - west);
+
+    if (points.length === 1 || spread < 0.001) {
+      // A single point (or points that are all effectively the same spot)
+      // would make fitBounds zoom in on a near-zero-size box -- center
+      // directly at the default zoom instead.
+      cameraRef.current.easeTo({
+        center: [lngs[0], lats[0]],
+        zoom: MAP_CONFIG.defaultViewport.zoom,
+        duration: 400,
+      });
+      return;
+    }
+
+    cameraRef.current.fitBounds([west, south, east, north], {
+      padding: { top: 56, right: 56, bottom: 56, left: 56 },
+      duration: 400,
+    });
+  }, [barberMarkers, center.latitude, center.longitude, showCustomerMarker]);
+
   return (
     <CustomerScreen
       title="Cari Barber"
@@ -135,20 +177,37 @@ export default function ExploreScreen() {
             </Marker>
           ) : null}
 
-          {barberMarkers.map((barber) => (
-            <Marker
-              key={barber.barberId}
-              lngLat={[barber.longitude as number, barber.latitude as number]}
-              id={`barber-${barber.barberId}`}
-              onPress={() => handleBarberPress(barber.barberId)}
-            >
-              <View
-                className={`h-5 w-5 rounded-full border-2 border-white ${
-                  selectedBarberId === barber.barberId ? 'bg-[#D2691E]' : 'bg-slate-900'
-                }`}
-              />
-            </Marker>
-          ))}
+          {barberMarkers.map((barber) => {
+            const isSelected = selectedBarberId === barber.barberId;
+            return (
+              <Marker
+                key={barber.barberId}
+                lngLat={[barber.longitude as number, barber.latitude as number]}
+                id={`barber-${barber.barberId}`}
+                onPress={() => handleBarberPress(barber.barberId)}
+              >
+                <View className="items-center">
+                  <View
+                    className={`max-w-[100px] rounded-full px-2 py-0.5 mb-0.5 shadow-sm border ${
+                      isSelected ? 'bg-[#D2691E] border-[#D2691E]' : 'bg-white border-slate-200'
+                    }`}
+                  >
+                    <Text
+                      numberOfLines={1}
+                      className={`text-[10px] font-bold ${isSelected ? 'text-white' : 'text-slate-800'}`}
+                    >
+                      {barber.name}
+                    </Text>
+                  </View>
+                  <View
+                    className={`h-5 w-5 rounded-full border-2 border-white ${
+                      isSelected ? 'bg-[#D2691E]' : 'bg-slate-900'
+                    }`}
+                  />
+                </View>
+              </Marker>
+            );
+          })}
         </Map>
 
           <Pressable
