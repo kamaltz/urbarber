@@ -1,4 +1,3 @@
-import { BarberBottomNavigation } from '@/components/navigation/BarberBottomNavigation';
 import { AppButton } from '@/components/ui/AppButton';
 import { AppCard } from '@/components/ui/AppCard';
 import { Avatar } from '@/components/ui/Avatar';
@@ -105,7 +104,7 @@ export default function BarberHomeScreen() {
         (b.paymentStatus === 'paid') &&
         (b.bookingDate || b.createdAt || '').startsWith(currentMonthYear)
     )
-    .reduce((sum, b) => sum + (b.totalAmount || 0), 0);
+    .reduce((sum, b) => sum + (b.totalAmount || 0) + (b.homeServiceFee || 0) + (b.tipAmount || 0), 0);
 
   const upcomingBookings = bookings
     .filter((b) => b.status === 'accepted' || b.status === 'in_progress')
@@ -369,7 +368,6 @@ export default function BarberHomeScreen() {
 
         <AppButton label="Keluar Akun" onPress={logout} variant="secondary" className="mb-8 w-full" />
       </ScrollView>
-      <BarberBottomNavigation />
     </SafeAreaView>
   );
 }

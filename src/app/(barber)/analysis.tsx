@@ -76,18 +76,24 @@ export default function BarberAnalysisScreen() {
   const cancelledBookings = bookings.filter((b) => b.status === 'cancelled');
   const rejectedBookings = bookings.filter((b) => b.status === 'rejected');
 
-  // Revenue calculation: Batch 08 - ONLY bookings with status === 'completed' AND paymentStatus === 'paid'
+  // Revenue calculation: Batch 08 - ONLY bookings with status === 'completed' AND paymentStatus === 'paid'.
+  // Sums totalAmount (base service value) + homeServiceFee + tipAmount --
+  // both the latter are part of the barber's own operational value (never
+  // applicationFee), so excluding them under-reported real earnings on Home
+  // Service or tipped bookings.
+  const barberRevenueOf = (b: BarberBooking) => (b.totalAmount || 0) + (b.homeServiceFee || 0) + (b.tipAmount || 0);
+
   const currentMonthRevenue = completedBookings
     .filter(
       (b) =>
         (b.paymentStatus === 'paid') &&
         (b.bookingDate || b.createdAt || '').startsWith(currentMonthYear)
     )
-    .reduce((sum, b) => sum + (b.totalAmount || 0), 0);
+    .reduce((sum, b) => sum + barberRevenueOf(b), 0);
 
   const totalCompletedRevenue = completedBookings
     .filter((b) => b.paymentStatus === 'paid')
-    .reduce((sum, b) => sum + (b.totalAmount || 0), 0);
+    .reduce((sum, b) => sum + barberRevenueOf(b), 0);
 
   if (loading && !refreshing) return <Loading />;
 

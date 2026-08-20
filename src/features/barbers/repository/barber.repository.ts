@@ -439,6 +439,13 @@ export const barberRepository = {
             status: mapLegacyBookingStatus(data.status),
             services,
             totalAmount: data.price || 0,
+            // Both part of the barber's operational value (distinct from the
+            // platform applicationFee) -- see BarberBooking's field docs.
+            // Previously never mapped here, so dashboard/analysis revenue
+            // summed only the base service price and silently under-reported
+            // earnings on Home Service or tipped bookings.
+            homeServiceFee: typeof data.homeServiceFee === 'number' ? data.homeServiceFee : undefined,
+            tipAmount: typeof data.tipAmount === 'number' ? data.tipAmount : undefined,
             paymentStatus: data.paymentStatus || 'pending',
             notes: data.notes,
             createdAt: data.createdAt?.toISOString?.() || data.createdAt || '',
@@ -657,6 +664,7 @@ export const barberRepository = {
         isConfirmed: data.isConfirmed !== false,
         scheduleSource: data.scheduleSource || 'custom',
         unavailableDates: data.unavailableDates || [],
+        unavailableDateRanges: Array.isArray(data.unavailableDateRanges) ? data.unavailableDateRanges : [],
         lastUpdated: data.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
       };
     } catch (error: any) {
@@ -688,6 +696,7 @@ export const barberRepository = {
           isConfirmed: true,
           scheduleSource: 'custom',
           ...(data.unavailableDates ? { unavailableDates: data.unavailableDates } : {}),
+          ...(data.unavailableDateRanges ? { unavailableDateRanges: data.unavailableDateRanges } : {}),
           updatedAt: Timestamp.now(),
         },
         { merge: true }

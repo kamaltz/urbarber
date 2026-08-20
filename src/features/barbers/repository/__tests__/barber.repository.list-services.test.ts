@@ -141,3 +141,38 @@ describe('barberRepository.getBarberBookings -- service resolution', () => {
     );
   });
 });
+
+describe('barberRepository.getBarberBookings -- homeServiceFee/tipAmount mapping (dashboard revenue)', () => {
+  beforeEach(() => {
+    getDocMock.mockReset();
+    getDocsMock.mockReset();
+    docMock.mockClear();
+    getDocMock.mockImplementation(async (ref: { __coll: string }) => {
+      if (ref.__coll === 'customers') return { exists: () => true, data: () => ({ name: 'Budi' }) };
+      return { exists: () => false, data: () => undefined };
+    });
+  });
+
+  it('5. maps homeServiceFee and tipAmount through from the raw booking doc -- previously dropped, silently under-reporting barber revenue', async () => {
+    getDocsMock.mockResolvedValue(
+      bookingsSnapshot([
+        { id: 'booking-home', data: baseBookingData({ price: 50000, homeServiceFee: 15000, tipAmount: 5000 }) },
+      ])
+    );
+
+    const [booking] = await barberRepository.getBarberBookings('barber-1');
+
+    expect(booking.totalAmount).toBe(50000);
+    expect(booking.homeServiceFee).toBe(15000);
+    expect(booking.tipAmount).toBe(5000);
+  });
+
+  it('6. leaves homeServiceFee/tipAmount undefined for an onsite booking with neither field set', async () => {
+    getDocsMock.mockResolvedValue(bookingsSnapshot([{ id: 'booking-onsite', data: baseBookingData({ price: 40000 }) }]));
+
+    const [booking] = await barberRepository.getBarberBookings('barber-1');
+
+    expect(booking.homeServiceFee).toBeUndefined();
+    expect(booking.tipAmount).toBeUndefined();
+  });
+});
