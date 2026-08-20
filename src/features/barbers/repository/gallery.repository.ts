@@ -11,7 +11,7 @@
  */
 import { storageService } from '@/features/services/storage.service';
 import { PUBLIC_MEDIA_BUCKET } from '@/features/services/storage.config';
-import { firestore } from '@/lib/firebase';
+import { firebaseAuth, firestore } from '@/lib/firebase';
 import {
   addDoc,
   collection,
@@ -26,6 +26,29 @@ import {
 import { MAX_BARBER_GALLERY_IMAGES, type BarberGalleryImage } from '../types/barber';
 
 const COLLECTION_NAME = 'barberGallery';
+
+/**
+ * "Missing or insufficient permissions" is Firestore-SDK-specific text
+ * (error.code === 'permission-denied') distinct from every other failure
+ * mode in this file (native ImagePicker permission, Supabase upload/RLS
+ * rejection, network errors). When it's hit, log exactly which values the
+ * rule actually compared -- barberId argument vs. the live auth uid, plus
+ * whether a fresh ID token was in hand -- so a future reproduction can
+ * pinpoint the layer immediately instead of re-auditing rules/client code
+ * from scratch.
+ */
+function logIfPermissionDenied(context: string, barberId: string, error: any): void {
+  if (!__DEV__ || error?.code !== 'permission-denied') return;
+  console.warn(
+    `[GalleryRepository] Firestore permission-denied in ${context}`,
+    JSON.stringify({
+      barberId,
+      authUid: firebaseAuth.currentUser?.uid,
+      uidMatchesBarberId: firebaseAuth.currentUser?.uid === barberId,
+      hasCurrentUser: !!firebaseAuth.currentUser,
+    })
+  );
+}
 
 function toIso(value: any): string {
   if (!value) return '';
@@ -65,6 +88,7 @@ export const galleryRepository = {
       if (__DEV__) {
         console.warn('[GalleryRepository getGallery Error]', error?.code, error?.message || error);
       }
+      logIfPermissionDenied('getGallery', barberId, error);
       return [];
     }
   },
@@ -136,6 +160,7 @@ export const galleryRepository = {
       if (__DEV__) {
         console.warn('[GalleryRepository addImage Error]', error?.code, error?.message || error);
       }
+      logIfPermissionDenied('addImage', barberId, error);
       return { success: false, error: { message: error?.message || 'Gagal mengunggah foto galeri.' } };
     }
   },
@@ -152,6 +177,15 @@ export const galleryRepository = {
     try {
       if (!barberId || !imageId) {
         return { success: false, error: { message: 'Parameter tidak lengkap.' } };
+      }
+
+      // Match addImage's Supabase-upload path, which forces a fresh ID token
+      // before its first sensitive call -- deleteDoc had no equivalent, so a
+      // barber whose very first gallery action after a claims repair
+      // (claims-self-heal.service.ts) is a delete rather than an upload
+      // could still be carrying a stale token here.
+      if (firebaseAuth.currentUser) {
+        await firebaseAuth.currentUser.getIdToken(true);
       }
 
       const docRef = doc(firestore, COLLECTION_NAME, imageId);
@@ -179,6 +213,7 @@ export const galleryRepository = {
       if (__DEV__) {
         console.warn('[GalleryRepository deleteImage Error]', error?.code, error?.message || error);
       }
+      logIfPermissionDenied('deleteImage', barberId, error);
       return { success: false, error: { message: error?.message || 'Gagal menghapus foto galeri.' } };
     }
   },
