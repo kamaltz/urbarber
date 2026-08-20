@@ -1,55 +1,20 @@
-import { colors } from '@/constants/colors';
-import { SymbolIcon } from '@/components/ui/SymbolIcon';
-import { Tabs } from 'expo-router';
+import { Stack } from 'expo-router';
 
+/**
+ * Plain route group, not a Tabs navigator: the Barber app's actual tab
+ * switching is handled by BarberBottomNavigation, rendered once at the
+ * (barber)/_layout.tsx root so it stays visible across every main screen
+ * (Dashboard, these four, and analysis/reviews/booking detail) -- an inner
+ * Tabs navigator here would render a second, competing 4-item tab bar with
+ * no Dashboard entry.
+ */
 export default function BarberTabsLayout() {
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: colors.primary[600],
-        tabBarInactiveTintColor: colors.slate[400],
-        tabBarStyle: {
-          borderTopWidth: 1,
-          borderTopColor: colors.slate[100],
-          backgroundColor: '#FFFFFF',
-          paddingTop: 6,
-          paddingBottom: 8,
-          height: 60,
-        },
-        tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: '600',
-        },
-      }}>
-      <Tabs.Screen
-        name="bookings"
-        options={{
-          title: 'Pesanan',
-          tabBarIcon: ({ color }) => <SymbolIcon name="scissors" color={color} size={22} />,
-        }}
-      />
-      <Tabs.Screen
-        name="services"
-        options={{
-          title: 'Layanan',
-          tabBarIcon: ({ color }) => <SymbolIcon name="list.bullet" color={color} size={22} />,
-        }}
-      />
-      <Tabs.Screen
-        name="schedule"
-        options={{
-          title: 'Jadwal',
-          tabBarIcon: ({ color }) => <SymbolIcon name="calendar" color={color} size={22} />,
-        }}
-      />
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: 'Profil',
-          tabBarIcon: ({ color }) => <SymbolIcon name="person.fill" color={color} size={22} />,
-        }}
-      />
-    </Tabs>
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="bookings" />
+      <Stack.Screen name="services" />
+      <Stack.Screen name="schedule" />
+      <Stack.Screen name="profile" />
+    </Stack>
   );
 }

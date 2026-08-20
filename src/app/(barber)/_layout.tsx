@@ -1,5 +1,6 @@
 import { AppButton } from '@/components/ui/AppButton';
 import { Loading } from '@/components/ui/Loading';
+import { BarberBottomNavigation } from '@/components/navigation/BarberBottomNavigation';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { barberRepository } from '@/features/barbers/repository/barber.repository';
 import type { BarberProfile } from '@/features/barbers/types/barber';
@@ -96,17 +97,29 @@ export default function BarberLayout() {
     return <Loading />;
   }
 
+  // Barber's primary bottom navigation (Dashboard/Pesanan/Layanan/Jadwal/Profil)
+  // is rendered once here, outside the Stack, so it stays visible across every
+  // main authenticated Barber screen instead of only on Dashboard -- previously
+  // each screen either lived inside a separate 4-item Tabs navigator with no
+  // Dashboard entry (see (tabs)/_layout.tsx) or outside any navigator at all
+  // (analysis, reviews, booking/[bookingId]), so leaving Dashboard made it
+  // impossible to get back via the nav bar itself.
   return (
-    <Stack
-      screenOptions={{
-        headerShown: false,
-        animation: 'slide_from_right',
-      }}>
-      <Stack.Screen name="home" />
-      <Stack.Screen name="(tabs)" />
-      <Stack.Screen name="booking/[bookingId]" />
-      <Stack.Screen name="analysis" />
-      <Stack.Screen name="reviews" />
-    </Stack>
+    <SafeAreaView className="flex-1 bg-slate-50" edges={['bottom']}>
+      <View className="flex-1">
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            animation: 'slide_from_right',
+          }}>
+          <Stack.Screen name="home" />
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="booking/[bookingId]" />
+          <Stack.Screen name="analysis" />
+          <Stack.Screen name="reviews" />
+        </Stack>
+      </View>
+      <BarberBottomNavigation />
+    </SafeAreaView>
   );
 }
