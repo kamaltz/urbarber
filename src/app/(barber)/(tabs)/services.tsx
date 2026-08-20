@@ -205,7 +205,7 @@ export default function BarberServicesScreen() {
           </View>
           <TouchableOpacity
             onPress={openAddModal}
-            className="rounded-xl bg-[#D2691E] px-3.5 py-2.5 shadow-xs active:bg-[#B05416]">
+            className="h-11 justify-center rounded-xl bg-[#D2691E] px-4 shadow-xs active:bg-[#B05416]">
             <Text className="text-xs font-bold text-white">+ Tambah Layanan</Text>
           </TouchableOpacity>
         </View>
@@ -376,14 +376,14 @@ export default function BarberServicesScreen() {
               <TouchableOpacity
                 onPress={() => setModalVisible(false)}
                 disabled={saving}
-                className="flex-1 h-13 items-center justify-center rounded-xl bg-slate-100 active:bg-slate-200">
+                className="flex-1 h-14 items-center justify-center rounded-xl bg-slate-100 active:bg-slate-200">
                 <Text className="text-xs font-bold text-slate-700">Batal</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
                 onPress={handleSaveService}
                 disabled={saving}
-                className={`flex-1 h-13 items-center justify-center rounded-xl shadow-xs ${
+                className={`flex-1 h-14 items-center justify-center rounded-xl shadow-xs ${
                   saving ? 'bg-slate-300' : 'bg-[#D2691E] active:bg-[#B05416]'
                 }`}>
                 <Text className="text-xs font-bold text-white">

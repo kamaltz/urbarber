@@ -4,6 +4,7 @@
  * opens Explore (the real search+map+results screen) so Home doesn't
  * duplicate search logic; the adjacent filter button opens HomeFilterSheet.
  */
+import { SymbolIcon } from '@/components/ui/SymbolIcon';
 import { Pressable, Text, View } from 'react-native';
 
 interface HomeSearchBarProps {
@@ -34,7 +35,11 @@ export function HomeSearchBar({ onPressSearch, onPressFilter, hasActiveFilter }:
           hasActiveFilter ? 'bg-[#363062] border-[#363062]' : 'bg-white border-slate-200',
         ].join(' ')}
       >
-        <Text className="text-lg">{hasActiveFilter ? '⚙️' : '🎚️'}</Text>
+        <SymbolIcon
+          name="slider.horizontal.3"
+          size={22}
+          color={hasActiveFilter ? '#FFFFFF' : '#363062'}
+        />
       </Pressable>
     </View>
   );

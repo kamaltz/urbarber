@@ -1,4 +1,5 @@
 import { CustomerScreen } from '@/components/navigation/CustomerScreen';
+import { BrandLogo } from '@/components/ui/BrandLogo';
 import { BrandText } from '@/components/ui/BrandText';
 import Constants from 'expo-constants';
 import { ScrollView, Text, View } from 'react-native';
@@ -21,9 +22,7 @@ export default function AboutScreen() {
       <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
         {/* App Branding Banner */}
         <View className="items-center py-6 mb-4 rounded-2xl bg-white border border-slate-200/80 p-6 shadow-xs">
-          <View className="w-20 h-20 rounded-2xl bg-[#363062] items-center justify-center shadow-md mb-3">
-            <Text className="text-3xl font-black text-[#D2691E]">UR</Text>
-          </View>
+          <BrandLogo variant="compact" className="w-20 h-20 rounded-2xl shadow-md mb-3" />
           <BrandText size="lg" className="mb-1" />
           <View className="mt-2 rounded-full bg-[#EDEFFB] px-3.5 py-1">
             <Text className="text-xs font-bold text-[#363062]">

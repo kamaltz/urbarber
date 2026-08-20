@@ -38,6 +38,7 @@ const ANDROID_SYMBOL_MAP: Record<string, AndroidSymbol> = {
   'questionmark.circle': 'help_outline',
   'info.circle': 'info',
   gearshape: 'settings',
+  'slider.horizontal.3': 'tune',
 };
 
 const FALLBACK_ANDROID_SYMBOL: AndroidSymbol = 'help';
