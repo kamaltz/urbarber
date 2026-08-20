@@ -1,13 +1,10 @@
 'use client';
 
 import { useAdminAuth } from '@/features/auth/AdminAuthProvider';
-import { getErrorMessage } from '@/lib/errors';
+import { getFirebaseAuthErrorMessage } from '@/lib/errors';
 import { firebaseAuth } from '@/lib/firebase';
 import { FirebaseError } from 'firebase/app';
-import {
-    AuthErrorCodes,
-    signInWithEmailAndPassword,
-} from 'firebase/auth';
+import { signInWithEmailAndPassword } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import styles from './login.module.css';
@@ -34,14 +31,14 @@ export default function LoginPage() {
       await signInWithEmailAndPassword(firebaseAuth, email, password);
       // Auth state change will handle redirect via useEffect in layout
     } catch (err) {
-      if (err instanceof FirebaseError && err.code === AuthErrorCodes.USER_DELETED) {
-        setError('Akun tidak ditemukan.');
-      } else if (err instanceof FirebaseError && err.code === AuthErrorCodes.INVALID_PASSWORD) {
-        setError('Email atau password salah.');
-      } else if (err instanceof FirebaseError && err.code === AuthErrorCodes.USER_DISABLED) {
-        setError('Akun telah dinonaktifkan.');
+      // Every Firebase Auth error code is mapped to a friendly Indonesian
+      // message -- the raw FirebaseError.message (e.g. "Firebase: Error
+      // (auth/api-key-not-valid.-please-pass-a-valid-api-key.).") must never
+      // reach this screen, regardless of which specific error comes back.
+      if (err instanceof FirebaseError) {
+        setError(getFirebaseAuthErrorMessage(err));
       } else {
-        setError(getErrorMessage(err, 'Login gagal. Coba lagi.'));
+        setError('Login gagal. Coba lagi.');
       }
     } finally {
       setLoading(false);
