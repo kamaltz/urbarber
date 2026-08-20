@@ -12,7 +12,7 @@ import { MAP_CONFIG } from '@/config/map.config';
 import { Camera, Map, Marker } from '@maplibre/maplibre-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
-import { router, useFocusEffect } from 'expo-router';
+import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Linking, RefreshControl, ScrollView, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
@@ -565,13 +565,6 @@ export default function BarberProfileScreen() {
           variant="primary"
           disabled={saving || uploading}
           className="mb-4 w-full"
-        />
-
-        <AppButton
-          label="📱 Beralih ke Mode Pelanggan (Customer)"
-          onPress={() => router.replace('/(customer)/home' as any)}
-          variant="secondary"
-          className="mb-3 w-full border-slate-300 bg-white"
         />
 
         <AppButton label="Keluar Akun" onPress={logout} variant="secondary" className="mb-8 w-full" />
