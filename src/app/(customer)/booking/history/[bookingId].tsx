@@ -1,4 +1,5 @@
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useCallback } from 'react';
 import {
     KeyboardAvoidingView,
     Platform,
@@ -19,7 +20,13 @@ import { useBookingDetail } from '@/features/bookings/hooks/use-booking-detail';
 export default function BookingHistoryDetailScreen() {
   const { bookingId } = useLocalSearchParams<{ bookingId: string }>();
 
-  const { booking, loading, error } = useBookingDetail(bookingId || '');
+  const { booking, loading, error, refresh, hasReviewed } = useBookingDetail(bookingId || '');
+
+  useFocusEffect(
+    useCallback(() => {
+      refresh();
+    }, [refresh])
+  );
 
   if (loading) {
     return (
@@ -119,15 +126,16 @@ export default function BookingHistoryDetailScreen() {
               <AppButton
                 label="Pesan Layanan Ini Lagi"
                 onPress={() => router.push(`/(customer)/booking/options`)}
-                className="h-13 rounded-xl bg-[#D2691E]"
+                className="h-14 rounded-xl bg-[#D2691E]"
               />
 
               {booking.status === 'completed' && (
                 <AppButton
-                  label="Beri Ulasan Barber"
+                  label={hasReviewed === true ? 'Sudah Diulas' : 'Beri Ulasan Barber'}
                   onPress={() => router.push(`/(customer)/booking/rating/${booking.id}`)}
                   variant="secondary"
-                  className="h-13 rounded-xl border-[#363062]/30"
+                  disabled={hasReviewed === true}
+                  className="h-14 rounded-xl border-[#363062]/30"
                 />
               )}
             </View>

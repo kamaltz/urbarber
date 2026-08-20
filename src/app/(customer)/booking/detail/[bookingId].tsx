@@ -1,5 +1,5 @@
-import { router, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useCallback, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -63,9 +63,18 @@ function isHomeService(booking: Booking): boolean {
 export default function BookingDetailScreen() {
   const { bookingId } = useLocalSearchParams<{ bookingId: string }>();
 
-  const { booking, loading, error, refresh, cancelBooking } = useBookingDetail(bookingId || '');
+  const { booking, loading, error, refresh, cancelBooking, hasReviewed } = useBookingDetail(bookingId || '');
   const [chatInitializing, setChatInitializing] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+
+  // Re-derive booking + review state from the backend every time this screen
+  // regains focus -- e.g. returning from the rating screen after submitting
+  // a review, or after a barber accepts/completes the booking elsewhere.
+  useFocusEffect(
+    useCallback(() => {
+      refresh();
+    }, [refresh])
+  );
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -356,9 +365,16 @@ export default function BookingDetailScreen() {
                 {booking.status === 'completed' ? (
                   <Pressable
                     onPress={() => router.push(`/(customer)/booking/rating/${booking.id}` as any)}
-                    className="flex-1 items-center gap-1.5 rounded-xl bg-white p-3 border border-slate-200/80 shadow-xs active:bg-slate-50">
-                    <Text className="text-xl">⭐</Text>
-                    <Text className="text-xs font-bold text-[#363062]">Nilai Layanan</Text>
+                    disabled={hasReviewed === true}
+                    className={`flex-1 items-center gap-1.5 rounded-xl p-3 border shadow-xs ${
+                      hasReviewed === true
+                        ? 'bg-slate-100 border-slate-200 opacity-70'
+                        : 'bg-white border-slate-200/80 active:bg-slate-50'
+                    }`}>
+                    <Text className="text-xl">{hasReviewed === true ? '✅' : '⭐'}</Text>
+                    <Text className={`text-xs font-bold ${hasReviewed === true ? 'text-slate-500' : 'text-[#363062]'}`}>
+                      {hasReviewed === true ? 'Sudah Diulas' : 'Nilai Layanan'}
+                    </Text>
                   </Pressable>
                 ) : null}
 

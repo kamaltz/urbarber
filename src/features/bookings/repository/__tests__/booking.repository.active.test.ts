@@ -69,7 +69,9 @@ describe('bookingRepository.getActiveBookings', () => {
     await bookingRepository.getActiveBookings('real-firebase-uid-123');
 
     expect(whereMock).toHaveBeenCalledWith('customerId', '==', 'real-firebase-uid-123');
-    expect(whereMock).toHaveBeenCalledWith('status', 'in', ['pending', 'accepted', 'in_progress']);
+    expect(whereMock).toHaveBeenCalledWith('status', 'in', [
+      'pending', 'accepted', 'in_progress', 'booked', 'waiting', 'approved', 'on_process', 'processing',
+    ]);
   });
 
   it('2. an empty customerId short-circuits without calling Firestore', async () => {
@@ -100,6 +102,17 @@ describe('bookingRepository.getActiveBookings', () => {
 
     expect(result).toEqual([]);
   });
+
+  it('4b. a legacy "on_process" status document (raw stored value predating the canonical enum) is included and normalized to in_progress', async () => {
+    mockBookingsSnapshot([
+      { id: 'b-legacy', data: { customerId: 'cust-1', barberId: 'barber-1', serviceId: 'svc-1', status: 'on_process', paymentStatus: 'paid' } },
+    ]);
+
+    const result = await bookingRepository.getActiveBookings('cust-1');
+
+    expect(result).toHaveLength(1);
+    expect(result[0].status).toBe('in_progress');
+  });
 });
 
 describe('bookingRepository.getBookingHistory', () => {
@@ -116,7 +129,9 @@ describe('bookingRepository.getBookingHistory', () => {
     await bookingRepository.getBookingHistory('real-firebase-uid-123');
 
     expect(whereMock).toHaveBeenCalledWith('customerId', '==', 'real-firebase-uid-123');
-    expect(whereMock).toHaveBeenCalledWith('status', 'in', ['completed', 'cancelled', 'rejected']);
+    expect(whereMock).toHaveBeenCalledWith('status', 'in', [
+      'completed', 'cancelled', 'rejected', 'finished', 'canceled', 'declined',
+    ]);
   });
 
   it('6. a completed booking maps through with status "completed" intact', async () => {
@@ -126,6 +141,17 @@ describe('bookingRepository.getBookingHistory', () => {
 
     const result = await bookingRepository.getBookingHistory('cust-1');
 
+    expect(result[0].status).toBe('completed');
+  });
+
+  it('6b. a legacy "finished" status document (raw stored value predating the canonical enum) is included and normalized to completed -- previously matched neither the active nor history Firestore query and silently disappeared', async () => {
+    mockBookingsSnapshot([
+      { id: 'b-legacy', data: { customerId: 'cust-1', barberId: 'barber-1', status: 'finished', paymentStatus: 'paid', totalPrice: 30000 } },
+    ]);
+
+    const result = await bookingRepository.getBookingHistory('cust-1');
+
+    expect(result).toHaveLength(1);
     expect(result[0].status).toBe('completed');
   });
 });

@@ -90,6 +90,38 @@ export function mapLegacyBookingStatus(rawStatus?: string): BookingStatus {
   }
 }
 
+/**
+ * Raw stored `status` values (canonical + legacy) that map to the "active"
+ * bucket (pending/accepted/in_progress) per mapLegacyBookingStatus above.
+ * Used for Firestore `where('status','in',...)` queries, which match the
+ * raw string as stored -- they cannot run mapLegacyBookingStatus() server
+ * side, so legacy values must be listed explicitly or matching documents
+ * silently disappear from both the active and history queries.
+ */
+export const ACTIVE_BOOKING_STATUS_VALUES = [
+  "pending",
+  "accepted",
+  "in_progress",
+  "booked",
+  "waiting",
+  "approved",
+  "on_process",
+  "processing",
+] as const;
+
+/**
+ * Raw stored `status` values (canonical + legacy) that map to the "history"
+ * bucket (completed/cancelled/rejected). See ACTIVE_BOOKING_STATUS_VALUES.
+ */
+export const HISTORY_BOOKING_STATUS_VALUES = [
+  "completed",
+  "cancelled",
+  "rejected",
+  "finished",
+  "canceled",
+  "declined",
+] as const;
+
 export interface User {
   id: string;
   name: string;

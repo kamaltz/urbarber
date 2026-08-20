@@ -1,5 +1,6 @@
 import { Pressable, Text, TextInput, View } from 'react-native';
 import { useState } from 'react';
+import { AppButton } from '@/components/ui/AppButton';
 
 export type ReviewFormProps = {
   onSubmit: (data: { rating: number; reviewText: string; tags: string[] }) => void;
@@ -14,11 +15,6 @@ export function ReviewForm({ onSubmit, loading = false }: ReviewFormProps) {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
 
   const handleSubmit = () => {
-    if (rating === 0) {
-      alert('Silakan pilih rating');
-      return;
-    }
-
     onSubmit({
       rating,
       reviewText,
@@ -97,16 +93,14 @@ export function ReviewForm({ onSubmit, loading = false }: ReviewFormProps) {
       </View>
 
       {/* Submit Action Button */}
-      <Pressable
+      <AppButton
+        label={loading ? 'Mengirim Ulasan...' : 'Kirim Ulasan Barber'}
         onPress={handleSubmit}
-        disabled={loading || rating === 0}
-        className={`h-13 items-center justify-center rounded-xl shadow-xs mt-2 ${
-          loading || rating === 0 ? 'bg-slate-300' : 'bg-[#D2691E] active:bg-[#B05416]'
-        }`}>
-        <Text className="text-base font-bold text-white">
-          {loading ? 'Mengirim Ulasan...' : 'Kirim Ulasan Barber'}
-        </Text>
-      </Pressable>
+        disabled={rating === 0}
+        loading={loading}
+        size="lg"
+        className="mt-2 rounded-xl shadow-xs"
+      />
     </View>
   );
 }

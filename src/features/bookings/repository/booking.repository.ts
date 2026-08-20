@@ -15,7 +15,7 @@ import {
   where,
 } from 'firebase/firestore';
 import { firestore } from '@/lib/firebase';
-import { BookingStatus } from '@/types/domain';
+import { ACTIVE_BOOKING_STATUS_VALUES, BookingStatus, HISTORY_BOOKING_STATUS_VALUES } from '@/types/domain';
 import { paymentApiService } from '@/features/payments/services/payment-api.service';
 import { availabilityApiService } from '../api/availability-api.service';
 import { mapRawBookingToDomain } from '../utils/map-booking';
@@ -64,7 +64,7 @@ class BookingRepository {
       const q = query(
         collection(firestore, 'bookings'),
         where('customerId', '==', customerId),
-        where('status', 'in', ['pending', 'accepted', 'in_progress']),
+        where('status', 'in', [...ACTIVE_BOOKING_STATUS_VALUES]),
       );
 
       const snapshot = await getDocs(q);
@@ -88,7 +88,7 @@ class BookingRepository {
       const q = query(
         collection(firestore, 'bookings'),
         where('customerId', '==', customerId),
-        where('status', 'in', ['completed', 'cancelled', 'rejected']),
+        where('status', 'in', [...HISTORY_BOOKING_STATUS_VALUES]),
       );
 
       const snapshot = await getDocs(q);

@@ -1,6 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import {
+    Alert,
     KeyboardAvoidingView,
     Platform,
     Pressable,
@@ -21,7 +22,7 @@ import { bookingRepository } from '@/features/bookings/repository/booking.reposi
 export default function BookingRatingScreen() {
   const { bookingId } = useLocalSearchParams<{ bookingId: string }>();
   const { user } = useAuth();
-  const { booking, loading, error } = useBookingDetail(bookingId || '');
+  const { booking, loading, error, hasReviewed } = useBookingDetail(bookingId || '');
   const [submitting, setSubmitting] = useState(false);
 
   if (loading) {
@@ -43,6 +44,31 @@ export default function BookingRatingScreen() {
             label="Kembali"
             onPress={() => router.back()}
             className="mt-4 h-12 rounded-xl px-8 bg-white"
+            textClassName="text-[#363062]"
+          />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Re-derived from the backend (bookingRepository.getBookingReview), not a
+  // local-only flag -- prevents reaching this screen with a resubmittable
+  // form when a review already exists (e.g. re-navigating here directly
+  // after a previous successful submission).
+  if (hasReviewed === true) {
+    return (
+      <SafeAreaView className="flex-1 bg-[#363062]">
+        <View className="flex-1 items-center justify-center px-5">
+          <Text className="text-4xl mb-3">✅</Text>
+          <Text className="text-center text-lg font-bold text-white mb-2">Sudah Diulas</Text>
+          <Text className="text-center text-sm text-white/70 mb-4">
+            Anda sudah memberikan ulasan untuk pemesanan ini. Terima kasih!
+          </Text>
+          <AppButton
+            label="Kembali"
+            onPress={() => router.back()}
+            className="mt-2 h-12 rounded-xl px-8 bg-white"
+            textClassName="text-[#363062]"
           />
         </View>
       </SafeAreaView>
@@ -55,7 +81,7 @@ export default function BookingRatingScreen() {
     tags: string[];
   }) => {
     if (!user?.uid || !booking.barberId) {
-      alert('Sesi atau data booking tidak valid. Silakan muat ulang halaman.');
+      Alert.alert('Gagal', 'Sesi atau data booking tidak valid. Silakan muat ulang halaman.');
       return;
     }
 
@@ -69,13 +95,23 @@ export default function BookingRatingScreen() {
       });
 
       if (result.success) {
-        alert('Terima kasih atas ulasan Anda!');
-        router.back();
+        Alert.alert('Terima Kasih', 'Ulasan Anda berhasil dikirim!', [
+          { text: 'OK', onPress: () => router.back() },
+        ]);
+      } else if (result.error?.code === 'ALREADY_REVIEWED') {
+        // Backend rejects a second review for the same booking with 409
+        // ALREADY_REVIEWED -- surface that as a normal info message, not an
+        // error, and send the user back since there is nothing left to
+        // retry (the pre-check below should normally prevent reaching this
+        // screen with a stale form in the first place).
+        Alert.alert('Info', result.error.message || 'Booking ini sudah diberi ulasan.', [
+          { text: 'OK', onPress: () => router.back() },
+        ]);
       } else {
-        alert(result.error?.message || 'Gagal mengirim ulasan');
+        Alert.alert('Gagal', result.error?.message || 'Gagal mengirim ulasan. Silakan coba lagi.');
       }
     } catch (err) {
-      alert('Terjadi kesalahan. Coba lagi.');
+      Alert.alert('Error', 'Terjadi kesalahan. Coba lagi.');
     } finally {
       setSubmitting(false);
     }
