@@ -33,6 +33,24 @@ export default function AccountScreen() {
     profile?.profileImagePath || undefined
   );
 
+  // profile resolves asynchronously after mount (useCustomerProfile's getDoc),
+  // so the useState initializers above capture stale/blank values on first
+  // render. Resync local form state once the canonical profile arrives --
+  // done here (adjusting state during render, comparing against the last
+  // profile reference seen) rather than in a useEffect, per React's own
+  // guidance for "resetting/deriving state when a value changes": an Effect
+  // would call setState synchronously on its first run, causing an extra
+  // render pass; this bails out in the same render instead.
+  const [lastSyncedProfile, setLastSyncedProfile] = useState<typeof profile>(null);
+  if (profile && profile !== lastSyncedProfile) {
+    setLastSyncedProfile(profile);
+    setName(profile.name || user?.displayName || '');
+    setPhone(profile.phone || user?.phoneNumber || '');
+    setLocation(profile.location || '');
+    setAvatarUrl(profile.profileImageUrl || user?.photoURL || undefined);
+    setAvatarPath(profile.profileImagePath || undefined);
+  }
+
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);

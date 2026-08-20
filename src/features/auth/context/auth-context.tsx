@@ -20,6 +20,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let phoneNumber: string | undefined = currentUser.phoneNumber || undefined;
     let photoURL: string | undefined = currentUser.photoURL || undefined;
     let profileImagePath: string | undefined = undefined;
+    let displayName: string | undefined = currentUser.displayName || undefined;
     let isUninitialized = false;
     let bootstrapError: AuthBootstrapErrorCode | undefined;
 
@@ -43,6 +44,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (data.role) role = data.role as UserRole;
         if (data.status) status = data.status as UserStatus;
         if (data.phoneNumber) phoneNumber = data.phoneNumber;
+        if (data.name || data.fullName) displayName = data.name || data.fullName;
         if (data.profileImageUrl || data.profileImage || data.avatarUrl) {
           photoURL = data.profileImageUrl || data.profileImage || data.avatarUrl;
         }
@@ -70,7 +72,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return {
       uid: currentUser.uid,
       email: currentUser.email,
-      displayName: currentUser.displayName || currentUser.email?.split('@')[0] || 'User',
+      displayName: displayName || currentUser.email?.split('@')[0] || 'User',
       phoneNumber,
       photoURL: photoURL || currentUser.photoURL || undefined,
       profileImagePath,
