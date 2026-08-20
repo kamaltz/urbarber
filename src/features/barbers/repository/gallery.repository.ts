@@ -8,7 +8,42 @@
  * barber-owned, publicly-readable data. Shared by both the barber's own
  * gallery management screen and the customer-facing Barber Detail screen --
  * the read query is identical for both, gated by ownership only on writes.
+ *
+ * Root-cause trace for the reported live "Missing or insufficient
+ * permissions" failure (a Firestore-SDK-specific message, not Supabase --
+ * Supabase Storage errors go through handleStorageError in storage.service.ts
+ * and never produce this exact string):
+ *
+ *   1. firestore.rules' barberGallery create/delete both check
+ *      request.auth.token.app_role == 'barber' (via isBarber()) -- the
+ *      Firebase custom claim on the ID token.
+ *   2. The rest of the app (AuthProvider/auth-context.tsx, (barber)/_layout.tsx's
+ *      navigation gating) treats a signed-in user as "a barber" based on the
+ *      Firestore users/{uid}.role field, NOT the token claim.
+ *   3. claims-self-heal.service.ts repairs a stale/missing claim once per
+ *      auth-state-change, but if that repair attempt itself fails (e.g. a
+ *      transient network error hitting POST /api/auth/initialize-account),
+ *      the result is recorded as bootstrapError:'ACCOUNT_CLAIMS_REPAIR_FAILED'
+ *      -- which nothing in the navigation layer currently checks or acts on.
+ *   4. A barber in that state sails through every Firestore-role-gated
+ *      screen (their role reads fine from Firestore) right up until a
+ *      Firestore-RULES-role-gated WRITE -- barberGallery create/delete is
+ *      exactly that -- which then fails with permission-denied and gives no
+ *      indication why, since every other barber write path in this app goes
+ *      through the backend (Admin SDK, bypasses rules entirely) rather than
+ *      a direct client Firestore write gated by isBarber().
+ *
+ * ensureBarberClaims() below closes this gap: before either Firestore
+ * mutation, it re-checks the current (cached, no network round-trip in the
+ * common case) token claims and, only if they're actually wrong, runs one
+ * on-demand repair + verified refresh -- reusing the exact same, already
+ * -tested claims-self-heal.service.ts logic AuthProvider uses, rather than
+ * duplicating it. barberId/Firebase-UID identity was independently confirmed
+ * to match: barbers/{uid} documents are created with uid as the doc id
+ * (backend/vercel/api/app.ts), so `barberId` here and `request.auth.uid` are
+ * the same value in every normal call site.
  */
+import { claimsNeedRepair, selfHealClaimsIfNeeded } from '@/features/auth/services/claims-self-heal.service';
 import { storageService } from '@/features/services/storage.service';
 import { PUBLIC_MEDIA_BUCKET } from '@/features/services/storage.config';
 import { firebaseAuth, firestore } from '@/lib/firebase';
@@ -26,6 +61,68 @@ import {
 import { MAX_BARBER_GALLERY_IMAGES, type BarberGalleryImage } from '../types/barber';
 
 const COLLECTION_NAME = 'barberGallery';
+
+/** Distinct internal stage identifiers (never shown to users) so dev logs
+ * and error paths can tell exactly which layer failed without guessing from
+ * a generic message. Kept out of the user-facing error, which always stays
+ * a short, readable Indonesian sentence. */
+type GalleryFailureStage =
+  | 'GALLERY_AUTH_MISSING'
+  | 'GALLERY_CLAIMS_REPAIR_FAILED'
+  | 'GALLERY_STORAGE_UPLOAD_FAILED'
+  | 'GALLERY_METADATA_PERMISSION_DENIED'
+  | 'GALLERY_METADATA_WRITE_FAILED';
+
+/**
+ * Structured, non-secret diagnostic logging for each stage of the gallery
+ * upload/delete pipeline. Never logs the ID token, Supabase key, or any
+ * other credential -- only ids, booleans, and error codes.
+ */
+function logStage(stage: string, detail: Record<string, unknown>): void {
+  if (!__DEV__) return;
+  console.log(`[GALLERY][${stage}]`, JSON.stringify(detail));
+}
+
+/**
+ * Defense-in-depth against the exact permission-denied failure mode traced
+ * in this file's header comment. Cheap in the common case: getIdTokenResult
+ * (false) reads the already-cached token with no network round-trip, so
+ * this only escalates to an actual self-heal call (and the accompanying
+ * network round-trip) when the claims genuinely need repair -- never on
+ * every render, only once per mutation attempt.
+ */
+async function ensureBarberClaims(): Promise<{ ok: true } | { ok: false; stage: GalleryFailureStage; message: string }> {
+  const user = firebaseAuth.currentUser;
+  if (!user) {
+    return { ok: false, stage: 'GALLERY_AUTH_MISSING', message: 'Sesi Anda telah berakhir. Silakan login kembali.' };
+  }
+
+  const tokenResult = await user.getIdTokenResult(false);
+  logStage('AUTH', {
+    uid: user.uid,
+    hasRoleClaim: 'role' in tokenResult.claims,
+    hasAppRoleClaim: 'app_role' in tokenResult.claims,
+    appRole: tokenResult.claims.app_role ?? null,
+  });
+
+  if (!claimsNeedRepair(tokenResult.claims, 'barber')) {
+    return { ok: true };
+  }
+
+  logStage('AUTH', { uid: user.uid, claimsNeedRepair: true, attemptingSelfHeal: true });
+  const heal = await selfHealClaimsIfNeeded(user, tokenResult.claims, 'barber');
+  logStage('AUTH', { uid: user.uid, selfHealAttempted: heal?.attempted ?? false, selfHealOk: heal?.claimsOk ?? false });
+
+  if (heal?.claimsOk) {
+    return { ok: true };
+  }
+
+  return {
+    ok: false,
+    stage: 'GALLERY_CLAIMS_REPAIR_FAILED',
+    message: 'Sesi akun Anda perlu diperbarui. Silakan logout lalu login kembali sebelum mencoba lagi.',
+  };
+}
 
 /**
  * "Missing or insufficient permissions" is Firestore-SDK-specific text
@@ -106,10 +203,16 @@ export const galleryRepository = {
     barberId: string,
     localUri: string,
     options?: { caption?: string; contentType?: string }
-  ): Promise<{ success: boolean; image?: BarberGalleryImage; error?: { message: string } }> {
+  ): Promise<{ success: boolean; image?: BarberGalleryImage; error?: { message: string; stage?: string } }> {
     try {
       if (!barberId || !localUri) {
         return { success: false, error: { message: 'Parameter tidak lengkap.' } };
+      }
+
+      const claimsCheck = await ensureBarberClaims();
+      if (!claimsCheck.ok) {
+        logStage(claimsCheck.stage, { barberId });
+        return { success: false, error: { message: claimsCheck.message, stage: claimsCheck.stage } };
       }
 
       const existing = await this.getGallery(barberId);
@@ -121,10 +224,28 @@ export const galleryRepository = {
       }
 
       const filename = `gallery-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
-      const uploadRes = await storageService.uploadPublicFile(localUri, 'barber', {
-        filename: `gallery/${filename}`,
-        contentType: options?.contentType || 'image/jpeg',
-      });
+
+      let uploadRes: Awaited<ReturnType<typeof storageService.uploadPublicFile>>;
+      try {
+        uploadRes = await storageService.uploadPublicFile(localUri, 'barber', {
+          filename: `gallery/${filename}`,
+          contentType: options?.contentType || 'image/jpeg',
+        });
+        logStage('SUPABASE_UPLOAD', { bucket: PUBLIC_MEDIA_BUCKET, objectPath: uploadRes.path, success: true });
+      } catch (uploadError: any) {
+        logStage('SUPABASE_UPLOAD', {
+          bucket: PUBLIC_MEDIA_BUCKET,
+          success: false,
+          errorCode: uploadError?.code ?? uploadError?.statusCode ?? null,
+        });
+        return {
+          success: false,
+          error: {
+            message: uploadError?.message || 'Gagal mengunggah foto ke penyimpanan.',
+            stage: 'GALLERY_STORAGE_UPLOAD_FAILED' satisfies GalleryFailureStage,
+          },
+        };
+      }
 
       const now = Timestamp.now();
       const docData = {
@@ -139,11 +260,26 @@ export const galleryRepository = {
 
       try {
         const docRef = await addDoc(collection(firestore, COLLECTION_NAME), docData);
+        logStage('FIRESTORE_WRITE', {
+          collection: COLLECTION_NAME,
+          documentId: docRef.id,
+          uid: firebaseAuth.currentUser?.uid,
+          barberId,
+          success: true,
+        });
         return {
           success: true,
           image: mapGalleryDoc(docRef.id, docData),
         };
       } catch (firestoreError: any) {
+        logStage('FIRESTORE_WRITE', {
+          collection: COLLECTION_NAME,
+          uid: firebaseAuth.currentUser?.uid,
+          barberId,
+          success: false,
+          errorCode: firestoreError?.code ?? null,
+        });
+
         // The object already exists in Supabase but has no Firestore record --
         // clean it up rather than leaving an orphaned, unmanageable file the
         // barber can never see or delete through the app.
@@ -161,7 +297,12 @@ export const galleryRepository = {
         console.warn('[GalleryRepository addImage Error]', error?.code, error?.message || error);
       }
       logIfPermissionDenied('addImage', barberId, error);
-      return { success: false, error: { message: error?.message || 'Gagal mengunggah foto galeri.' } };
+      const stage: GalleryFailureStage =
+        error?.code === 'permission-denied' ? 'GALLERY_METADATA_PERMISSION_DENIED' : 'GALLERY_METADATA_WRITE_FAILED';
+      return {
+        success: false,
+        error: { message: 'Gagal mengunggah foto galeri. Silakan coba lagi.', stage },
+      };
     }
   },
 
@@ -173,19 +314,16 @@ export const galleryRepository = {
    * since leaving an orphaned storage object is preferable to a gallery entry
    * the barber can no longer manage.
    */
-  async deleteImage(barberId: string, imageId: string): Promise<{ success: boolean; error?: { message: string } }> {
+  async deleteImage(barberId: string, imageId: string): Promise<{ success: boolean; error?: { message: string; stage?: string } }> {
     try {
       if (!barberId || !imageId) {
         return { success: false, error: { message: 'Parameter tidak lengkap.' } };
       }
 
-      // Match addImage's Supabase-upload path, which forces a fresh ID token
-      // before its first sensitive call -- deleteDoc had no equivalent, so a
-      // barber whose very first gallery action after a claims repair
-      // (claims-self-heal.service.ts) is a delete rather than an upload
-      // could still be carrying a stale token here.
-      if (firebaseAuth.currentUser) {
-        await firebaseAuth.currentUser.getIdToken(true);
+      const claimsCheck = await ensureBarberClaims();
+      if (!claimsCheck.ok) {
+        logStage(claimsCheck.stage, { barberId, imageId });
+        return { success: false, error: { message: claimsCheck.message, stage: claimsCheck.stage } };
       }
 
       const docRef = doc(firestore, COLLECTION_NAME, imageId);
@@ -198,7 +336,28 @@ export const galleryRepository = {
         return { success: false, error: { message: 'Anda tidak memiliki akses untuk menghapus foto ini.' } };
       }
 
-      await deleteDoc(docRef);
+      try {
+        await deleteDoc(docRef);
+        logStage('FIRESTORE_WRITE', {
+          collection: COLLECTION_NAME,
+          documentId: imageId,
+          uid: firebaseAuth.currentUser?.uid,
+          barberId,
+          op: 'delete',
+          success: true,
+        });
+      } catch (firestoreError: any) {
+        logStage('FIRESTORE_WRITE', {
+          collection: COLLECTION_NAME,
+          documentId: imageId,
+          uid: firebaseAuth.currentUser?.uid,
+          barberId,
+          op: 'delete',
+          success: false,
+          errorCode: firestoreError?.code ?? null,
+        });
+        throw firestoreError;
+      }
 
       try {
         await storageService.deleteFile(PUBLIC_MEDIA_BUCKET, data.storagePath);
@@ -214,7 +373,12 @@ export const galleryRepository = {
         console.warn('[GalleryRepository deleteImage Error]', error?.code, error?.message || error);
       }
       logIfPermissionDenied('deleteImage', barberId, error);
-      return { success: false, error: { message: error?.message || 'Gagal menghapus foto galeri.' } };
+      const stage: GalleryFailureStage =
+        error?.code === 'permission-denied' ? 'GALLERY_METADATA_PERMISSION_DENIED' : 'GALLERY_METADATA_WRITE_FAILED';
+      return {
+        success: false,
+        error: { message: 'Gagal menghapus foto galeri. Silakan coba lagi.', stage },
+      };
     }
   },
 };

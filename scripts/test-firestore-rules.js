@@ -1815,6 +1815,31 @@ async function runRulesTests() {
       );
     });
 
+    // 95b. barberGallery: an unauthenticated request can never create or
+    // delete an entry, even one that (if it existed) it would otherwise be
+    // "eligible" to read publicly.
+    await test('95b. Unauthenticated user cannot create or delete a barberGallery entry', async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('barberGallery').doc('gal_unauth_1').set({
+          barberId: 'barb_gallery_unauth_owner',
+          storagePath: 'barb_gallery_unauth_owner/barber/gallery/photo1.jpg',
+          publicUrl: 'https://example.com/photo1.jpg',
+          sortOrder: 0,
+        });
+      });
+
+      const unauthDb = testEnv.unauthenticatedContext().firestore();
+      await assertFails(
+        unauthDb.collection('barberGallery').add({
+          barberId: 'barb_gallery_unauth_owner',
+          storagePath: 'barb_gallery_unauth_owner/barber/gallery/photo2.jpg',
+          publicUrl: 'https://example.com/photo2.jpg',
+          sortOrder: 1,
+        }),
+      );
+      await assertFails(unauthDb.collection('barberGallery').doc('gal_unauth_1').delete());
+    });
+
     // 96-100. Chat archive/delete: participantState.<uid>.{archived,deleted,updatedAt}
     // shares the conversations update path with message-send metadata. A
     // participant may write ONLY their own key; the other participant's copy,

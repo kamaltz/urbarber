@@ -135,6 +135,9 @@ export default function BarberProfileScreen() {
 
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (__DEV__) {
+        console.log('[GALLERY][PICKER]', JSON.stringify({ permissionGranted: permission.granted }));
+      }
       if (!permission.granted) {
         showGalleryPermissionDeniedAlert();
         return;
@@ -146,6 +149,9 @@ export default function BarberProfileScreen() {
         quality: 0.8,
       });
 
+      if (__DEV__) {
+        console.log('[GALLERY][PICKER]', JSON.stringify({ canceled: pickerResult.canceled }));
+      }
       if (pickerResult.canceled || !pickerResult.assets?.[0]?.uri) return;
 
       setGalleryUploading(true);
@@ -155,8 +161,9 @@ export default function BarberProfileScreen() {
 
       if (result.success && result.image) {
         setGallery((prev) => [...prev, result.image!]);
+        Alert.alert('Berhasil', 'Foto berhasil ditambahkan ke galeri.');
       } else {
-        Alert.alert('Gagal Upload', result.error?.message || 'Gagal mengunggah foto galeri.');
+        Alert.alert('Gagal Upload', result.error?.message || 'Gagal mengunggah foto. Silakan coba lagi.');
       }
     } catch (err: any) {
       Alert.alert('Error', err?.message || 'Terjadi kesalahan sistem.');
@@ -177,7 +184,7 @@ export default function BarberProfileScreen() {
           if (result.success) {
             setGallery((prev) => prev.filter((img) => img.imageId !== image.imageId));
           } else {
-            Alert.alert('Gagal', result.error?.message || 'Gagal menghapus foto.');
+            Alert.alert('Gagal', result.error?.message || 'Gagal menghapus foto. Silakan coba lagi.');
           }
           setDeletingImageId(null);
         },
