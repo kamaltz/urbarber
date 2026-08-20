@@ -77,7 +77,7 @@ describe('isDateInUnavailableRanges', () => {
   });
 
   it('a malformed range (missing start/end) never matches, rather than throwing', () => {
-    const ranges = [{ start: '2026-12-24' }, {}, { end: '2026-12-26' }] as UnavailableDateRange[];
+    const ranges = [{ start: '2026-12-24' }, {}, { end: '2026-12-26' }] as unknown as UnavailableDateRange[];
     expect(() => isDateInUnavailableRanges('2026-12-24', ranges)).not.toThrow();
     expect(isDateInUnavailableRanges('2026-12-24', ranges)).toBe(false);
   });
