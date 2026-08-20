@@ -3,6 +3,7 @@
  */
 
 import { Pressable, Text, View } from 'react-native';
+import { buildCalendarGrid } from '../utils/calendar-grid';
 import { getZonedToday } from '../utils/slot-datetime';
 
 export type DatePickerProps = {
@@ -40,11 +41,7 @@ export function DatePicker({
   const currentDate = startDate ?? new Date(todayYear, todayMonth - 1, todayDay);
   const daysInMonth = getDaysInMonth(currentDate);
   const firstDay = getFirstDayOfMonth(currentDate);
-  const days: (number | null)[] = Array(firstDay).fill(null);
-
-  for (let i = 1; i <= daysInMonth; i++) {
-    days.push(i);
-  }
+  const days = buildCalendarGrid(daysInMonth, firstDay);
 
   const formatDateString = (year: number, month: number, day: number): string => {
     return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;

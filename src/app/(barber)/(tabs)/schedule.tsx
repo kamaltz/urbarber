@@ -4,7 +4,7 @@ import { Loading } from '@/components/ui/Loading';
 import { SymbolIcon } from '@/components/ui/SymbolIcon';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { barberRepository } from '@/features/barbers/repository/barber.repository';
-import type { BarberScheduleDay } from '@/features/barbers/types/barber';
+import type { BarberScheduleDay, UnavailableDateRange } from '@/features/barbers/types/barber';
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, RefreshControl, ScrollView, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
@@ -22,6 +22,14 @@ const DAY_LABELS: Record<string, string> = {
 
 const DEFAULT_SCHEDULE: BarberScheduleDay[] = DEFAULT_BARBER_SCHEDULE_DAYS;
 
+/** Format-example placeholder date, always relative to today rather than a
+ * fixed year, so it never looks stale in a future year. */
+function exampleFutureDateStr(daysFromNow: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + daysFromNow);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 export default function BarberScheduleScreen() {
   const { user } = useAuth();
   const barberId = user?.uid || '';
@@ -29,6 +37,9 @@ export default function BarberScheduleScreen() {
   const [scheduleDays, setScheduleDays] = useState<BarberScheduleDay[]>(DEFAULT_SCHEDULE);
   const [unavailableDates, setUnavailableDates] = useState<string[]>([]);
   const [newOffDate, setNewOffDate] = useState<string>('');
+  const [unavailableDateRanges, setUnavailableDateRanges] = useState<UnavailableDateRange[]>([]);
+  const [newRangeStart, setNewRangeStart] = useState<string>('');
+  const [newRangeEnd, setNewRangeEnd] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
   const [saving, setSaving] = useState<boolean>(false);
   const [refreshing, setRefreshing] = useState<boolean>(false);
@@ -42,6 +53,7 @@ export default function BarberScheduleScreen() {
       if (data && data.schedule && data.schedule.length > 0) {
         setScheduleDays(data.schedule);
         setUnavailableDates((data as any).unavailableDates || []);
+        setUnavailableDateRanges((data as any).unavailableDateRanges || []);
       } else {
         setScheduleDays(DEFAULT_SCHEDULE);
       }
@@ -103,7 +115,7 @@ export default function BarberScheduleScreen() {
   const handleAddOffDate = () => {
     const trimmed = newOffDate.trim();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-      Alert.alert('Format Gagal', 'Tanggal libur harus berformat YYYY-MM-DD (Contoh: 2026-08-17)');
+      Alert.alert('Format Gagal', `Tanggal libur harus berformat YYYY-MM-DD (Contoh: ${exampleFutureDateStr(14)})`);
       return;
     }
     if (unavailableDates.includes(trimmed)) {
@@ -116,6 +128,39 @@ export default function BarberScheduleScreen() {
 
   const handleRemoveOffDate = (dateToRemove: string) => {
     setUnavailableDates((prev) => prev.filter((d) => d !== dateToRemove));
+  };
+
+  const formatOffDate = (dateStr: string) => {
+    const parsed = new Date(`${dateStr}T00:00:00`);
+    if (Number.isNaN(parsed.getTime())) return dateStr;
+    return parsed.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+  };
+
+  const handleAddOffRange = () => {
+    const start = newRangeStart.trim();
+    const end = newRangeEnd.trim();
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) {
+      Alert.alert(
+        'Format Gagal',
+        `Tanggal mulai dan selesai harus berformat YYYY-MM-DD (Contoh: ${exampleFutureDateStr(30)} – ${exampleFutureDateStr(35)}).`
+      );
+      return;
+    }
+    // Plain ISO string comparison sorts correctly across month/year
+    // boundaries (e.g. Dec -> Jan) without needing Date parsing.
+    if (start > end) {
+      Alert.alert('Validasi Gagal', 'Tanggal mulai harus sebelum atau sama dengan tanggal selesai.');
+      return;
+    }
+
+    setUnavailableDateRanges((prev) => [...prev, { start, end }]);
+    setNewRangeStart('');
+    setNewRangeEnd('');
+  };
+
+  const handleRemoveOffRange = (index: number) => {
+    setUnavailableDateRanges((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleSaveSchedule = async () => {
@@ -142,7 +187,8 @@ export default function BarberScheduleScreen() {
       const res = await barberRepository.updateWeeklySchedule(barberId, {
         schedule: scheduleDays,
         unavailableDates,
-      } as any);
+        unavailableDateRanges,
+      });
 
       if (res.success) {
         Alert.alert('Sukses', 'Jadwal operasional berhasil disimpan.');
@@ -234,7 +280,7 @@ export default function BarberScheduleScreen() {
             <TextInput
               value={newOffDate}
               onChangeText={setNewOffDate}
-              placeholder="Contoh: 2026-08-17"
+              placeholder={`Contoh: ${exampleFutureDateStr(14)}`}
               maxLength={10}
               className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-[#363062] text-xs font-medium"
             />
@@ -261,11 +307,62 @@ export default function BarberScheduleScreen() {
           )}
         </View>
 
+        {/* Rentang Tanggal Libur / Unavailable Date Ranges */}
+        <View className="mb-6 p-5 rounded-2xl bg-white border border-slate-200/80 shadow-xs">
+          <Text className="font-bold text-[#363062] text-base mb-1">Rentang Tanggal Libur</Text>
+          <Text className="text-slate-500 text-xs mb-3.5">
+            Tambahkan rentang libur multi-hari, misalnya untuk cuti panjang atau libur lebaran (Format: YYYY-MM-DD).
+          </Text>
+
+          <View className="flex-row items-center gap-2.5 mb-3.5">
+            <TextInput
+              value={newRangeStart}
+              onChangeText={setNewRangeStart}
+              placeholder={`Mulai: ${exampleFutureDateStr(30)}`}
+              maxLength={10}
+              className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-[#363062] text-xs font-medium"
+            />
+            <Text className="text-slate-400 text-xs font-bold">–</Text>
+            <TextInput
+              value={newRangeEnd}
+              onChangeText={setNewRangeEnd}
+              placeholder={`Selesai: ${exampleFutureDateStr(35)}`}
+              maxLength={10}
+              className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-[#363062] text-xs font-medium"
+            />
+          </View>
+          <TouchableOpacity
+            onPress={handleAddOffRange}
+            className="h-11 justify-center items-center rounded-xl bg-[#EDEFFB] border border-[#363062]/20 active:bg-slate-200 mb-3.5">
+            <Text className="text-xs font-bold text-[#363062]">+ Tambah Rentang Libur</Text>
+          </TouchableOpacity>
+
+          {unavailableDateRanges.length === 0 ? (
+            <Text className="text-slate-400 text-xs italic">Belum ada rentang tanggal libur.</Text>
+          ) : (
+            <View className="gap-2">
+              {unavailableDateRanges.map((range, idx) => (
+                <View
+                  key={`range-${range.start}-${range.end}-${idx}`}
+                  className="bg-rose-50 border border-rose-200 px-3.5 py-2.5 rounded-xl flex-row items-center justify-between gap-2"
+                >
+                  <Text className="text-rose-800 text-xs font-bold flex-1">
+                    {formatOffDate(range.start)} – {formatOffDate(range.end)}
+                  </Text>
+                  <TouchableOpacity onPress={() => handleRemoveOffRange(idx)} hitSlop={8}>
+                    <SymbolIcon name="xmark" size={14} color="#991b1b" />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+
         {/* Save Action Button */}
         <TouchableOpacity
           onPress={handleSaveSchedule}
           disabled={saving}
-          className={`h-13 items-center justify-center rounded-xl shadow-xs mb-8 ${
+          className={`h-14 items-center justify-center rounded-xl shadow-xs mb-8 ${
             saving ? 'bg-slate-300' : 'bg-[#D2691E] active:bg-[#B05416]'
           }`}>
           <Text className="text-base font-bold text-white">

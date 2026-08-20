@@ -13,7 +13,18 @@
  */
 
 import { db } from '../lib/firebase-admin.js';
-import { generateTimeSlots, type WorkingHours } from './slot-generator.js';
+import { generateTimeSlots, type UnavailableDateRange, type WorkingHours } from './slot-generator.js';
+
+/** Defensive parse of scheduleData.unavailableDateRanges -- a malformed
+ * range (missing/non-string start or end) is dropped rather than allowed to
+ * silently block every date via a broken comparison. */
+function parseUnavailableDateRanges(raw: unknown): UnavailableDateRange[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(
+    (r): r is UnavailableDateRange =>
+      r && typeof r === 'object' && typeof r.start === 'string' && typeof r.end === 'string'
+  );
+}
 
 const DEFAULT_SCHEDULE_DAYS: Array<{
   dayOfWeek: string;
@@ -59,6 +70,7 @@ export async function computeAvailability(
   const unavailableDates: string[] = Array.isArray(scheduleData.unavailableDates)
     ? scheduleData.unavailableDates
     : [];
+  const unavailableDateRanges = parseUnavailableDateRanges(scheduleData.unavailableDateRanges);
 
   if (!isConfigured || !isConfirmed) {
     return { barberId, date, slots: [], error: 'SCHEDULE_NOT_CONFIGURED' };
@@ -142,6 +154,7 @@ export async function computeAvailability(
     serviceDurationMinutes: options?.serviceDurationMinutes || 45,
     slotIntervalMinutes: 30,
     unavailableDates,
+    unavailableDateRanges,
     existingBookings,
     slotLocks,
     homeServiceTravelBufferMinutes: travelBufferMinutes,

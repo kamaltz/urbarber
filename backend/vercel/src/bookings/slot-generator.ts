@@ -49,6 +49,15 @@ export interface SlotLockPeriod {
   expiresAt: number; // Timestamp in ms
 }
 
+/** Inclusive holiday date range, both bounds 'YYYY-MM-DD'. Compared as plain
+ * ISO strings -- lexicographic string comparison already sorts correctly
+ * across month/year boundaries for zero-padded ISO dates, so no Date
+ * parsing (and no timezone drift risk) is needed. */
+export interface UnavailableDateRange {
+  start: string;
+  end: string;
+}
+
 export interface GenerateTimeSlotsParams {
   date: string; // YYYY-MM-DD
   workingHours?: WorkingHours;
@@ -56,6 +65,7 @@ export interface GenerateTimeSlotsParams {
   slotIntervalMinutes?: number; // Default 30 minutes
   breaks?: BreakPeriod[];
   unavailableDates?: string[];
+  unavailableDateRanges?: UnavailableDateRange[];
   existingBookings?: BookingPeriod[];
   slotLocks?: SlotLockPeriod[];
   homeServiceTravelBufferMinutes?: number;
@@ -108,8 +118,16 @@ export function doesSlotOverlap(
   return s1 < e2 && e1 > s2;
 }
 
-export function applyUnavailableDates(date: string, unavailableDates: string[] = []): boolean {
-  return unavailableDates.includes(date);
+export function isDateInUnavailableRanges(date: string, ranges: UnavailableDateRange[] = []): boolean {
+  return ranges.some((r) => r.start && r.end && date >= r.start && date <= r.end);
+}
+
+export function applyUnavailableDates(
+  date: string,
+  unavailableDates: string[] = [],
+  unavailableDateRanges: UnavailableDateRange[] = []
+): boolean {
+  return unavailableDates.includes(date) || isDateInUnavailableRanges(date, unavailableDateRanges);
 }
 
 export function applyTravelBuffer(
@@ -170,6 +188,7 @@ export function generateTimeSlots(params: GenerateTimeSlotsParams): BarberTimeSl
     slotIntervalMinutes = 30,
     breaks = [],
     unavailableDates = [],
+    unavailableDateRanges = [],
     existingBookings = [],
     slotLocks = [],
     homeServiceTravelBufferMinutes = 0,
@@ -183,7 +202,7 @@ export function generateTimeSlots(params: GenerateTimeSlotsParams): BarberTimeSl
     return [];
   }
 
-  if (applyUnavailableDates(date, unavailableDates)) {
+  if (applyUnavailableDates(date, unavailableDates, unavailableDateRanges)) {
     return [];
   }
 

@@ -52,6 +52,7 @@ export function getDefaultWeeklySchedule(barberId: string): BarberWeeklySchedule
     isConfirmed: true,
     scheduleSource: 'confirmed_default',
     unavailableDates: [],
+    unavailableDateRanges: [],
     lastUpdated: new Date().toISOString(),
   };
 }
