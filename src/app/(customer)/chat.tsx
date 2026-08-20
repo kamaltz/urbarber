@@ -64,12 +64,50 @@ export default function ChatListScreen() {
     });
   }, [conversationsWithBarbers, uid, viewMode]);
 
+  const getTimeMs = (date?: Date | any): number => {
+    if (!date) return 0;
+    const d = date instanceof Date ? date : date.toDate?.();
+    return d?.getTime?.() ?? 0;
+  };
+
+  // Conversations are 1:1 with bookings (Conversation.id === bookingId), so a
+  // customer with several bookings against the same barber has several
+  // conversation docs -- group them by counterpart barberId for display so
+  // that barber appears once, represented by its most-recently-active
+  // conversation. Unread counts are summed across the group so an unread
+  // message sitting in an older (non-latest) conversation is never hidden.
+  // This is display-only grouping: opening or archiving/deleting a row still
+  // acts on that single representative conversation doc, not the whole
+  // group, and the underlying per-participant archive/delete schema and
+  // documents are untouched.
+  const deduped = useMemo(() => {
+    const byBarber = new Map<string, ConversationWithBarber & { unreadTotal: number }>();
+
+    for (const item of visibleForMode) {
+      const unread = item.customerUnreadCount || 0;
+      const existing = byBarber.get(item.barberId);
+
+      if (!existing) {
+        byBarber.set(item.barberId, { ...item, unreadTotal: unread });
+        continue;
+      }
+
+      const mergedUnread = existing.unreadTotal + unread;
+      const isNewer = getTimeMs(item.lastMessageAt) > getTimeMs(existing.lastMessageAt);
+      byBarber.set(item.barberId, { ...(isNewer ? item : existing), unreadTotal: mergedUnread });
+    }
+
+    return Array.from(byBarber.values()).sort(
+      (a, b) => getTimeMs(b.lastMessageAt) - getTimeMs(a.lastMessageAt)
+    );
+  }, [visibleForMode]);
+
   const filtered = useMemo(
     () =>
-      visibleForMode.filter((item) =>
+      deduped.filter((item) =>
         `${item.barberName} ${item.lastMessage}`.toLowerCase().includes(query.toLowerCase())
       ),
-    [visibleForMode, query]
+    [deduped, query]
   );
 
   const formatTime = (date?: Date | any) => {
@@ -179,7 +217,7 @@ export default function ChatListScreen() {
       ) : (
         <ScrollView className="flex-1 px-4" keyboardShouldPersistTaps="handled" removeClippedSubviews={false}>
           {filtered.map((item) => (
-            <View key={item.id} className="flex-row items-center gap-2 border-b border-slate-100 py-4">
+            <View key={item.barberId} className="flex-row items-center gap-2 border-b border-slate-100 py-4">
               <Pressable
                 onPress={() => router.push(routes.customer.chat(item.id))}
                 className="flex-1 flex-row items-center gap-3"
@@ -200,9 +238,9 @@ export default function ChatListScreen() {
                       {item.lastSenderId === firebaseAuth.currentUser?.uid ? '✓✓ ' : ''}
                       {item.lastMessage || '(No messages yet)'}
                     </Text>
-                    {item.customerUnreadCount > 0 ? (
+                    {item.unreadTotal > 0 ? (
                       <View className="h-5 min-w-5 items-center justify-center rounded-full bg-[#D2691E] px-1">
-                        <Text className="text-xs font-bold text-white">{item.customerUnreadCount}</Text>
+                        <Text className="text-xs font-bold text-white">{item.unreadTotal}</Text>
                       </View>
                     ) : null}
                   </View>

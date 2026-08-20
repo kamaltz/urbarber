@@ -62,12 +62,42 @@ export default function BarberMessagesScreen() {
     });
   }, [conversationsWithCustomers, uid, viewMode]);
 
+  const getTimeMs = (date?: Date | any): number => {
+    if (!date) return 0;
+    const d = date instanceof Date ? date : date.toDate?.();
+    return d?.getTime?.() ?? 0;
+  };
+
+  // Same counterpart-grouping as the customer chat list (chat.tsx) -- see
+  // that file for the full rationale. Here the counterpart is customerId.
+  const deduped = useMemo(() => {
+    const byCustomer = new Map<string, ConversationWithCustomer & { unreadTotal: number }>();
+
+    for (const item of visibleForMode) {
+      const unread = item.barberUnreadCount || 0;
+      const existing = byCustomer.get(item.customerId);
+
+      if (!existing) {
+        byCustomer.set(item.customerId, { ...item, unreadTotal: unread });
+        continue;
+      }
+
+      const mergedUnread = existing.unreadTotal + unread;
+      const isNewer = getTimeMs(item.lastMessageAt) > getTimeMs(existing.lastMessageAt);
+      byCustomer.set(item.customerId, { ...(isNewer ? item : existing), unreadTotal: mergedUnread });
+    }
+
+    return Array.from(byCustomer.values()).sort(
+      (a, b) => getTimeMs(b.lastMessageAt) - getTimeMs(a.lastMessageAt)
+    );
+  }, [visibleForMode]);
+
   const filtered = useMemo(
     () =>
-      visibleForMode.filter((item) =>
+      deduped.filter((item) =>
         `${item.customerName} ${item.lastMessage}`.toLowerCase().includes(query.toLowerCase())
       ),
-    [visibleForMode, query]
+    [deduped, query]
   );
 
   const formatTime = (date?: Date | any) => {
@@ -176,7 +206,7 @@ export default function BarberMessagesScreen() {
       ) : (
         <ScrollView className="flex-1 px-4" keyboardShouldPersistTaps="handled">
           {filtered.map((item) => (
-            <View key={item.id} className="flex-row items-center gap-2 border-b border-slate-100 py-4">
+            <View key={item.customerId} className="flex-row items-center gap-2 border-b border-slate-100 py-4">
               <Pressable
                 onPress={() => router.push(`/(barber)/messages/${item.id}` as any)}
                 className="flex-1 flex-row items-center gap-3"
@@ -197,9 +227,9 @@ export default function BarberMessagesScreen() {
                       {item.lastSenderId === firebaseAuth.currentUser?.uid ? '✓✓ ' : ''}
                       {item.lastMessage || '(No messages yet)'}
                     </Text>
-                    {item.barberUnreadCount > 0 ? (
+                    {item.unreadTotal > 0 ? (
                       <View className="h-5 min-w-5 items-center justify-center rounded-full bg-[#D2691E] px-1">
-                        <Text className="text-xs font-bold text-white">{item.barberUnreadCount}</Text>
+                        <Text className="text-xs font-bold text-white">{item.unreadTotal}</Text>
                       </View>
                     ) : null}
                   </View>
