@@ -12,7 +12,7 @@
     },
     "android": {
       "package": "com.kamaltz.urbarber",
-      //"googleServicesFile": "./google-services.json",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#363062",
         "foregroundImage": "./assets/images/urbarber-icon-foreground.png"

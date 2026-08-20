@@ -77,3 +77,4 @@ firebase-adminsdk*.json
 .vercel
 
 .env.preview.upload
+google-service.json
