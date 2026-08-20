@@ -69,6 +69,55 @@ describe('barberRepository.updateBarberLocation', () => {
     expect(res.success).toBe(false);
     expect(updateDocMock).not.toHaveBeenCalled();
   });
+
+  it('K3. rejects an Infinity coordinate without writing anything', async () => {
+    const res = await barberRepository.updateBarberLocation('barber-1', {
+      latitude: Infinity,
+      longitude: 107.9087,
+      shopAddress: 'Jl. Test No. 1',
+    });
+
+    expect(res.success).toBe(false);
+    expect(updateDocMock).not.toHaveBeenCalled();
+  });
+
+  it('K4. rejects exact 0,0 (never a genuine shop location, always a GPS/parsing failure signature)', async () => {
+    const res = await barberRepository.updateBarberLocation('barber-1', {
+      latitude: 0,
+      longitude: 0,
+      shopAddress: 'Jl. Test No. 1',
+    });
+
+    expect(res.success).toBe(false);
+    expect(updateDocMock).not.toHaveBeenCalled();
+  });
+
+  /**
+   * §15/§17 of the manual-map-picker pass: this repository function has no
+   * concept of "GPS-detected" vs "manually chosen on a map" -- both call
+   * sites pass a plain {latitude, longitude, shopAddress}, so the same
+   * write path (and the same geohash derivation) must work identically for
+   * any valid coordinate anywhere, not just the app's disclosed Garut
+   * fallback region.
+   */
+  it.each([
+    ['Bandung', -6.9175, 107.6191],
+    ['Jakarta', -6.2088, 106.8456],
+    ['Medan (outside Java)', 3.5952, 98.6722],
+  ])('L. writes a valid, correctly-geohashed location for a %s coordinate (non-Garut)', async (_label, latitude, longitude) => {
+    const res = await barberRepository.updateBarberLocation('barber-1', {
+      latitude,
+      longitude,
+      shopAddress: 'Manually selected address',
+    });
+
+    expect(res.success).toBe(true);
+    const [, payload] = updateDocMock.mock.calls[0];
+    expect(payload.location).toEqual({ latitude, longitude });
+    expect(typeof payload.geohash).toBe('string');
+    expect(payload.geohash.length).toBeGreaterThan(0);
+    updateDocMock.mockClear();
+  });
 });
 
 /**

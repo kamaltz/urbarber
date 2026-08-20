@@ -117,6 +117,12 @@ export default function BarberLayout() {
           <Stack.Screen name="booking/[bookingId]" />
           <Stack.Screen name="analysis" />
           <Stack.Screen name="reviews" />
+          {/* Full-screen modal: the one deliberate exception to "nav always
+              visible" -- a precision map pin-placement task benefits from
+              the full viewport, and a native modal presentation covers the
+              persistent nav sibling below (it's a native overlay, not
+              scoped by the JS component tree). */}
+          <Stack.Screen name="location-picker" options={{ presentation: 'fullScreenModal' }} />
         </Stack>
       </View>
       <BarberBottomNavigation />

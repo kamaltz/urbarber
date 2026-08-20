@@ -12,7 +12,7 @@ import { MAP_CONFIG } from '@/config/map.config';
 import { Camera, Map, Marker } from '@maplibre/maplibre-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
-import { useFocusEffect } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Linking, RefreshControl, ScrollView, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
@@ -459,7 +459,7 @@ export default function BarberProfileScreen() {
         {/* Shop Location */}
         <AppCard className="mb-6 p-4 gap-3">
           <Text className="font-bold text-slate-900 text-base border-b border-slate-100 pb-2">
-            Lokasi Barber & Barbershop (Permanent Shop Base)
+            Lokasi Barber
           </Text>
 
           {profile?.location && typeof profile.location.latitude === 'number' && typeof profile.location.longitude === 'number' ? (
@@ -467,10 +467,14 @@ export default function BarberProfileScreen() {
               <View className="flex-row items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200 p-3">
                 <Text className="text-base">📍</Text>
                 <View className="flex-1">
-                  <Text className="text-xs font-bold text-emerald-900">Lokasi Sudah Dikonfigurasi (Configured)</Text>
-                  <Text className="text-[11px] text-emerald-700 font-medium">
-                    Koordinat: {profile.location.latitude.toFixed(5)}, {profile.location.longitude.toFixed(5)}
-                    {profile.geohash ? ` (geohash: ${profile.geohash})` : ''}
+                  <Text className="text-sm font-bold text-emerald-900">
+                    {shopAddress || profile.shopAddress || 'Lokasi sudah dikonfigurasi'}
+                  </Text>
+                  {/* Coordinates kept as de-emphasized fine print rather than
+                      the primary summary -- the address is what a barber
+                      actually recognizes their own location by. */}
+                  <Text className="text-[10px] font-mono text-emerald-700/70 mt-0.5">
+                    {profile.location.latitude.toFixed(5)}, {profile.location.longitude.toFixed(5)}
                   </Text>
                 </View>
               </View>
@@ -511,9 +515,26 @@ export default function BarberProfileScreen() {
           </Text>
 
           <AppButton
-            label={savingLocation ? 'Mengambil & Menyimpan Lokasi...' : '📍 Deteksi & Simpan Lokasi GPS Saat Ini'}
+            label={savingLocation ? 'Mengambil & Menyimpan Lokasi...' : 'Gunakan Lokasi Saat Ini'}
             onPress={handleUpdateLocation}
             variant="secondary"
+            disabled={savingLocation}
+            className="w-full"
+          />
+          <AppButton
+            label={profile?.location ? 'Ubah Lokasi di Peta' : 'Pilih Lokasi di Peta'}
+            onPress={() =>
+              router.push({
+                pathname: '/(barber)/location-picker',
+                params: {
+                  ...(profile?.location
+                    ? { lat: String(profile.location.latitude), lng: String(profile.location.longitude) }
+                    : {}),
+                  shopAddress: shopAddress || profile?.shopAddress || '',
+                },
+              })
+            }
+            variant="primary"
             disabled={savingLocation}
             className="w-full"
           />
