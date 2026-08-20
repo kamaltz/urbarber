@@ -40,6 +40,12 @@ export default function BarberScheduleScreen() {
   const [unavailableDateRanges, setUnavailableDateRanges] = useState<UnavailableDateRange[]>([]);
   const [newRangeStart, setNewRangeStart] = useState<string>('');
   const [newRangeEnd, setNewRangeEnd] = useState<string>('');
+  // One "Libur Khusus" section, two write modes into the two canonical
+  // fields the availability engine already reads (both consulted together
+  // -- see applyUnavailableDates in slot-generator.ts). Harian never
+  // replaces Rentang Hari or vice versa; this only controls which input
+  // form and canonical field is currently active.
+  const [holidayMode, setHolidayMode] = useState<'daily' | 'range'>('daily');
   const [loading, setLoading] = useState<boolean>(true);
   const [saving, setSaving] = useState<boolean>(false);
   const [refreshing, setRefreshing] = useState<boolean>(false);
@@ -163,6 +169,24 @@ export default function BarberScheduleScreen() {
     setUnavailableDateRanges((prev) => prev.filter((_, i) => i !== index));
   };
 
+  // Single combined, chronologically-sorted view of both holiday types so
+  // the barber never has to inspect two unrelated blocks to see their full
+  // "Libur Khusus" list.
+  type HolidayListItem =
+    | { kind: 'daily'; date: string }
+    | { kind: 'range'; range: UnavailableDateRange; rangeIndex: number };
+
+  const combinedHolidays: HolidayListItem[] = [
+    ...unavailableDates.map((date): HolidayListItem => ({ kind: 'daily', date })),
+    ...unavailableDateRanges.map(
+      (range, rangeIndex): HolidayListItem => ({ kind: 'range', range, rangeIndex })
+    ),
+  ].sort((a, b) => {
+    const aStart = a.kind === 'daily' ? a.date : a.range.start;
+    const bStart = b.kind === 'daily' ? b.date : b.range.start;
+    return aStart.localeCompare(bStart);
+  });
+
   const handleSaveSchedule = async () => {
     // Validate time formatting and logic
     for (const day of scheduleDays) {
@@ -269,91 +293,122 @@ export default function BarberScheduleScreen() {
           </View>
         </View>
 
-        {/* Tanggal Libur Khusus / Unavailable Dates */}
+        {/* Libur Khusus -- one unified section covering both single-day and
+            multi-day holidays (§2/§3 unification). */}
         <View className="mb-6 p-5 rounded-2xl bg-white border border-slate-200/80 shadow-xs">
-          <Text className="font-bold text-[#363062] text-base mb-1">Tanggal Libur Khusus</Text>
+          <Text className="font-bold text-[#363062] text-base mb-1">Libur Khusus</Text>
           <Text className="text-slate-500 text-xs mb-3.5">
-            Tambahkan tanggal pengecualian libur (Format: YYYY-MM-DD).
+            Tambahkan tanggal libur satu hari atau rentang beberapa hari (Format: YYYY-MM-DD).
           </Text>
 
-          <View className="flex-row gap-2.5 mb-3.5">
-            <TextInput
-              value={newOffDate}
-              onChangeText={setNewOffDate}
-              placeholder={`Contoh: ${exampleFutureDateStr(14)}`}
-              maxLength={10}
-              className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-[#363062] text-xs font-medium"
-            />
+          {/* Mode Switch */}
+          <View className="flex-row bg-slate-100 rounded-xl p-1 mb-3.5">
             <TouchableOpacity
-              onPress={handleAddOffDate}
-              className="rounded-xl bg-[#EDEFFB] px-4 justify-center items-center border border-[#363062]/20 active:bg-slate-200">
-              <Text className="text-xs font-bold text-[#363062]">+ Libur</Text>
+              onPress={() => setHolidayMode('daily')}
+              className={`flex-1 h-9 items-center justify-center rounded-lg ${
+                holidayMode === 'daily' ? 'bg-white shadow-xs' : ''
+              }`}>
+              <Text
+                className={`text-xs font-bold ${
+                  holidayMode === 'daily' ? 'text-[#363062]' : 'text-slate-500'
+                }`}>
+                Harian
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setHolidayMode('range')}
+              className={`flex-1 h-9 items-center justify-center rounded-lg ${
+                holidayMode === 'range' ? 'bg-white shadow-xs' : ''
+              }`}>
+              <Text
+                className={`text-xs font-bold ${
+                  holidayMode === 'range' ? 'text-[#363062]' : 'text-slate-500'
+                }`}>
+                Rentang Hari
+              </Text>
             </TouchableOpacity>
           </View>
 
-          {unavailableDates.length === 0 ? (
-            <Text className="text-slate-400 text-xs italic">Belum ada tanggal libur khusus.</Text>
-          ) : (
-            <View className="flex-row flex-wrap gap-2">
-              {unavailableDates.map((dateStr, idx) => (
-                <View key={dateStr ? `off-${dateStr}` : `off-date-${idx}`} className="bg-rose-50 border border-rose-200 px-3 py-1.5 rounded-xl flex-row items-center gap-2">
-                  <Text className="text-rose-800 text-xs font-bold">{dateStr}</Text>
-                  <TouchableOpacity onPress={() => handleRemoveOffDate(dateStr)}>
-                    <SymbolIcon name="xmark" size={14} color="#991b1b" />
-                  </TouchableOpacity>
-                </View>
-              ))}
+          {holidayMode === 'daily' ? (
+            <View className="flex-row gap-2.5 mb-3.5">
+              <TextInput
+                value={newOffDate}
+                onChangeText={setNewOffDate}
+                placeholder={`Contoh: ${exampleFutureDateStr(14)}`}
+                maxLength={10}
+                className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-[#363062] text-xs font-medium"
+              />
+              <TouchableOpacity
+                onPress={handleAddOffDate}
+                className="h-11 rounded-xl bg-[#EDEFFB] px-4 justify-center items-center border border-[#363062]/20 active:bg-slate-200">
+                <Text className="text-xs font-bold text-[#363062]">Tambahkan Libur</Text>
+              </TouchableOpacity>
             </View>
+          ) : (
+            <>
+              <View className="flex-row items-center gap-2.5 mb-3.5">
+                <TextInput
+                  value={newRangeStart}
+                  onChangeText={setNewRangeStart}
+                  placeholder={`Mulai: ${exampleFutureDateStr(30)}`}
+                  maxLength={10}
+                  className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-[#363062] text-xs font-medium"
+                />
+                <Text className="text-slate-400 text-xs font-bold">–</Text>
+                <TextInput
+                  value={newRangeEnd}
+                  onChangeText={setNewRangeEnd}
+                  placeholder={`Selesai: ${exampleFutureDateStr(35)}`}
+                  maxLength={10}
+                  className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-[#363062] text-xs font-medium"
+                />
+              </View>
+              <TouchableOpacity
+                onPress={handleAddOffRange}
+                className="h-11 justify-center items-center rounded-xl bg-[#EDEFFB] border border-[#363062]/20 active:bg-slate-200 mb-3.5">
+                <Text className="text-xs font-bold text-[#363062]">Tambahkan Rentang Libur</Text>
+              </TouchableOpacity>
+            </>
           )}
-        </View>
 
-        {/* Rentang Tanggal Libur / Unavailable Date Ranges */}
-        <View className="mb-6 p-5 rounded-2xl bg-white border border-slate-200/80 shadow-xs">
-          <Text className="font-bold text-[#363062] text-base mb-1">Rentang Tanggal Libur</Text>
-          <Text className="text-slate-500 text-xs mb-3.5">
-            Tambahkan rentang libur multi-hari, misalnya untuk cuti panjang atau libur lebaran (Format: YYYY-MM-DD).
-          </Text>
-
-          <View className="flex-row items-center gap-2.5 mb-3.5">
-            <TextInput
-              value={newRangeStart}
-              onChangeText={setNewRangeStart}
-              placeholder={`Mulai: ${exampleFutureDateStr(30)}`}
-              maxLength={10}
-              className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-[#363062] text-xs font-medium"
-            />
-            <Text className="text-slate-400 text-xs font-bold">–</Text>
-            <TextInput
-              value={newRangeEnd}
-              onChangeText={setNewRangeEnd}
-              placeholder={`Selesai: ${exampleFutureDateStr(35)}`}
-              maxLength={10}
-              className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-[#363062] text-xs font-medium"
-            />
-          </View>
-          <TouchableOpacity
-            onPress={handleAddOffRange}
-            className="h-11 justify-center items-center rounded-xl bg-[#EDEFFB] border border-[#363062]/20 active:bg-slate-200 mb-3.5">
-            <Text className="text-xs font-bold text-[#363062]">+ Tambah Rentang Libur</Text>
-          </TouchableOpacity>
-
-          {unavailableDateRanges.length === 0 ? (
-            <Text className="text-slate-400 text-xs italic">Belum ada rentang tanggal libur.</Text>
+          {/* Combined list -- both types together, sorted chronologically */}
+          {combinedHolidays.length === 0 ? (
+            <Text className="text-slate-400 text-xs italic">Belum ada libur khusus.</Text>
           ) : (
             <View className="gap-2">
-              {unavailableDateRanges.map((range, idx) => (
-                <View
-                  key={`range-${range.start}-${range.end}-${idx}`}
-                  className="bg-rose-50 border border-rose-200 px-3.5 py-2.5 rounded-xl flex-row items-center justify-between gap-2"
-                >
-                  <Text className="text-rose-800 text-xs font-bold flex-1">
-                    {formatOffDate(range.start)} – {formatOffDate(range.end)}
-                  </Text>
-                  <TouchableOpacity onPress={() => handleRemoveOffRange(idx)} hitSlop={8}>
-                    <SymbolIcon name="xmark" size={14} color="#991b1b" />
-                  </TouchableOpacity>
-                </View>
-              ))}
+              {combinedHolidays.map((item) =>
+                item.kind === 'daily' ? (
+                  <View
+                    key={`daily-${item.date}`}
+                    className="bg-rose-50 border border-rose-200 px-3.5 py-2.5 rounded-xl flex-row items-center justify-between gap-2">
+                    <View className="flex-1 flex-row items-center gap-2">
+                      <View className="bg-rose-200/70 px-2 py-0.5 rounded-full">
+                        <Text className="text-rose-800 text-[10px] font-bold">Harian</Text>
+                      </View>
+                      <Text className="text-rose-800 text-xs font-bold flex-1">{formatOffDate(item.date)}</Text>
+                    </View>
+                    <TouchableOpacity onPress={() => handleRemoveOffDate(item.date)} hitSlop={8}>
+                      <SymbolIcon name="xmark" size={14} color="#991b1b" />
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <View
+                    key={`range-${item.range.start}-${item.range.end}-${item.rangeIndex}`}
+                    className="bg-rose-50 border border-rose-200 px-3.5 py-2.5 rounded-xl flex-row items-center justify-between gap-2">
+                    <View className="flex-1 flex-row items-center gap-2">
+                      <View className="bg-rose-200/70 px-2 py-0.5 rounded-full">
+                        <Text className="text-rose-800 text-[10px] font-bold">Rentang</Text>
+                      </View>
+                      <Text className="text-rose-800 text-xs font-bold flex-1">
+                        {formatOffDate(item.range.start)} – {formatOffDate(item.range.end)}
+                      </Text>
+                    </View>
+                    <TouchableOpacity onPress={() => handleRemoveOffRange(item.rangeIndex)} hitSlop={8}>
+                      <SymbolIcon name="xmark" size={14} color="#991b1b" />
+                    </TouchableOpacity>
+                  </View>
+                )
+              )}
             </View>
           )}
         </View>
