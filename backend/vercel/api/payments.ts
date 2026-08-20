@@ -12,7 +12,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { z } from 'zod';
 import { assertNoActiveBooking, CustomerHasActiveBookingError } from '../src/bookings/active-booking-guard.js';
 import { calculateDistanceKm } from '../src/bookings/geo-utils.js';
-import { isBarberAcceptingBookings, isServiceActive, resolveServiceLocationType } from '../src/bookings/service-booking-guard.js';
+import { isBarberAcceptingBookings, isHomeServiceAllowedForBarber, isServiceActive, resolveServiceLocationType } from '../src/bookings/service-booking-guard.js';
 import { acquireSlotLock, getSlotLockId, SlotNotAvailableError } from '../src/bookings/slot-lock.js';
 import { evaluateSlotEligibility } from '../src/bookings/slot-datetime.js';
 import { config } from '../src/config/index.js';
@@ -219,6 +219,17 @@ async function handleCreatePayment(ctx: RouteContext): Promise<void> {
     // distance mode) -- so the customer's location is always resolved here.
     let distanceKm: number | null = null;
     if (bookingType === 'home') {
+      // Home Service availability toggle (§10) -- see isHomeServiceAllowedForBarber.
+      if (!isHomeServiceAllowedForBarber(barberData, bookingType)) {
+        res.status(403).json({
+          error: {
+            code: 'HOME_SERVICE_DISABLED',
+            message: 'Barber ini tidak melayani Home Service saat ini.',
+          },
+        });
+        return;
+      }
+
       if (!location) {
         res.status(400).json({
           error: { code: 'LOCATION_REQUIRED', message: 'Lokasi pelanggan wajib diisi untuk booking layanan ke rumah.' },

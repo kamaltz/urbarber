@@ -115,6 +115,14 @@ export interface BarberScheduleDay {
   closeTime?: string;
 }
 
+/** Inclusive holiday date range, both bounds 'YYYY-MM-DD'. Alongside
+ * unavailableDates (single dates) for backward compatibility -- a date is a
+ * holiday if it's in unavailableDates OR falls within any range here. */
+export interface UnavailableDateRange {
+  start: string;
+  end: string;
+}
+
 export interface BarberWeeklySchedule {
   barberId: string;
   schedule: BarberScheduleDay[];
@@ -122,6 +130,7 @@ export interface BarberWeeklySchedule {
   isConfirmed: boolean;
   scheduleSource: 'custom' | 'confirmed_default';
   unavailableDates?: string[];
+  unavailableDateRanges?: UnavailableDateRange[];
   lastUpdated: string;
 }
 
@@ -172,6 +181,7 @@ export interface BarberAddServiceRequest {
 export interface UpdateBarberScheduleRequest {
   schedule: BarberScheduleDay[];
   unavailableDates?: string[];
+  unavailableDateRanges?: UnavailableDateRange[];
 }
 
 export interface UpdateBarberProfileRequest {
@@ -183,6 +193,7 @@ export interface UpdateBarberProfileRequest {
   phone?: string;
   profileImageUrl?: string;
   shopImageUrl?: string;
+  acceptsHomeService?: boolean;
 }
 
 export interface BarberDashboardData {

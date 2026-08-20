@@ -14,7 +14,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Image, Linking, RefreshControl, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Linking, RefreshControl, ScrollView, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 function showGalleryPermissionDeniedAlert() {
   Alert.alert(
@@ -37,6 +37,8 @@ export default function BarberProfileScreen() {
   const [shopAddress, setShopAddress] = useState<string>('');
   const [phone, setPhone] = useState<string>('');
   const [profileImage, setProfileImage] = useState<string | null>(null);
+  const [acceptsHomeService, setAcceptsHomeService] = useState<boolean>(true);
+  const [savingHomeService, setSavingHomeService] = useState<boolean>(false);
 
   const [loading, setLoading] = useState<boolean>(true);
   const [saving, setSaving] = useState<boolean>(false);
@@ -70,6 +72,7 @@ export default function BarberProfileScreen() {
         setShopAddress(data.shopAddress || '');
         setPhone(data.phone || user?.phoneNumber || '');
         setProfileImage(data.profileImageUrl || null);
+        setAcceptsHomeService(data.acceptsHomeService ?? true);
       }
     } catch (err: any) {
       setError(err?.message || 'Gagal memuat profil barber.');
@@ -270,6 +273,26 @@ export default function BarberProfileScreen() {
     }
   };
 
+  const handleToggleHomeService = async (value: boolean) => {
+    const previous = acceptsHomeService;
+    setAcceptsHomeService(value);
+    setSavingHomeService(true);
+    try {
+      const res = await barberRepository.updateBarberProfile(barberId, {
+        acceptsHomeService: value,
+      });
+      if (!res.success) {
+        setAcceptsHomeService(previous);
+        Alert.alert('Gagal', res.error?.message || 'Gagal memperbarui pengaturan Home Service.');
+      }
+    } catch (err: any) {
+      setAcceptsHomeService(previous);
+      Alert.alert('Error', err?.message || 'Terjadi kesalahan sistem.');
+    } finally {
+      setSavingHomeService(false);
+    }
+  };
+
   const handleSaveProfile = async () => {
     const trimmedShopName = shopName.trim();
     if (!trimmedShopName) {
@@ -397,6 +420,25 @@ export default function BarberProfileScreen() {
               numberOfLines={3}
               className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 text-sm h-20"
             />
+          </View>
+
+          <View className="flex-row items-center justify-between gap-3 rounded-xl bg-slate-50 border border-slate-200 px-4 py-3">
+            <View className="flex-1">
+              <Text className="text-sm font-bold text-slate-900">Melayani Home Service</Text>
+              <Text className="text-[11px] text-slate-500 mt-0.5">
+                Saat nonaktif, pelanggan tidak dapat membuat pesanan Home Service baru. Pesanan Home Service yang sudah diterima tetap berjalan.
+              </Text>
+            </View>
+            {savingHomeService ? (
+              <ActivityIndicator size="small" color="#D2691E" />
+            ) : (
+              <Switch
+                value={acceptsHomeService}
+                onValueChange={handleToggleHomeService}
+                trackColor={{ false: '#CBD5E1', true: '#D2691E' }}
+                thumbColor="#FFFFFF"
+              />
+            )}
           </View>
 
           {/* Protected Fields Notice */}

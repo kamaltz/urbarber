@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import {
   canTransitionToInProgress,
   isBarberAcceptingBookings,
+  isHomeServiceAllowedForBarber,
   isHomeServiceBooking,
   isServiceActive,
   resolveServiceLocationType,
@@ -68,6 +69,29 @@ describe('isBarberAcceptingBookings (P0-3)', () => {
   it('fails closed when the barber document does not exist', () => {
     expect(isBarberAcceptingBookings(null)).toBe(false);
     expect(isBarberAcceptingBookings(undefined)).toBe(false);
+  });
+});
+
+describe('isHomeServiceAllowedForBarber (§10 Home Service availability toggle)', () => {
+  it('allows an onsite booking regardless of acceptsHomeService', () => {
+    expect(isHomeServiceAllowedForBarber({ acceptsHomeService: false }, 'onsite')).toBe(true);
+  });
+
+  it('allows a home booking when acceptsHomeService is true', () => {
+    expect(isHomeServiceAllowedForBarber({ acceptsHomeService: true }, 'home')).toBe(true);
+  });
+
+  it('rejects a home booking when acceptsHomeService is explicitly false', () => {
+    expect(isHomeServiceAllowedForBarber({ acceptsHomeService: false }, 'home')).toBe(false);
+  });
+
+  it('allows a home booking when acceptsHomeService is missing (legacy barber, defaults true)', () => {
+    expect(isHomeServiceAllowedForBarber({}, 'home')).toBe(true);
+  });
+
+  it('allows a home booking when the barber document is null/undefined (defaults true)', () => {
+    expect(isHomeServiceAllowedForBarber(null, 'home')).toBe(true);
+    expect(isHomeServiceAllowedForBarber(undefined, 'home')).toBe(true);
   });
 });
 

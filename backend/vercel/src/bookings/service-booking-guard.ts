@@ -32,6 +32,26 @@ export type BookingType = 'home' | 'onsite';
 export type ServiceLocationType = 'barbershop' | 'customer_home';
 
 /**
+ * §10 (thesis v1.1 final stabilization): a barber may disable Home Service
+ * via their own profile (`acceptsHomeService`). Client screens already hide
+ * the Home Service option once disabled (customer.repository.ts,
+ * discovery.service.ts) -- that is UI hiding, not a server guarantee, so a
+ * stale client screen or a direct API call could still create a Home
+ * Service booking against a barber who turned it off. Missing field
+ * defaults to true (`!== false`), matching the exact client-side default so
+ * barbers predating this field don't unexpectedly disappear from Home
+ * Service. Only gates NEW bookingType === 'home' payment/booking creation;
+ * an already-accepted Home Service booking is never affected by this.
+ */
+export function isHomeServiceAllowedForBarber(
+  barberData: { acceptsHomeService?: boolean } | null | undefined,
+  bookingType: BookingType,
+): boolean {
+  if (bookingType !== 'home') return true;
+  return barberData?.acceptsHomeService !== false;
+}
+
+/**
  * Canonical persisted contract (Phase 4B): serviceLocationType is the value
  * tracking (isHomeService in src/app/(barber)/booking/[bookingId].tsx) and
  * the Admin backend (admin.service.ts) already read; bookingType is the only
