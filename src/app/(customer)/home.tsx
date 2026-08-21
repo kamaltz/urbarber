@@ -11,7 +11,7 @@ import { HomeSearchBar } from '@/features/customer/components/HomeSearchBar';
 import { HomeSection } from '@/features/customer/components/HomeSection';
 import { useCustomerHome } from '@/features/customer/hooks/use-customer-home';
 import { useCustomerProfile } from '@/features/customer/hooks/use-customer-profile';
-import { firebaseAuth } from '@/lib/firebase';
+import { resolveCustomerAvatarUrl, resolveCustomerDisplayName } from '@/features/customer/utils/profile-display';
 import { Camera, Map, Marker } from '@maplibre/maplibre-react-native';
 import { router } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
@@ -99,11 +99,8 @@ export default function HomeScreen() {
     );
   }
 
-  const displayName = profile?.name || user?.displayName || user?.email?.split('@')[0] || 'Pelanggan';
-  const avatarUrl =
-    profile?.profileImageUrl ||
-    user?.photoURL ||
-    firebaseAuth.currentUser?.photoURL;
+  const displayName = resolveCustomerDisplayName(profile, user, 'Pelanggan');
+  const avatarUrl = resolveCustomerAvatarUrl(profile, user);
   const locationLabel = profile?.location?.trim();
 
   const backendUnavailable = !homeLoading && !refreshing && !!homeError;

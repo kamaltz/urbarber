@@ -4,6 +4,7 @@ import { AppCard } from '@/components/ui/AppCard';
 import { Avatar } from '@/components/ui/Avatar';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { useCustomerProfile } from '@/features/customer/hooks/use-customer-profile';
+import { resolveCustomerAvatarUrl, resolveCustomerDisplayName } from '@/features/customer/utils/profile-display';
 import { pickImage, storageService } from '@/features/services/storage.service';
 import { firebaseAuth } from '@/lib/firebase';
 import { updateProfile as updateFirebaseProfile } from 'firebase/auth';
@@ -23,11 +24,11 @@ export default function AccountScreen() {
 
   const { profile, loading, updating, updateProfile, refresh } = useCustomerProfile(customerId);
 
-  const [name, setName] = useState(profile?.name || user?.displayName || '');
+  const [name, setName] = useState(resolveCustomerDisplayName(profile, user, ''));
   const [phone, setPhone] = useState(profile?.phone || user?.phoneNumber || '');
   const [location, setLocation] = useState(profile?.location || '');
   const [avatarUrl, setAvatarUrl] = useState<string | undefined>(
-    profile?.profileImageUrl || user?.photoURL || undefined
+    resolveCustomerAvatarUrl(profile, user)
   );
   const [avatarPath, setAvatarPath] = useState<string | undefined>(
     profile?.profileImagePath || undefined
@@ -44,10 +45,10 @@ export default function AccountScreen() {
   const [lastSyncedProfile, setLastSyncedProfile] = useState<typeof profile>(null);
   if (profile && profile !== lastSyncedProfile) {
     setLastSyncedProfile(profile);
-    setName(profile.name || user?.displayName || '');
+    setName(resolveCustomerDisplayName(profile, user, ''));
     setPhone(profile.phone || user?.phoneNumber || '');
     setLocation(profile.location || '');
-    setAvatarUrl(profile.profileImageUrl || user?.photoURL || undefined);
+    setAvatarUrl(resolveCustomerAvatarUrl(profile, user));
     setAvatarPath(profile.profileImagePath || undefined);
   }
 

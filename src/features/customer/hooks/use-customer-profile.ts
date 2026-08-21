@@ -4,7 +4,8 @@
  */
 
 import { useAsyncDetail, useAsyncMutation } from '@/hooks/use-async-data';
-import { useState } from 'react';
+import { useFocusEffect } from 'expo-router';
+import { useCallback, useState } from 'react';
 import { customerRepository } from '../repository/customer.repository';
 import type { CustomerProfile, UpdateProfileData } from '../types/customer';
 
@@ -21,6 +22,21 @@ export function useCustomerProfile(customerId: string) {
         }
       },
     }
+  );
+
+  // customers/{uid} is the canonical profile source, but each screen that calls
+  // this hook (Home, Profile, Account) owns its own instance -- there is no
+  // shared cache. Without this, editing the profile on one screen leaves every
+  // other already-mounted screen showing stale name/photo until the app
+  // restarts, since expo-router keeps tab/stack screens mounted across
+  // navigation. Refetching on focus (same pattern already used for Barber
+  // Profile) means returning to a screen always shows the latest write.
+  useFocusEffect(
+    useCallback(() => {
+      if (customerId) {
+        void refresh();
+      }
+    }, [customerId, refresh])
   );
 
   const { execute: updateProfile, loading: updating, error: updateError } = useAsyncMutation(

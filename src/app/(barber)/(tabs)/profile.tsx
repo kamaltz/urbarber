@@ -13,7 +13,7 @@ import { Camera, Map, Marker } from '@maplibre/maplibre-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Linking, RefreshControl, ScrollView, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 function showGalleryPermissionDeniedAlert() {
@@ -51,6 +51,13 @@ export default function BarberProfileScreen() {
   const [galleryLoading, setGalleryLoading] = useState<boolean>(true);
   const [galleryUploading, setGalleryUploading] = useState<boolean>(false);
   const [deletingImageId, setDeletingImageId] = useState<string | null>(null);
+
+  // Shared across both picker call sites below: only one Android Activity
+  // Result launcher can be in flight at a time process-wide, so a guard per
+  // handler wouldn't stop a gallery-pick and an avatar-pick from racing each
+  // other. A stale double-tap or a second launch fired before the first
+  // resolves throws "unregistered ActivityResultLauncher" natively.
+  const isPickingRef = useRef(false);
 
   const fetchGallery = useCallback(async () => {
     if (!barberId) return;
@@ -133,6 +140,9 @@ export default function BarberProfileScreen() {
       return;
     }
 
+    if (isPickingRef.current) return;
+    isPickingRef.current = true;
+
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (__DEV__) {
@@ -144,7 +154,7 @@ export default function BarberProfileScreen() {
       }
 
       const pickerResult = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsEditing: true,
         quality: 0.8,
       });
@@ -169,6 +179,7 @@ export default function BarberProfileScreen() {
       Alert.alert('Error', err?.message || 'Terjadi kesalahan sistem.');
     } finally {
       setGalleryUploading(false);
+      isPickingRef.current = false;
     }
   };
 
@@ -193,6 +204,9 @@ export default function BarberProfileScreen() {
   };
 
   const handlePickAvatar = async () => {
+    if (isPickingRef.current) return;
+    isPickingRef.current = true;
+
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
@@ -201,7 +215,7 @@ export default function BarberProfileScreen() {
       }
 
       const pickerResult = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.8,
@@ -239,6 +253,7 @@ export default function BarberProfileScreen() {
       Alert.alert('Error', err?.message || 'Terjadi kesalahan sistem.');
     } finally {
       setUploading(false);
+      isPickingRef.current = false;
     }
   };
 

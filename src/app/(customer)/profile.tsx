@@ -4,6 +4,7 @@ import { Avatar } from '@/components/ui/Avatar';
 import { SymbolIcon } from '@/components/ui/SymbolIcon';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { useCustomerProfile } from '@/features/customer/hooks/use-customer-profile';
+import { resolveCustomerAvatarUrl, resolveCustomerDisplayName } from '@/features/customer/utils/profile-display';
 import { pickImage, storageService } from '@/features/services/storage.service';
 import { firebaseAuth } from '@/lib/firebase';
 import { router } from 'expo-router';
@@ -28,12 +29,8 @@ export default function ProfileScreen() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isError, setIsError] = useState(false);
 
-  const displayName = profile?.name || user?.displayName || 'Pelanggan URBarber';
-  const avatarUrl =
-    uploadedAvatarUrl ||
-    profile?.profileImageUrl ||
-    user?.photoURL ||
-    firebaseAuth.currentUser?.photoURL;
+  const displayName = resolveCustomerDisplayName(profile, user);
+  const avatarUrl = uploadedAvatarUrl || resolveCustomerAvatarUrl(profile, user);
 
   const handleAvatarPress = async () => {
     if (uploading) return;

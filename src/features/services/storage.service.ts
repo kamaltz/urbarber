@@ -19,31 +19,46 @@ import type {
   UploadOptions,
 } from "./storage.types";
 
+// Module-level (not per-component) in-flight guard: every caller of pickImage()
+// shares one underlying Android Activity Result launcher, so a launch from
+// screen A while screen B's launch is still pending would race the same
+// native launcher and throw "unregistered ActivityResultLauncher". A plain
+// flag is enough since JS is single-threaded -- no launch can interleave
+// between the check and the set below.
+let isPicking = false;
+
 /**
  * Image picker helper using Expo ImagePicker
  */
 export async function pickImage(): Promise<
   ImagePicker.ImagePickerAsset | null
 > {
-  const permission =
-    await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (isPicking) return null;
+  isPicking = true;
 
-  if (!permission.granted) {
-    throw new Error("Izin galeri diperlukan untuk memilih foto.");
+  try {
+    const permission =
+      await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+    if (!permission.granted) {
+      throw new Error("Izin galeri diperlukan untuk memilih foto.");
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      quality: 0.8,
+      exif: false,
+    });
+
+    if (result.canceled || !result.assets[0]) {
+      return null;
+    }
+
+    return result.assets[0];
+  } finally {
+    isPicking = false;
   }
-
-  const result = await ImagePicker.launchImageLibraryAsync({
-    mediaTypes: ["images"],
-    allowsEditing: true,
-    quality: 0.8,
-    exif: false,
-  });
-
-  if (result.canceled || !result.assets[0]) {
-    return null;
-  }
-
-  return result.assets[0];
 }
 
 /**
