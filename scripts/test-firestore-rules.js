@@ -1962,6 +1962,149 @@ async function runRulesTests() {
       );
     });
 
+    // Batch (thesis v1.1 final stabilization, Issue B): regression guard for
+    // the live "Missing or insufficient permissions" error on
+    // chatRepository.subscribeToConversations. Tests 39-99 above only ever
+    // exercised get()/update() on a known conversation id -- none reproduced
+    // the actual list() query (where('customerId'|'barberId', '==', uid),
+    // orderBy('updatedAt','desc')) the app runs. A list() query is validated
+    // by Firestore against its *potential* result set, not just the docs it
+    // happens to return, so a rule that reads fine for get() can still be
+    // rejected for list() -- this must be tested explicitly.
+    await test('100. Customer can list() conversations containing them via where(customerId==uid), ordered by updatedAt', async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('conversations').doc('conv-list-cust-1').set({
+          bookingId: 'conv-list-cust-1',
+          customerId: 'cust-list-1',
+          barberId: 'barb-list-1',
+          participants: ['cust-list-1', 'barb-list-1'],
+          status: 'active',
+          customerUnreadCount: 0,
+          barberUnreadCount: 0,
+          createdAt: '2026-01-01',
+          updatedAt: '2026-01-01',
+        });
+      });
+
+      const custDb = testEnv.authenticatedContext('cust-list-1', { app_role: 'customer' }).firestore();
+      const snap = await assertSucceeds(
+        custDb.collection('conversations').where('customerId', '==', 'cust-list-1').orderBy('updatedAt', 'desc').get()
+      );
+      if (snap.size !== 1) throw new Error(`Expected 1 conversation, got ${snap.size}`);
+    });
+
+    await test('101. Customer cannot list() another customer\'s conversations (querying a different customerId is denied, not silently empty)', async () => {
+      const custDb = testEnv.authenticatedContext('cust-list-1', { app_role: 'customer' }).firestore();
+      await assertFails(
+        custDb.collection('conversations').where('customerId', '==', 'some-other-customer').orderBy('updatedAt', 'desc').get()
+      );
+    });
+
+    await test('102. Barber can list() conversations containing them via where(barberId==uid), ordered by updatedAt', async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('conversations').doc('conv-list-barb-1').set({
+          bookingId: 'conv-list-barb-1',
+          customerId: 'cust-list-2',
+          barberId: 'barb-list-2',
+          participants: ['cust-list-2', 'barb-list-2'],
+          status: 'active',
+          customerUnreadCount: 0,
+          barberUnreadCount: 0,
+          createdAt: '2026-01-01',
+          updatedAt: '2026-01-01',
+        });
+      });
+
+      const barbDb = testEnv.authenticatedContext('barb-list-2', { app_role: 'barber' }).firestore();
+      const snap = await assertSucceeds(
+        barbDb.collection('conversations').where('barberId', '==', 'barb-list-2').orderBy('updatedAt', 'desc').get()
+      );
+      if (snap.size !== 1) throw new Error(`Expected 1 conversation, got ${snap.size}`);
+    });
+
+    await test('103. Barber cannot list() another barber\'s conversations', async () => {
+      const barbDb = testEnv.authenticatedContext('barb-list-2', { app_role: 'barber' }).firestore();
+      await assertFails(
+        barbDb.collection('conversations').where('barberId', '==', 'some-other-barber').orderBy('updatedAt', 'desc').get()
+      );
+    });
+
+    await test('104. A participant can read messages in their own conversation; an outsider is denied', async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context.firestore().collection('conversations').doc('conv-msg-1').set({
+          bookingId: 'conv-msg-1',
+          customerId: 'cust-msg-1',
+          barberId: 'barb-msg-1',
+          participants: ['cust-msg-1', 'barb-msg-1'],
+          status: 'active',
+          customerUnreadCount: 0,
+          barberUnreadCount: 0,
+          createdAt: '2026-01-01',
+          updatedAt: '2026-01-01',
+        });
+        await context.firestore().collection('conversations').doc('conv-msg-1').collection('messages').doc('msg-1').set({
+          senderId: 'cust-msg-1',
+          text: 'Halo',
+          type: 'text',
+          createdAt: '2026-01-01',
+        });
+      });
+
+      const custDb = testEnv.authenticatedContext('cust-msg-1', { app_role: 'customer' }).firestore();
+      const barbDb = testEnv.authenticatedContext('barb-msg-1', { app_role: 'barber' }).firestore();
+      const outsiderDb = testEnv.authenticatedContext('rando-msg-1', { app_role: 'customer' }).firestore();
+
+      await assertSucceeds(custDb.collection('conversations').doc('conv-msg-1').collection('messages').doc('msg-1').get());
+      await assertSucceeds(barbDb.collection('conversations').doc('conv-msg-1').collection('messages').doc('msg-1').get());
+      await assertFails(outsiderDb.collection('conversations').doc('conv-msg-1').collection('messages').doc('msg-1').get());
+    });
+
+    await test('105. A participant can list() the messages subcollection (subscribeToMessages\' orderBy/limit query, no where clause); an outsider is denied', async () => {
+      const custDb = testEnv.authenticatedContext('cust-msg-1', { app_role: 'customer' }).firestore();
+      const outsiderDb = testEnv.authenticatedContext('rando-msg-1', { app_role: 'customer' }).firestore();
+
+      await assertSucceeds(
+        custDb.collection('conversations').doc('conv-msg-1').collection('messages').orderBy('createdAt', 'desc').limit(30).get()
+      );
+      await assertFails(
+        outsiderDb.collection('conversations').doc('conv-msg-1').collection('messages').orderBy('createdAt', 'desc').limit(30).get()
+      );
+    });
+
+    await test('106. A participant can create a valid message in their own conversation; an outsider cannot', async () => {
+      const custDb = testEnv.authenticatedContext('cust-msg-1', { app_role: 'customer' }).firestore();
+      const outsiderDb = testEnv.authenticatedContext('rando-msg-1', { app_role: 'customer' }).firestore();
+
+      await assertSucceeds(
+        custDb.collection('conversations').doc('conv-msg-1').collection('messages').add({
+          senderId: 'cust-msg-1',
+          text: 'Pesan baru',
+          type: 'text',
+          createdAt: '2026-01-01',
+        })
+      );
+      await assertFails(
+        outsiderDb.collection('conversations').doc('conv-msg-1').collection('messages').add({
+          senderId: 'rando-msg-1',
+          text: 'Pesan intruder',
+          type: 'text',
+          createdAt: '2026-01-01',
+        })
+      );
+    });
+
+    await test('107. A participant cannot forge senderId as the other participant when creating a message', async () => {
+      const custDb = testEnv.authenticatedContext('cust-msg-1', { app_role: 'customer' }).firestore();
+      await assertFails(
+        custDb.collection('conversations').doc('conv-msg-1').collection('messages').add({
+          senderId: 'barb-msg-1',
+          text: 'Forged sender',
+          type: 'text',
+          createdAt: '2026-01-01',
+        })
+      );
+    });
+
   } finally {
     await testEnv.cleanup();
     console.log(`\nTest Execution Complete: ${passed} Passed, ${failed} Failed.\n`);

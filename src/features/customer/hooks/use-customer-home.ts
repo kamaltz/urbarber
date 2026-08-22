@@ -5,6 +5,7 @@
  * the "Barber Terdekat" section can show real distances once granted.
  */
 
+import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { customerLocationService } from '../services/customer-location.service';
 import { customerRepository } from '../repository/customer.repository';
@@ -88,6 +89,19 @@ export function useCustomerHome(customerId: string) {
     // re-triggers the OS permission dialog on every refresh.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customerId]);
+
+  // barbers/{uid}.acceptsHomeService (and other listing fields) can change on
+  // another device -- expo-router keeps this tab mounted across navigation,
+  // so without this a Barber turning Home Service off is invisible on Home
+  // until the app restarts. Same refetch-on-focus pattern as
+  // useCustomerProfile.
+  useFocusEffect(
+    useCallback(() => {
+      if (customerId) {
+        void fetchHome(false);
+      }
+    }, [customerId, fetchHome])
+  );
 
   const requestLocation = useCallback(async () => {
     if (!customerId) return;

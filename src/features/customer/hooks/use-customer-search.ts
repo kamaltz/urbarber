@@ -3,6 +3,7 @@
  * Manages barber search and filtering state with debouncing and clean lifecycle
  */
 
+import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { customerLocationService } from '../services/customer-location.service';
 import { customerRepository } from '../repository/customer.repository';
@@ -138,6 +139,29 @@ export function useCustomerSearch(
     // dialog on every keystroke or filter change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customerId]);
+
+  // Refetch on focus needs the *current* filter state without making the
+  // focus callback's identity depend on it -- otherwise every keystroke
+  // (searchQuery) would recreate the callback and refire it immediately
+  // (useFocusEffect re-runs when its callback changes while already
+  // focused), defeating onSearchQueryChange's debounce. Refs give the latest
+  // values without that churn.
+  const currentParamsRef = useRef({ searchQuery, selectedCategory, serviceType, sort });
+  useEffect(() => {
+    currentParamsRef.current = { searchQuery, selectedCategory, serviceType, sort };
+  }, [searchQuery, selectedCategory, serviceType, sort]);
+
+  // Barber listing fields (e.g. acceptsHomeService) can change on another
+  // device -- expo-router keeps Explore mounted across navigation, so without
+  // this a Barber turning Home Service off stays invisible here until the
+  // app restarts. Same refetch-on-focus pattern as useCustomerHome/
+  // useCustomerProfile.
+  useFocusEffect(
+    useCallback(() => {
+      const { searchQuery: q, selectedCategory: c, serviceType: st, sort: s } = currentParamsRef.current;
+      void fetchExplore(q, c, st, s);
+    }, [fetchExplore])
+  );
 
   const onSearchQueryChange = useCallback((newQuery: string) => {
     setSearchQuery(newQuery);

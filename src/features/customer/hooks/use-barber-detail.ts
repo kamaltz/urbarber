@@ -6,6 +6,7 @@
 import { barberRepository } from '@/features/barbers/repository/barber.repository';
 import { galleryRepository } from '@/features/barbers/repository/gallery.repository';
 import type { BarberGalleryImage, BarberService } from '@/features/barbers/types/barber';
+import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { useFavorites } from '../context/favorites-context';
 import { customerRepository } from '../repository/customer.repository';
@@ -71,6 +72,18 @@ export function useBarberDetail(barberId: string) {
       active = false;
     };
   }, [barberId, fetchDetail]);
+
+  // acceptsHomeService (and other listing fields) can change on another
+  // device while this Detail screen stays mounted in the stack -- refetch on
+  // focus so a Barber turning Home Service off is reflected without a
+  // manual pull-to-refresh. Same pattern as useCustomerHome/useCustomerProfile.
+  useFocusEffect(
+    useCallback(() => {
+      if (barberId) {
+        void fetchDetail();
+      }
+    }, [barberId, fetchDetail])
+  );
 
   const toggleFavorite = useCallback(async () => {
     if (!barberId) return;

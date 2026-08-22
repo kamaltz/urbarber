@@ -24,6 +24,7 @@ import {
   resolveActiveBookingServices,
   type BookingOptionService,
 } from '@/features/bookings/utils/resolve-active-services';
+import { isHomeServiceEligible } from '@/features/bookings/utils/home-service-eligibility';
 
 export default function BookingOptionsScreen() {
   const { barberId, barberName } = useLocalSearchParams<{
@@ -35,6 +36,7 @@ export default function BookingOptionsScreen() {
   const [services, setServices] = useState<BookingOptionService[]>([]);
   const [selectedService, setSelectedService] = useState<BookingOptionService | null>(null);
   const [loadingServices, setLoadingServices] = useState<boolean>(Boolean(barberId));
+  const [homeServiceEligible, setHomeServiceEligible] = useState<boolean>(true);
 
   // Batch 10B-5E: this screen previously selected from a hardcoded MOCK_SERVICES
   // array whose ids ('1', '2', ...) were never real barberServices/{serviceId}
@@ -58,6 +60,15 @@ export default function BookingOptionsScreen() {
       setLoadingServices(false);
     });
 
+    // Server (isHomeServiceAllowedForBarber, backend/vercel) is the
+    // authoritative gate on a new Home Service booking -- this is a
+    // client-side precheck only, so the button never gets offered in the
+    // first place when the barber has turned Home Service off.
+    barberRepository.getBarberProfile(barberId).then((profile) => {
+      if (!isMounted) return;
+      setHomeServiceEligible(isHomeServiceEligible(profile));
+    });
+
     return () => {
       isMounted = false;
     };
@@ -66,6 +77,10 @@ export default function BookingOptionsScreen() {
   const handleBookingTypeSelect = (type: 'home' | 'onsite') => {
     if (!selectedDate || !selectedService) {
       alert('Pilih tanggal dan layanan');
+      return;
+    }
+    if (type === 'home' && !homeServiceEligible) {
+      alert('Barber ini tidak melayani Home Service saat ini.');
       return;
     }
 
@@ -163,8 +178,13 @@ export default function BookingOptionsScreen() {
                 onPress={() => handleBookingTypeSelect('home')}
                 className="h-14 rounded-lg"
                 variant="primary"
-                disabled={loadingServices || !selectedService}
+                disabled={loadingServices || !selectedService || !homeServiceEligible}
               />
+              {!loadingServices && !homeServiceEligible && (
+                <Text className="text-xs text-slate-500 -mt-2">
+                  Barber ini tidak melayani Home Service saat ini.
+                </Text>
+              )}
 
               <AppButton
                 label="Cukur Di Tempat"
