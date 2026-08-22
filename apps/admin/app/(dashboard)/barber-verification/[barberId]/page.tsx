@@ -48,6 +48,13 @@ function documentErrorMessage(code: string | undefined): string {
   }
 }
 
+/** Supabase signed URLs keep the original object path (with its extension) before
+ * the token query string, so the file type can be inferred from the URL itself
+ * without the backend needing to return a separate content-type field. */
+function isPdfUrl(url: string): boolean {
+  return (url.split('?')[0] || '').toLowerCase().endsWith('.pdf');
+}
+
 function formatDateTime(value?: string) {
   if (!value) return '-';
   const d = new Date(value);
@@ -83,6 +90,7 @@ export default function BarberVerificationDetailPage() {
   const [documents, setDocuments] = useState<DocumentPreview[]>([]);
   const [previewingDoc, setPreviewingDoc] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewImgError, setPreviewImgError] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -138,6 +146,7 @@ export default function BarberVerificationDetailPage() {
 
   const loadDocumentPreview = async (docType: AllowedDocType) => {
     setPreviewingDoc(docType);
+    setPreviewImgError(false);
     setDocuments((prev) => prev.map((d) => (d.type === docType ? { ...d, loading: true, error: undefined } : d)));
     try {
       const { url, expiresAt } = await AdminApiClient.getDocumentUrl(barberId, docType);
@@ -149,6 +158,18 @@ export default function BarberVerificationDetailPage() {
       const message = documentErrorMessage(err instanceof ApiError ? err.code : undefined);
       setDocuments((prev) => prev.map((d) => (d.type === docType ? { ...d, error: message, loading: false } : d)));
     }
+  };
+
+  const closeDocumentPreview = () => {
+    setPreviewingDoc(null);
+    setPreviewUrl(null);
+    setPreviewImgError(false);
+  };
+
+  // Signed URLs are short-lived (see expiresAt) -- always request a fresh one on
+  // retry rather than reusing/persisting the one that just expired or failed.
+  const retryDocumentPreview = () => {
+    if (previewingDoc) void loadDocumentPreview(previewingDoc as AllowedDocType);
   };
 
   if (loading) {
@@ -280,18 +301,44 @@ export default function BarberVerificationDetailPage() {
                 <h3 className="text-lg font-bold text-slate-900">
                   {documents.find((d) => d.type === previewingDoc)?.label}
                 </h3>
-                <button
-                  onClick={() => {
-                    setPreviewingDoc(null);
-                    setPreviewUrl(null);
-                  }}
-                  className="text-slate-400 hover:text-slate-700"
-                >
+                <button onClick={closeDocumentPreview} className="text-slate-400 hover:text-slate-700">
                   ✕
                 </button>
               </div>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={previewUrl} alt="Pratinjau dokumen" className="h-auto max-w-full rounded-lg" />
+
+              {isPdfUrl(previewUrl) ? (
+                <div className="flex flex-col items-center gap-3 rounded-lg bg-slate-50 p-8 text-center">
+                  <p className="text-sm text-slate-600">Dokumen ini berformat PDF dan tidak dapat ditampilkan langsung di sini.</p>
+                  <a
+                    href={previewUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700"
+                  >
+                    Buka PDF di tab baru
+                  </a>
+                </div>
+              ) : previewImgError ? (
+                <div className="flex flex-col items-center gap-3 rounded-lg bg-red-50 p-8 text-center">
+                  <p className="text-sm text-red-800">
+                    Tautan pratinjau tidak dapat dimuat (kemungkinan sudah kedaluwarsa).
+                  </p>
+                  <button
+                    onClick={retryDocumentPreview}
+                    className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700"
+                  >
+                    Muat Ulang
+                  </button>
+                </div>
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={previewUrl}
+                  alt="Pratinjau dokumen"
+                  className="h-auto max-w-full rounded-lg"
+                  onError={() => setPreviewImgError(true)}
+                />
+              )}
             </div>
           </div>
         )}
